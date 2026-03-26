@@ -228,7 +228,7 @@ static bool sendMultiStatsInternal(uint32_t playerIndex, optional<uint32_t> reci
 				auto it = json_ids["publicKeys"].find(public_key);
 				if (it != json_ids["publicKeys"].end()) {
 					public_key = it->get<std::string>();
-					auto it = json_ids["mainPublicKeys"].find(public_key);
+					it = json_ids["mainPublicKeys"].find(public_key);
 					if (it == json_ids["mainPublicKeys"].end())
 						std::cout << "xxxxxxxxxxxxxxxx send missing main public key data " << old_public_key << ' ' << public_key << std::endl;
 					else {
@@ -249,7 +249,7 @@ static bool sendMultiStatsInternal(uint32_t playerIndex, optional<uint32_t> reci
 					if (it != json_ids["ips"].end()) {
 						std::cout << "xxxxxxxxxxxxxxxx send ip rename " << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
 						public_key = it->get<std::string>();
-						auto it = json_ids["mainPublicKeys"].find(public_key);
+						it = json_ids["mainPublicKeys"].find(public_key);
 						if (it == json_ids["mainPublicKeys"].end())
 							std::cout << "xxxxxxxxxxxxxxxx send missing main public key data " << ip << ' ' << public_key << std::endl;
 						else {
