@@ -17,11 +17,11 @@
 - Support for multiple graphics backends (OpenGL, OpenGL ES, Vulkan)
 - 100% free and open source
 
-For more info, see: [Homepage of the Warzone 2100 Project](https://wz2100.net/)
+For more info, see: https://warzone2100.retropaganda.info
 
 # Installation
 
-**Visit https://wz2100.net for the latest stable release for Windows, macOS and Linux.**
+**Visit https://warzone2100.retropaganda.info for the latest stable release for Windows, macOS and Linux.**
 
 > Note for videos in Ubuntu: For important information during the game, download the videos manually. Assuming the game is installed in the standard `~/.local/share/` folder, use these commands:
 > ```shell
@@ -31,38 +31,33 @@ For more info, see: [Homepage of the Warzone 2100 Project](https://wz2100.net/)
 
 # Origins
 
-Warzone 2100, was originally developed by Pumpkin Studios, and released in 1999 as a
-ground-breaking and innovative 3D real-time strategy game.
+Warzone 2100 was originally developed by Pumpkin Studios and published by Eidos Interactive in 1999.
 
-In 2004, Eidos (in collaboration with Pumpkin Studios) decided to release the source for the game
-under the terms of the GNU GPL - followed later by the remaining music & video files.
-
-It has been developed, maintained, and improved by the community ever since, under the banner of
-the “Warzone 2100 Project”.
+After fans petitionned for it, in December 2004, the source code was released under an open-source license, followed in June 2008 by movies and sound tracks.
+To this day, many volunteer individuals have been maintaining and greatly improving the game.
 
 # State of the game
 
-After the liberation of the Warzone 2100 source-code on December 6th, 2004, all
-proprietary technologies have been replaced with open-source counterparts, and
+All original proprietary technologies have been replaced with open-source counterparts, and
 extensive improvements and additions have been made throughout while preserving
 what made the original release so great.
 
-Development continues on GitHub, and bug reports & contributions are welcome!
+Development continues, and bug reports & contributions are welcome!
 
 # Latest development builds
 
-[![Windows Build Status](https://img.shields.io/github/actions/workflow/status/Warzone2100/warzone2100/CI_windows.yml?branch=master&label=Windows&logo=windows)](https://github.com/Warzone2100/warzone2100/actions?query=workflow%3AWindows+branch%3Amaster+event%3Apush)
- [![macOS Build Status](https://img.shields.io/github/actions/workflow/status/Warzone2100/warzone2100/CI_macos.yml?branch=master&label=macOS&logo=apple)](https://github.com/Warzone2100/warzone2100/actions?query=workflow%3AmacOS+branch%3Amaster+event%3Apush)
- [![Ubuntu Build Status](https://img.shields.io/github/actions/workflow/status/Warzone2100/warzone2100/CI_ubuntu.yml?branch=master&label=Ubuntu&logo=ubuntu&logoColor=FFFFFF)](https://github.com/Warzone2100/warzone2100/actions?query=workflow%3AUbuntu+branch%3Amaster+event%3Apush)
- [![Fedora Build Status](https://img.shields.io/github/actions/workflow/status/Warzone2100/warzone2100/CI_fedora.yml?branch=master&label=Fedora&logo=fedora&logoColor=FFFFFF)](https://github.com/Warzone2100/warzone2100/actions?query=workflow%3AFedora+branch%3Amaster+event%3Apush)
- [![WebAssembly Build Status](https://img.shields.io/github/actions/workflow/status/Warzone2100/warzone2100/CI_emscripten.yml?branch=master&label=WebASM&logo=webassembly&logoColor=FFFFFF)](https://github.com/Warzone2100/warzone2100/actions?query=workflow%3AEmscripten+branch%3Amaster+event%3Apush)
- [![FreeBSD Build Status](https://img.shields.io/cirrus/github/Warzone2100/warzone2100/master?label=FreeBSD&logo=FreeBSD)](https://cirrus-ci.com/github/Warzone2100/warzone2100/master)
+[![Windows Build Status](https://img.shields.io/github/actions/workflow/status/johan-boule/warzone2100/CI_windows.yml?branch=master&label=Windows&logo=windows)](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AWindows+branch%3Amaster+event%3Apush)
+ [![macOS Build Status](https://img.shields.io/github/actions/workflow/status/johan-boule/warzone2100/CI_macos.yml?branch=master&label=macOS&logo=apple)](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AmacOS+branch%3Amaster+event%3Apush)
+ [![Ubuntu Build Status](https://img.shields.io/github/actions/workflow/status/johan-boule/warzone2100/CI_ubuntu.yml?branch=master&label=Ubuntu&logo=ubuntu&logoColor=FFFFFF)](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AUbuntu+branch%3Amaster+event%3Apush)
+ [![Fedora Build Status](https://img.shields.io/github/actions/workflow/status/johan-boule/warzone2100/CI_fedora.yml?branch=master&label=Fedora&logo=fedora&logoColor=FFFFFF)](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AFedora+branch%3Amaster+event%3Apush)
+ [![WebAssembly Build Status](https://img.shields.io/github/actions/workflow/status/johan-boule/warzone2100/CI_emscripten.yml?branch=master&label=WebASM&logo=webassembly&logoColor=FFFFFF)](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AEmscripten+branch%3Amaster+event%3Apush)
+ [![FreeBSD Build Status](https://img.shields.io/cirrus/github/johan-boule/warzone2100/master?label=FreeBSD&logo=FreeBSD)](https://cirrus-ci.com/github/johan-boule/warzone2100/master)
  [![Packaging status](https://repology.org/badge/tiny-repos/warzone2100.svg)](https://repology.org/project/warzone2100/versions)
 
 ### Windows
 
 How to get the latest Windows development builds:
-1. View the **[latest successful Windows builds](https://github.com/Warzone2100/warzone2100/actions?query=workflow%3AWindows+branch%3Amaster+event%3Apush+is%3Asuccess)**.
+1. View the **[latest successful Windows builds](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AWindows+branch%3Amaster+event%3Apush+is%3Asuccess)**.
 2. Select the latest workflow run in the table / list.
    This should display a list of **Artifacts** from the run.
 3. Download the `warzone2100_win_installer` artifact.
@@ -71,7 +66,7 @@ How to get the latest Windows development builds:
 ### macOS
 
 How to get the latest macOS development builds:
-1. View the **[latest successful macOS builds](https://github.com/Warzone2100/warzone2100/actions?query=workflow%3AmacOS+branch%3Amaster+event%3Apush+is%3Asuccess)**.
+1. View the **[latest successful macOS builds](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AmacOS+branch%3Amaster+event%3Apush+is%3Asuccess)**.
 2. Select the latest workflow run in the table / list.
    This should display a list of **Artifacts** from the run.
 3. Download the `warzone2100_macOS_universal` or `warzone2100_macOS_universal_novideos` artifact (depending on whether you want the full app bundle or not).
@@ -80,7 +75,7 @@ How to get the latest macOS development builds:
 ### Ubuntu
 
 How to get the latest Ubuntu development builds:
-1. View the **[latest successful Ubuntu builds](https://github.com/Warzone2100/warzone2100/actions?query=workflow%3AUbuntu+branch%3Amaster+event%3Apush+is%3Asuccess)**.
+1. View the **[latest successful Ubuntu builds](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AUbuntu+branch%3Amaster+event%3Apush+is%3Asuccess)**.
 2. Select the latest workflow run in the table / list.
    This should display a list of **Artifacts** from the run.
 3. Download the appropriate `warzone2100_ubuntu<version>_amd64_deb` artifact.
