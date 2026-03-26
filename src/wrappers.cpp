@@ -118,7 +118,7 @@ static void setupLoadingScreen()
 
 bool recalculateEffectiveHeadlessValue()
 {
-	if (hostlaunch == HostLaunch::Skirmish || hostlaunch == HostLaunch::Autohost || hostlaunch == HostLaunch::LoadReplay || autogame_enabled())
+	if (hostlaunch == HostLaunch::Skirmish || hostlaunch == HostLaunch::Autohost || hostlaunch == HostLaunch::LoadReplay || autogame_enabled() || cliConnectToIpAsSpectator)
 	{
 		// only support headless mode if hostlaunch is --skirmish or --autogame
 		return bHeadlessAutoGameModeCLIOption;
@@ -163,7 +163,7 @@ bool getHostLaunchStartNotReady()
 {
 	if (bHostLaunchStartNotReady && headlessGameMode() && !wz_command_interface_enabled())
 	{
-		debug(LOG_ERROR, "--autohost-not-ready specified while in headless mode without --enablecmdinterface specified. No way to start the host. Ignoring.");
+		debug(LOG_ERROR, "--autohost-not-ready specified while in --headless mode without --enablecmdinterface specified. No way to start the host. Ignoring.");
 		bHostLaunchStartNotReady = false;
 	}
 	return bHostLaunchStartNotReady;

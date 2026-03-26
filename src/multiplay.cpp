@@ -1459,8 +1459,9 @@ bool recvMessage()
 {
 	NETQUEUE queue;
 	uint8_t type;
+	bool stats;
 
-	while (NETrecvNet(&queue, &type) || NETrecvGame(&queue, &type))          // for all incoming messages.
+	while (NETrecvNet(&queue, &type, stats) || NETrecvGame(&queue, &type))          // for all incoming messages.
 	{
 		bool processedMessage1 = false;
 		bool processedMessage2 = false;

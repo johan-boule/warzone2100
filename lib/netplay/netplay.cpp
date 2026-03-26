@@ -2604,7 +2604,7 @@ static void LogChatMsg(uint8_t msgType, const NetMessage& message, uint8_t sende
 
 ///////////////////////////////////////////////////////////////////////////
 // Check if a message is a system message
-static bool NETprocessSystemMessage(NETQUEUE playerQueue, uint8_t *type)
+static bool NETprocessSystemMessage(NETQUEUE playerQueue, uint8_t *type, bool& stats)
 {
 	if (*type == NET_SECURED_NET_MESSAGE)
 	{
@@ -2859,6 +2859,7 @@ static bool NETprocessSystemMessage(NETQUEUE playerQueue, uint8_t *type)
 		{
 			recvMultiStats(playerQueue);
 			netPlayersUpdated = true;
+			stats = true;
 			break;
 		}
 	case NET_PLAYER_INFO:
@@ -3135,7 +3136,7 @@ static void NETcheckPlayers()
 // Receive a message over the current connection. We return true if there
 // is a message for the higher level code to process, and false otherwise.
 // We should not block here.
-bool NETrecvNet(NETQUEUE *queue, uint8_t *type)
+bool NETrecvNet(NETQUEUE *queue, uint8_t *type, bool& stats)
 {
 	if (!NetPlay.bComms)
 	{
@@ -3206,7 +3207,7 @@ checkMessages:
 		while (NETisMessageReady(*queue))
 		{
 			*type = NETgetMessage(*queue)->type();
-			if (!NETprocessSystemMessage(*queue, type))
+			if (!NETprocessSystemMessage(*queue, type, stats))
 			{
 				return true;  // We couldn't process the message, let the caller deal with it..
 			}
@@ -3799,6 +3800,7 @@ bool LobbyServerConnectionHandler::connect()
 
 		// The socket has been invalidated, so get rid of it. (using them now may cause SIGPIPE).
 		disconnect();
+		server_not_there = true;
 		return bProcessingConnectOrDisconnectThisCall;
 	}
 

@@ -133,6 +133,7 @@
 #include "activity.h"
 #include <algorithm>
 #include <set>
+#include <iostream>
 #include "3rdparty/gsl_finally.h"
 
 #define MAP_PREVIEW_DISPLAY_TIME 2500	// number of milliseconds to show map in preview
@@ -6765,8 +6766,9 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 	NETQUEUE queue;
 	uint8_t type;
 	bool ignoredMessage = false;
+	bool stats = false;
 
-	while (NETrecvNet(&queue, &type))
+	while (NETrecvNet(&queue, &type, stats))
 	{
 		if (!shouldProcessMessage(queue, type))
 		{
@@ -7234,6 +7236,26 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 		}
 
 		NETpop(queue);
+	}
+
+	if (NetPlay.isHost) {
+		static std::chrono::steady_clock::time_point before;
+		static bool got_stats = false;
+		if (stats) {
+			std::cout << "xxxxxxxxxxxxxxxx received" << std::endl;
+			if (!got_stats) {
+				got_stats = true;
+				before = std::chrono::steady_clock::now();
+			}
+		} else if (got_stats) {
+			if (std::chrono::steady_clock::now() - before > std::chrono::seconds(1)) {
+				std::cout << "xxxxxxxxxxxxxxxx delayed send" << std::endl;
+				got_stats = false;
+				for (uint32_t playerIndex = 0; playerIndex < MAX_CONNECTED_PLAYERS; ++playerIndex)
+					if (playerIndex != NetPlay.hostPlayer && *NetPlay.players[playerIndex].name)
+						sendMultiStats(playerIndex);
+			}
+		}
 	}
 
 	const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();

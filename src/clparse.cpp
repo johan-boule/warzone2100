@@ -427,7 +427,7 @@ static const struct poptOption *getOptionsTable()
 					")"
 		},
 		{ "autogame", POPT_ARG_NONE, CLI_AUTOGAME,   N_("Run games automatically for testing"), nullptr },
-		{ "headless", POPT_ARG_NONE, CLI_AUTOHEADLESS,   N_("Headless mode (only supported when also specifying --autogame, --autohost, --skirmish)"), nullptr },
+		{ "headless", POPT_ARG_NONE, CLI_AUTOHEADLESS,   N_("Headless mode (only supported when also specifying --autogame, --autohost, --skirmish, --spectate)"), nullptr },
 		{ "saveandquit", POPT_ARG_STRING, CLI_SAVEANDQUIT, N_("Immediately save game and quit"), N_("save name") },
 		{ "skirmish", POPT_ARG_STRING, CLI_SKIRMISH,   N_("Start skirmish game with given settings file"), N_("test") },
 		{ "continue", POPT_ARG_NONE, CLI_CONTINUE,   N_("Continue the last saved game"), nullptr },
