@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="icons/warzone2100.large.png" alt="Warzone 2100">
+  <img src="icons/warzone2100logo.png" alt="Warzone 2100">
   <br />
   Warzone 2100
 </h1>
