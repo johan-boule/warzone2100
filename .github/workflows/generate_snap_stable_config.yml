@@ -66,7 +66,6 @@ jobs:
       - name: Fetch latest GitHub Release info
         uses: past-due/fetch-release-info@master
         with:
-          github_repo: 'Warzone2100/warzone2100'
           github_token: '${{ secrets.GITHUB_TOKEN }}'
           calculate_asset_info: false
           output_directory: '_dl/data/github_releases_info'
