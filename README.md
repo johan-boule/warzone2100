@@ -106,29 +106,6 @@ Clone this Git repo and build, following the instructions under:
 You can download videos from [here](https://github.com/Warzone2100/wz-sequences/releases/tag/v3), or [here](https://sourceforge.net/projects/warzone2100/files/warzone2100/Videos/). You will need to rename the downloaded file to `sequences.wz`, and place it into your Warzone 2100 directory, as described above.
 Note that `.wz` files are just `.zip` in disguise, you can rename it and extract the content if wish to inspect them.
 
-# Reporting bugs
-
-This game still has bugs and if you run into one, please use the GitHub bugtracker
-(https://github.com/Warzone2100/warzone2100/issues) to report the bug. In order to fix
-those bugs more quickly, we require that you follow these rules:
-
-   1. If the game crashes you may save a memory dump. Please do so and upload it
-      when reporting the bug. (Linux locates that file at /tmp/warzone2100.gdmp,
-      Windows at /Program Files/Warzone 2100/warzone2100.RPT, macOS by
-      clicking "Details" in the crash error message)
-      A self created backtrace is just as useful.
-   2. Give as much information about what you were doing before the crash/bug
-      occurred.
-   3. Try to reproduce the bug and add a description of the process to your bug
-      report.
-   4. You may even upload save files. These consist of one file and
-      one folder. Both are named after your savegame (e.g. MySaveGame.gam and
-      the folder MySaveGame).
-   5. Bug reports are not submit-and-forget. It may be that you forgot some
-      information or forgot to upload a file. So it is also in your interest to
-      watch the bug-report after it has been submitted. Additionally, you can enable
-      e-mails of comments to your bug report.
-
 # Configuration
 
 Warzone 2100 uses its own subdirectory in a user's home directory to save
@@ -218,7 +195,7 @@ To properly build the game, either:
 
 - Clone the Git repo:
   ```shell
-  git clone https://github.com/Warzone2100/warzone2100.git
+  git clone https://github.com/johan-boule/warzone2100.git
   cd warzone2100
   git fetch --tags
   git submodule update --init --recursive
@@ -295,7 +272,3 @@ Warzone 2100 is free software; you can redistribute it and/or modify it under th
 [![SPDX-License-Identifier: GPL-2.0-or-later](https://img.shields.io/static/v1?label=SPDX-License-Identifier&message=GPL-2.0-or-later&color=blue&logo=open-source-initiative&logoColor=white&logoWidth=10&style=flat-square)](COPYING)
 
 More information: [COPYING.README](COPYING.README), [COPYING.NONGPL](COPYING.NONGPL)
-
-# Special thanks
-
-Free code signing for Windows provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).

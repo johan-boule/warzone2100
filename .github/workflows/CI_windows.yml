@@ -18,15 +18,12 @@ on:
   # Support running after "Draft Tag Release" workflow completes, as part of automated release process
   workflow_run:
     workflows: ["Draft Tag Release"]
-    push:
-      tags:
-        - '*'
     types:
       - completed
 
 env:
   # Controls whether release builds are signed
-  WZ_CI_SIGN_RELEASE_BUILDS: true
+  WZ_CI_SIGN_RELEASE_BUILDS: false
 
 jobs:
   windows-build:
