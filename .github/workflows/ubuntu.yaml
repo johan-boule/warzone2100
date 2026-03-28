@@ -30,7 +30,7 @@ jobs:
       - name: git submodule
         run: git -C $GITHUB_WORKSPACE/src submodule update --init --recursive
       - name: docker build
-        run: docker build --build-arg UID=$UID -f docker/${{ matrix.docker }}/Dockerfile -t ubuntu $GITHUB_WORKSPACE/src
+        run: docker build --build-arg UID=$UID -f $GITHUB_WORKSPACE/src/docker/${{ matrix.docker }}/Dockerfile -t ubuntu $GITHUB_WORKSPACE/src
       - name: export env
         run: |
           if [[ $GITHUB_REF_TYPE == tag ]]; then
