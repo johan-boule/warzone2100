@@ -10,7 +10,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - name: "Ubuntu 24.04 [GCC]"
+          - name: "Ubuntu 24.04 GCC AMD64"
             docker: "ubuntu-24.04"
             arch: "amd64"
             output-suffix: "ubuntu24.04"
@@ -27,11 +27,11 @@ jobs:
         with:
           fetch-depth: 0
           path: 'src'
-      - name: git submodule
+      - name: Git Submodule
         run: git -C $GITHUB_WORKSPACE/src submodule update --init --recursive
-      - name: docker build
+      - name: Docker Build
         run: docker build --build-arg UID=$UID -f $GITHUB_WORKSPACE/src/docker/${{ matrix.docker }}/Dockerfile -t ubuntu $GITHUB_WORKSPACE/src
-      - name: export env
+      - name: Export Environment
         run: |
           if [[ $GITHUB_REF_TYPE == tag ]]; then
             WZ_BUILD_DESC_IS_TAG=true
@@ -81,8 +81,8 @@ jobs:
             ubuntu \
               cmake \
                 -G Ninja \
-                -S $GITHUB_WORKSPACE/src
-                -B $GITHUB_WORKSPACE/build
+                -S $GITHUB_WORKSPACE/src \
+                -B $GITHUB_WORKSPACE/build \
                 -D CMAKE_BUILD_TYPE=Release \
                 -D WZ_OUTPUT_NAME_SUFFIX="$WZ_OUTPUT_NAME_SUFFIX" \
                 -D WZ_NAME_SUFFIX="$WZ_NAME_SUFFIX" \
@@ -135,7 +135,7 @@ jobs:
           name: "warzone2100_${{ matrix.output-suffix }}_${{ matrix.arch }}_deb"
           path: ${{ env.OUTPUT_DIR }}
           if-no-files-found: 'error'
-      - name: gh release upload
+      - name: GH Release Upload
         if: success() && (github.event_name == 'release') && (matrix.deploy_release == true)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
