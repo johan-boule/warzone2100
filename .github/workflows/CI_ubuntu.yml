@@ -16,9 +16,6 @@ on:
   # Support running after "Draft Tag Release" workflow completes, as part of automated release process
   workflow_run:
     workflows: ["Draft Tag Release"]
-    push:
-      tags:
-        - '*'
     types:
       - completed
 
