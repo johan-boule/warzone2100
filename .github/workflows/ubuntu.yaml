@@ -10,15 +10,15 @@ jobs:
     strategy:
       matrix:
         include:
-          - name: "Ubuntu 24.04 GCC AMD64"
-            docker: "ubuntu-24.04"
-            arch: "amd64"
-            output-suffix: "ubuntu24.04"
+          - name: Ubuntu 24.04 GCC AMD64
+            docker: ubuntu-24.04
+            arch: amd64
+            output-suffix: ubuntu24.04
             compiler: gcc
             publish_artifact: true
             deploy_release: true
       fail-fast: true
-    name: '${{ matrix.name }}'
+    name: ${{ matrix.name }}
     permissions:
       contents: write # Needed to upload to releases
     runs-on: ubuntu-latest
@@ -26,13 +26,14 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          path: 'src'
+          path: src
       - name: Git Submodule
-        run: git -C $GITHUB_WORKSPACE/src submodule update --init --recursive
+        run: set -eu && git -C $GITHUB_WORKSPACE/src submodule update --init --recursive
       - name: Docker Build
-        run: docker build --build-arg UID=$UID -f $GITHUB_WORKSPACE/src/docker/${{ matrix.docker }}/Dockerfile -t ubuntu $GITHUB_WORKSPACE/src
+        run: set -eu && docker build --build-arg UID=$UID -f $GITHUB_WORKSPACE/src/docker/${{ matrix.docker }}/Dockerfile -t ubuntu $GITHUB_WORKSPACE/src
       - name: Export Environment
         run: |
+          set -eu
           if [[ $GITHUB_REF_TYPE == tag ]]; then
             WZ_BUILD_DESC_IS_TAG=true
           else
@@ -49,13 +50,15 @@ jobs:
           WZ_BUILD_DESC_PREFIX=${WZ_BUILD_DESC_PREFIX//-/_}
           echo WZ_BUILD_DESC_PREFIX=$WZ_BUILD_DESC_PREFIX >> $GITHUB_ENV
 
-          WZ_OUTPUT_NAME_SUFFIX=""
-          WZ_NAME_SUFFIX=""
+          WZ_OUTPUT_NAME_SUFFIX=
+          WZ_NAME_SUFFIX=
           if [[ $GITHUB_REF_TYPE != tag ]]; then
             suffix=$(sed 's/[^a-zA-Z0-9\.]/_/g' <<< "$WZ_BUILD_DESC_PREFIX")
-            echo WZ_OUTPUT_NAME_SUFFIX=_$suffix >> $GITHUB_ENV
-            echo WZ_NAME_SUFFIX=" ($suffix)" >> $GITHUB_ENV
+            WZ_OUTPUT_NAME_SUFFIX=_$suffix
+            WZ_NAME_SUFFIX=" ($suffix)"
           fi
+          echo WZ_OUTPUT_NAME_SUFFIX=$WZ_OUTPUT_NAME_SUFFIX >> $GITHUB_ENV
+          echo WZ_NAME_SUFFIX=$WZ_NAME_SUFFIX >> $GITHUB_ENV
 
           echo WZ_DISTRIBUTOR=${GITHUB_REPOSITORY%/*} >> $GITHUB_ENV
 
@@ -71,6 +74,7 @@ jobs:
           esac >> $GITHUB_ENV
       - name: CMake Configure
         run: |
+          set -eu
           echo "::add-matcher::$GITHUB_WORKSPACE/src/.ci/githubactions/pattern_matchers/cmake.json"
           docker run --rm \
             --env CI \
@@ -94,6 +98,7 @@ jobs:
           echo '::remove-matcher owner=cmake::'
       - name: CMake Build
         run: |
+          set -eu
           echo "::add-matcher::$GITHUB_WORKSPACE/src/.ci/githubactions/pattern_matchers/${{ matrix.compiler }}.json"
           docker run --rm \
             --env CI \
@@ -107,6 +112,7 @@ jobs:
       - name: CPack Debian
         working-directory: '${{ github.workspace }}/build'
         run: |
+          set -eu
           docker run --rm \
             --env CI \
             --env GITHUB_WORKFLOW --env GITHUB_ACTIONS --env GITHUB_REPOSITORY --env GITHUB_WORKSPACE \
@@ -132,12 +138,12 @@ jobs:
       - uses: actions/upload-artifact@v6
         if: success() && (github.event_name != 'release') && (matrix.publish_artifact == true)
         with:
-          name: "warzone2100_${{ matrix.output-suffix }}_${{ matrix.arch }}_deb"
+          name: warzone2100_${{ matrix.output-suffix }}_${{ matrix.arch }}_deb
           path: ${{ env.OUTPUT_DIR }}
-          if-no-files-found: 'error'
+          if-no-files-found: error
       - name: GH Release Upload
         if: success() && (github.event_name == 'release') && (matrix.deploy_release == true)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: gh release upload "$GITHUB_REF_NAME" $WZ_FULL_OUTPUT_DEB_PATH
+        run: set -eu && gh release upload "$GITHUB_REF_NAME" $WZ_FULL_OUTPUT_DEB_PATH
