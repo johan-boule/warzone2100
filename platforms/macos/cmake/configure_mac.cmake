@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16...3.31)
+cmake_minimum_required(VERSION 3.20...3.31)
 
 # Optional input defines:
 #  - VCPKG_BUILD_TYPE : This will be used to modify the current triplet (once vcpkg is downloaded)
@@ -28,8 +28,11 @@ set(VULKAN_SDK_DL_SHA256 "571db867d8736e402f6f674f26f17b339495d016f3b2afdbac23a3
 if(NOT CMAKE_SCRIPT_MODE_FILE)
 	message(FATAL_ERROR "This script currently only supports being run via `cmake -P` script mode")
 endif()
-set(_fullPathToThisScript "${CMAKE_SCRIPT_MODE_FILE}")
-get_filename_component(_repoBase "${_fullPathToThisScript}" DIRECTORY) # assumes configure_mac.cmake is in the base of the repo
+cmake_path(SET _repoBase ${CMAKE_SCRIPT_MODE_FILE})
+cmake_path(GET _repoBase PARENT_PATH _repoBase)
+cmake_path(GET _repoBase PARENT_PATH _repoBase)
+cmake_path(GET _repoBase PARENT_PATH _repoBase)
+cmake_path(GET _repoBase PARENT_PATH _repoBase)
 
 # Check MACOSX_DEPLOYMENT_TARGET (should be >= MIN_SUPPORTED_MACOSX_DEPLOYMENT_TARGET)
 if(DEFINED ENV{MACOSX_DEPLOYMENT_TARGET})

@@ -47,12 +47,11 @@ Development continues, and bug reports & contributions are welcome!
 # Latest development builds
 
 [![Windows Build Status](https://img.shields.io/github/actions/workflow/status/johan-boule/warzone2100/CI_windows.yml?branch=master&label=Windows&logo=windows)](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AWindows+branch%3Amaster+event%3Apush)
- [![macOS Build Status](https://img.shields.io/github/actions/workflow/status/johan-boule/warzone2100/CI_macos.yml?branch=master&label=macOS&logo=apple)](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AmacOS+branch%3Amaster+event%3Apush)
- [![Ubuntu Build Status](https://img.shields.io/github/actions/workflow/status/johan-boule/warzone2100/CI_ubuntu.yml?branch=master&label=Ubuntu&logo=ubuntu&logoColor=FFFFFF)](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AUbuntu+branch%3Amaster+event%3Apush)
- [![Fedora Build Status](https://img.shields.io/github/actions/workflow/status/johan-boule/warzone2100/CI_fedora.yml?branch=master&label=Fedora&logo=fedora&logoColor=FFFFFF)](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AFedora+branch%3Amaster+event%3Apush)
- [![WebAssembly Build Status](https://img.shields.io/github/actions/workflow/status/johan-boule/warzone2100/CI_emscripten.yml?branch=master&label=WebASM&logo=webassembly&logoColor=FFFFFF)](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AEmscripten+branch%3Amaster+event%3Apush)
- [![FreeBSD Build Status](https://img.shields.io/cirrus/github/johan-boule/warzone2100/master?label=FreeBSD&logo=FreeBSD)](https://cirrus-ci.com/github/johan-boule/warzone2100/master)
- [![Packaging status](https://repology.org/badge/tiny-repos/warzone2100.svg)](https://repology.org/project/warzone2100/versions)
+[![macOS Build Status](https://img.shields.io/github/actions/workflow/status/johan-boule/warzone2100/CI_macos.yml?branch=master&label=macOS&logo=apple)](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AmacOS+branch%3Amaster+event%3Apush)
+[![Ubuntu Build Status](https://img.shields.io/github/actions/workflow/status/johan-boule/warzone2100/CI_ubuntu.yml?branch=master&label=Ubuntu&logo=ubuntu&logoColor=FFFFFF)](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AUbuntu+branch%3Amaster+event%3Apush)
+[![Fedora Build Status](https://img.shields.io/github/actions/workflow/status/johan-boule/warzone2100/CI_fedora.yml?branch=master&label=Fedora&logo=fedora&logoColor=FFFFFF)](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AFedora+branch%3Amaster+event%3Apush)
+[![WebAssembly Build Status](https://img.shields.io/github/actions/workflow/status/johan-boule/warzone2100/CI_emscripten.yml?branch=master&label=WebASM&logo=webassembly&logoColor=FFFFFF)](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AEmscripten+branch%3Amaster+event%3Apush)
+[![Packaging status](https://repology.org/badge/tiny-repos/warzone2100.svg)](https://repology.org/project/warzone2100/versions)
 
 ### Windows
 
@@ -162,12 +161,11 @@ them while holding the right mouse button.
 
 When you are hosting a game it will automatically be listed on the lobby server.
 If you do not want your games to be listed on the lobby-server, you should
-change the entry "masterserver_name=lobby.wz2100.net" in your config to some-
+change the entry "masterserver_name=warzone2100.retropaganda.info" in your config to some-
 thing invalid, for example: "nomasterserverplease".
 
-If you then want to see the games that are listed on the lobby server you may
-enter "lobby.wz2100.net" when prompted to enter the host's IP or change the
-entry in the config file back. You will have to restart Warzone 2100 in order
+If you then want to see the games that are listed on the lobby server you have to change
+the entry in the config file back. You will have to restart Warzone 2100 in order
 for config changes to take effect.
 
 # Cheats

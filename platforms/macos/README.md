@@ -68,27 +68,26 @@ The recommended place for the build directory is outside of the Git repo / sourc
 
 For example,
 - if you wanted to create a build directory one level up from the Git repo / source code
-- and you cloned the Git repo to `~/src/warzone2100`
+- and you cloned the Git repo to `~/warzone2100`
 
 you could use the following commands:
 
 ```shell
-cd ~/src/
-mkdir wz_build
+cd ~/warzone2100
+mkdir ../warzone2100.build
 ```
 
 ### 2. Run _configure_mac.cmake_ from the build directory
 
 1. `cd` into the build directory you created in the step above
    ```shell
-   cd wz_build
+   cd ~/warzone2100.build
    ```
 
 2. Run the `configure_mac.cmake` script:
    ```shell
-   cmake -P "../warzone2100/configure_mac.cmake"
+   cmake -P ../warzone2100/platforms/macos/cmake/configure_mac.cmake
    ```
-   Where the `../warzone2100/configure_mac.cmake` path should be modified to point to `configure_mac.cmake` inside the Git repo / source code directory.
 
 The `configure_mac.cmake` script will automatically:
    - Download + extract the Vulkan SDK _(on macOS 10.14+ only - required for Vulkan / Metal support)_
