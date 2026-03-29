@@ -505,7 +505,7 @@ void startMultiPlayerMenu()
 	// This isn't really a hyperlink for now... perhaps link to the wiki ?
 	char buf[512]  =  {'\0'};
 	snprintf(buf, sizeof(buf), _("TCP port %d must be opened in your firewall or router to host games!"), NETgetGameserverPort());
-	addSmallTextButton(FRONTEND_HYPERLINK, FRONTEND_POS9X, FRONTEND_POS9Y, buf, 0);
+	addSmallTextButton(FRONTEND_WEB_SITE_HYPERLINK, FRONTEND_POS9X, FRONTEND_POS9Y, buf, 0);
 }
 
 bool runMultiPlayerMenu()
