@@ -3705,14 +3705,6 @@ bool LobbyServerConnectionHandler::connect()
 	{
 		return false;
 	}
-	if (lobby_disabled)
-	{
-		debug(LOG_ERROR, "Multiplayer lobby support unavailable. Please update your client.");
-		wz_command_interface_output("WZEVENT: lobbyerror: Client support disabled / unavailable\n");
-		gamestruct.gameId = 0;
-		server_not_there = true;
-		return true; // return true once, so that NETallowJoining processes the "first time connect" branch
-	}
 	if (currentState == LobbyConnectionState::Connecting_WaitingForResponse || currentState == LobbyConnectionState::Connected)
 	{
 		return false; // already connecting or connected
@@ -3843,7 +3835,7 @@ bool LobbyServerConnectionHandler::disconnect()
 
 void LobbyServerConnectionHandler::sendUpdate()
 {
-	if (lobby_disabled || server_not_there)
+	if (server_not_there)
 	{
 		if (currentState != LobbyConnectionState::Disconnected)
 		{
@@ -3867,15 +3859,6 @@ void LobbyServerConnectionHandler::sendUpdate()
 void LobbyServerConnectionHandler::sendUpdateNow()
 {
 	ASSERT_OR_RETURN(, rs_socket != nullptr, "Null socket");
-	if (lobby_disabled)
-	{
-		if (currentState != LobbyConnectionState::Disconnected)
-		{
-			disconnect();
-		}
-		return;
-	}
-
 	if (!NETsendGAMESTRUCT(rs_socket, &gamestruct).has_value())
 	{
 		disconnect();
