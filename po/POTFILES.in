@@ -560,7 +560,6 @@ src/titleui/widgets/optionsform.cpp
 src/titleui/widgets/starthostingbutton.cpp
 src/titleui/widgets/titleformwrapper.cpp
 src/transporter.cpp
-src/updatemanager.cpp
 src/urlhelpers.cpp
 src/urlrequest.cpp
 src/urlrequest_curl.cpp

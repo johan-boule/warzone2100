@@ -19193,12 +19193,10 @@ msgid "Your client cannot connect to the mutiplayer lobby."
 msgstr ""
 
 #: src/multiint.cpp:6135
-#: src/updatemanager.cpp:631
 msgid "Please click the button below for more information on how to fix it."
 msgstr ""
 
 #: src/multiint.cpp:6138
-#: src/updatemanager.cpp:637
 msgid "More Information"
 msgstr ""
 
@@ -21971,40 +21969,6 @@ msgstr ""
 
 #: src/transporter.cpp:1251
 msgid "Reinforcements landing"
-msgstr ""
-
-#: src/updatemanager.cpp:482
-msgid "Update Available"
-msgstr ""
-
-#: src/updatemanager.cpp:485
-#, c-format
-msgid "A new build of Warzone 2100 (%s) is available!"
-msgstr ""
-
-#: src/updatemanager.cpp:489
-msgid "This new version includes important bug fixes and updates, and it is recommended that you update now."
-msgstr ""
-
-#: src/updatemanager.cpp:494
-msgid "A new build of Warzone 2100 is available!"
-msgstr ""
-
-#: src/updatemanager.cpp:496
-msgid "Get Update Now"
-msgstr ""
-
-#: src/updatemanager.cpp:628
-msgid "Compatibility Warning"
-msgstr ""
-
-#: src/updatemanager.cpp:629
-msgid "An issue has been detected that may affect Warzone 2100's operation / performance."
-msgstr ""
-
-#: src/updatemanager.cpp:635
-#, c-format
-msgid "(Notice ID: %s)"
 msgstr ""
 
 #. TRANSLATORS: Printed when compiling with uncommitted changes
