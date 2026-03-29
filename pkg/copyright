@@ -39,7 +39,6 @@ Files: lib/exceptionhandler/exceptionhandler.*
        src/notifications.*
        src/qtscript*.*
        src/template.h
-       src/updatemanager.*
        src/urlhelpers.*
        src/urlrequest.*
        src/wzpropertyproviders.*
@@ -182,12 +181,6 @@ License: Expat
 Files: 3rdparty/utfcpp/*
 Copyright: 2006-2018 Nemanja Trifunovic
 License: BSL-1.0
-
-Files: pkg/nsis/*.nsi
-       pkg/nsis/NSIS.template.in
-Copyright: 2006 Dennis Schridde
-           2006-2020 Warzone 2100 Project
-License: GPL-2+
 
 Files: po/*.po
 Copyright: 2007-2008 Warzone 2100 Resurrection Project

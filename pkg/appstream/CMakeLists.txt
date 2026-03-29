@@ -2,7 +2,7 @@ if(UNIX AND NOT APPLE AND NOT WIN32 AND NOT EMSCRIPTEN)
 	include(GNUInstallDirs)
 
 	if (NOT DEFINED WZ_APPSTREAM_ID)
-		set(WZ_APPSTREAM_ID "net.wz2100.warzone2100")
+		set(WZ_APPSTREAM_ID info.retropaganda.warzone2100)
 	endif()
 
 	############################
@@ -13,7 +13,7 @@ if(UNIX AND NOT APPLE AND NOT WIN32 AND NOT EMSCRIPTEN)
 	set_source_files_properties("${wz2100_autorevision_h_file}" PROPERTIES GENERATED TRUE)
 
 	# Generate the metainfo.xml info (with version info)
-	set(_metainfo_xml_template_file "${CMAKE_CURRENT_SOURCE_DIR}/net.wz2100.warzone2100.metainfo.xml.in")
+	set(_metainfo_xml_template_file "${CMAKE_CURRENT_SOURCE_DIR}/info.retropaganda.warzone2100.metainfo.xml.in")
 	set(_metainfo_xml_output_file "${CMAKE_CURRENT_BINARY_DIR}/${WZ_APPSTREAM_ID}${WZ_OUTPUT_NAME_SUFFIX}.metainfo.xml")
 	add_custom_command(
 		OUTPUT "${_metainfo_xml_output_file}"
@@ -39,7 +39,7 @@ if(UNIX AND NOT APPLE AND NOT WIN32 AND NOT EMSCRIPTEN)
 		unset(WZ_OUTPUT_BINARY_SUFFIX)
 	endif()
 
-	configure_file("net.wz2100.warzone2100.desktop.in" "${CMAKE_CURRENT_BINARY_DIR}/${WZ_APPSTREAM_ID}${WZ_OUTPUT_NAME_SUFFIX}.desktop" @ONLY)
+	configure_file("info.retropaganda.warzone2100.desktop.in" "${CMAKE_CURRENT_BINARY_DIR}/${WZ_APPSTREAM_ID}${WZ_OUTPUT_NAME_SUFFIX}.desktop" @ONLY)
 
 	############################
 	# Install both

@@ -7737,8 +7737,8 @@ msgstr "Opțiuni"
 msgid "View Intro"
 msgstr "Vizualizare film de început"
 
-msgid "Videos are missing, download them from http://wz2100.net"
-msgstr "Lipsesc secvențele, descarcă-le de la http://wz2100.net"
+msgid "Videos are missing, download them from https://warzone2100.retropaganda.info"
+msgstr "Lipsesc secvențele, descarcă-le de la https://warzone2100.retropaganda.info"
 
 msgid "Continue Last Save"
 msgstr ""
@@ -7752,22 +7752,22 @@ msgstr "Ieșire din joc"
 msgid "MAIN MENU"
 msgstr "MENIU PRINCIPAL"
 
-msgid "Official site: http://wz2100.net/"
+msgid "Web site: https://warzone2100.retropaganda.info"
 msgstr ""
 
 msgid "Come visit the forums and all Warzone 2100 news! Click this link."
 msgstr ""
 
-msgid "Donate: http://donations.wz2100.net/"
+msgid "Donate: no donations"
 msgstr ""
 
 msgid "Help support the project with our server costs, Click this link."
 msgstr "Ajută la susținerea proiectului nostru cu costurile serverului, faceți click pe acest link."
 
-msgid "Chat with players on Discord or IRC"
+msgid "Chat with players on Discord or Concord"
 msgstr ""
 
-msgid "Connect to Discord or Freenode through webchat by clicking this link."
+msgid "Connect to Discord or Concord through webchat by clicking this link."
 msgstr ""
 
 msgid "Check for a newer version"
@@ -7804,7 +7804,7 @@ msgstr ""
 msgid "SINGLE PLAYER"
 msgstr "JOC INDIVIDUAL"
 
-msgid "Campaign videos are missing! Get them from http://wz2100.net"
+msgid "Campaign videos are missing! Get them from https://warzone2100.retropaganda.info"
 msgstr ""
 
 msgid "Load Campaign Saved Game"
@@ -10015,8 +10015,8 @@ msgstr "%s se alătură jocului"
 msgid "Server message:"
 msgstr "Mesaj server:"
 
-msgid "There is an update to the game, please visit https://wz2100.net to download new version."
-msgstr "Există o actualizare a jocului, te rugăm să vizitezi http://wz2100.net pentru a descărca versiunea nouă."
+msgid "There is an update to the game, please visit https://warzone2100.retropaganda.info to download new version."
+msgstr "Există o actualizare a jocului, te rugăm să vizitezi https://warzone2100.retropaganda.info pentru a descărca versiunea nouă."
 
 msgid "LIMITS"
 msgstr "LIMITE"

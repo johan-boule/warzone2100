@@ -19,7 +19,7 @@ Anything that's listed as `(JSON Localized String)` may either be:
   ```
   - Note:
     - The base / default language for the game is English (`"en"`). We strongly recommend that you _always_ provide an `en` translation of all localized strings.
-    - The language codes correspond to the ones supported by the game (see the `.po` files in: https://github.com/Warzone2100/warzone2100/tree/master/po)
+    - The language codes correspond to the ones supported by the game (see the `.po` files in the `/po` directory)
 
 ## Recommendations:
 

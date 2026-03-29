@@ -473,7 +473,7 @@ bool loadConfig()
 	radarRotationArrow = iniGetBool("radarRotationArrow", true).value();
 	hostQuitConfirmation = iniGetBool("hostQuitConfirmation", true).value();
 	war_SetPauseOnFocusLoss(iniGetBool("PauseOnFocusLoss", false).value());
-	NETsetMasterserverName(iniGetString("masterserver_name", "lobby.wz2100.net").value().c_str());
+	NETsetMasterserverName(iniGetString("masterserver_name", "warzone2100.retropaganda.info").value().c_str());
 	mpSetServerName(iniGetString("server_name", "").value());
 //	iV_font(ini.value("fontname", "DejaVu Sans").toString().toUtf8().constData(),
 //	        ini.value("fontface", "Book").toString().toUtf8().constData(),

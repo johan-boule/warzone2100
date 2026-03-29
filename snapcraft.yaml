@@ -29,8 +29,8 @@ apps:
   warzone2100:
     extensions: [gnome]
     command: usr/bin/warzone2100-launcher.sh warzone2100
-    common-id: net.wz2100.warzone2100 # should match the appdata/metainfo file's <id> field
-    desktop: usr/share/applications/net.wz2100.warzone2100.desktop
+    common-id: info.retropaganda.warzone2100 # should match the appdata/metainfo file's <id> field
+    desktop: usr/share/applications/info.retropaganda.warzone2100.desktop
     environment:
       XDG_DATA_HOME: $SNAP_USER_COMMON
       XDG_CONFIG_HOME: $SNAP_USER_COMMON
@@ -147,7 +147,7 @@ parts:
     parse-info:
       # Parse this appdata/metainfo file for summary, description,
       # and icon. Use the installed path relative to the Snap's root
-      - usr/share/metainfo/net.wz2100.warzone2100.metainfo.xml
+      - usr/share/metainfo/info.retropaganda.warzone2100.metainfo.xml
     override-pull: |
       craftctl default
       SNAP_VERSION_DESC=$(git describe --always | sed 's/[^a-zA-Z0-9\.\:\+\~\-]/~/g')
@@ -169,7 +169,7 @@ parts:
 
       # Include the icon's path in the desktop file, not just the name.
       # This needs to happen post-build or the build versioning will show as "modified locally"
-      sed -i -E 's|Icon=(.*)|Icon=/usr/share/icons/\1.png|' $CRAFT_PART_INSTALL/usr/share/applications/net.wz2100.warzone2100.desktop
+      sed -i -E 's|Icon=(.*)|Icon=/usr/share/icons/\1.png|' $CRAFT_PART_INSTALL/usr/share/applications/info.retropaganda.warzone2100.desktop
     # Note: Some packages are provided by the gnome extension, and are commented out below
     # See: https://snapcraft.io/docs/gnome-extension#heading--packages
     # And: https://github.com/ubuntu/gnome-sdk/blob/gnome-42-2204-sdk/snapcraft.yaml, https://github.com/ubuntu/gnome-sdk/blob/gnome-42-2204/snapcraft.yaml

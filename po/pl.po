@@ -7747,8 +7747,8 @@ msgstr "Opcje"
 msgid "View Intro"
 msgstr "Zobacz intro"
 
-msgid "Videos are missing, download them from http://wz2100.net"
-msgstr "Brakuje plików wideo, pobierz je ze strony http://wz2100.net"
+msgid "Videos are missing, download them from https://warzone2100.retropaganda.info"
+msgstr "Brakuje plików wideo, pobierz je ze strony https://warzone2100.retropaganda.info"
 
 msgid "Continue Last Save"
 msgstr "Wczytaj ostatni zapis"
@@ -7762,23 +7762,23 @@ msgstr "Wyjdź z gry"
 msgid "MAIN MENU"
 msgstr "MENU GŁÓWNE"
 
-msgid "Official site: http://wz2100.net/"
-msgstr "Oficjalna strona: http://wz2100.net/"
+msgid "Web site: https://warzone2100.retropaganda.info"
+msgstr "Web strona: https://warzone2100.retropaganda.info"
 
 msgid "Come visit the forums and all Warzone 2100 news! Click this link."
 msgstr "Przejrzyj fora i wszystkie newsy o Warzone 2100! Kliknij ten link."
 
-msgid "Donate: http://donations.wz2100.net/"
-msgstr "Dotacja: http://donations.wz2100.net/"
+msgid "Donate: no donations"
+msgstr "Dotacja: no donations"
 
 msgid "Help support the project with our server costs, Click this link."
 msgstr ""
 
-msgid "Chat with players on Discord or IRC"
-msgstr "Czat z graczami na Discordzie lub IRC"
+msgid "Chat with players on Discord or Concord"
+msgstr "Czat z graczami na Discordzie lub Concord"
 
-msgid "Connect to Discord or Freenode through webchat by clicking this link."
-msgstr "Połącz się z Discordem lub Freenode, klikając ten link."
+msgid "Connect to Discord or Concord through webchat by clicking this link."
+msgstr "Połącz się z Discordem lub Concord, klikając ten link."
 
 msgid "Check for a newer version"
 msgstr "Sprawdź czy jest nowa wersja"
@@ -7814,8 +7814,8 @@ msgstr ""
 msgid "SINGLE PLAYER"
 msgstr "JEDEN GRACZ"
 
-msgid "Campaign videos are missing! Get them from http://wz2100.net"
-msgstr "Materiały wideo kampanii są niedostępne! Pobierz je z http://wz2100.net"
+msgid "Campaign videos are missing! Get them from https://warzone2100.retropaganda.info"
+msgstr "Materiały wideo kampanii są niedostępne! Pobierz je z https://warzone2100.retropaganda.info"
 
 msgid "Load Campaign Saved Game"
 msgstr "Załaduj zapisany stan kampanii"
@@ -10029,8 +10029,8 @@ msgstr "%s dołącza do gry"
 msgid "Server message:"
 msgstr "Wiadomość serwera:"
 
-msgid "There is an update to the game, please visit https://wz2100.net to download new version."
-msgstr "Dostępna jest aktualizacja gry, odwiedź https://wz2100.net, aby pobrać nową wersję."
+msgid "There is an update to the game, please visit https://warzone2100.retropaganda.info to download new version."
+msgstr "Dostępna jest aktualizacja gry, odwiedź https://warzone2100.retropaganda.info, aby pobrać nową wersję."
 
 msgid "LIMITS"
 msgstr "OGRANICZENIA"

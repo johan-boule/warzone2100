@@ -7743,8 +7743,8 @@ msgstr "Možnosti"
 msgid "View Intro"
 msgstr "Oglejte si začetni film"
 
-msgid "Videos are missing, download them from http://wz2100.net"
-msgstr "Videoposnetki manjkajo, prenesite jih iz http://wz2100.net"
+msgid "Videos are missing, download them from https://warzone2100.retropaganda.info"
+msgstr "Videoposnetki manjkajo, prenesite jih iz https://warzone2100.retropaganda.info"
 
 msgid "Continue Last Save"
 msgstr "Nadaljuj zadnji shranjeni položaj"
@@ -7758,22 +7758,22 @@ msgstr "Končaj igro"
 msgid "MAIN MENU"
 msgstr "GLAVNI MENI"
 
-msgid "Official site: http://wz2100.net/"
-msgstr "Uradna stran: http://wz2100.net/"
+msgid "Web site: https://warzone2100.retropaganda.info"
+msgstr "Web stran: https://warzone2100.retropaganda.info"
 
 msgid "Come visit the forums and all Warzone 2100 news! Click this link."
 msgstr "Obiščite forume in vse Warzone 2100 novice! Kliknite to povezavo."
 
-msgid "Donate: http://donations.wz2100.net/"
-msgstr "Prispevajte: http://donations.wz2100.net/"
+msgid "Donate: no donations"
+msgstr "Prispevajte: no donations"
 
 msgid "Help support the project with our server costs, Click this link."
 msgstr "Pomagajte podpreti projekt z našimi strežniškimi stroški, kliknite to povezavo."
 
-msgid "Chat with players on Discord or IRC"
+msgid "Chat with players on Discord or Concord"
 msgstr ""
 
-msgid "Connect to Discord or Freenode through webchat by clicking this link."
+msgid "Connect to Discord or Concord through webchat by clicking this link."
 msgstr ""
 
 msgid "Check for a newer version"
@@ -7810,8 +7810,8 @@ msgstr ""
 msgid "SINGLE PLAYER"
 msgstr "EN IGRALEC"
 
-msgid "Campaign videos are missing! Get them from http://wz2100.net"
-msgstr "Kampanjski videoposnetki manjkajo! Dobite jih na http://wz2100.net"
+msgid "Campaign videos are missing! Get them from https://warzone2100.retropaganda.info"
+msgstr "Kampanjski videoposnetki manjkajo! Dobite jih na https://warzone2100.retropaganda.info"
 
 msgid "Load Campaign Saved Game"
 msgstr "Naloži shranjeno kampanjsko igro"
@@ -10021,7 +10021,7 @@ msgstr "%s se pridružuje igri"
 msgid "Server message:"
 msgstr "Sporočilo strežnika:"
 
-msgid "There is an update to the game, please visit https://wz2100.net to download new version."
+msgid "There is an update to the game, please visit https://warzone2100.retropaganda.info to download new version."
 msgstr ""
 
 msgid "LIMITS"

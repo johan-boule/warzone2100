@@ -82,7 +82,7 @@ set(CPACK_PACKAGE_VENDOR		"Warzone 2100 Project")
 set(CPACK_RESOURCE_FILE_LICENSE "${WZ_DIST_LICENSE}")
 set(CPACK_PACKAGE_CHECKSUM		SHA256)
 set(CPACK_PACKAGE_DESCRIPTION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/Description.txt")
-set(CPACK_PACKAGE_HOMEPAGE_URL  "https://wz2100.net")
+set(CPACK_PACKAGE_HOMEPAGE_URL  https://warzone2100.retropaganda.info)
 
 #########################
 # Default components that are added to package
@@ -157,134 +157,7 @@ if(NOT DEFINED CPACK_SOURCE_PACKAGE_FILE_NAME)
 endif()
 
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
-	# When targeting Windows, build the NSIS installer
-
-	set(CPACK_GENERATOR "NSIS")
-
-	set(INSTALLER_EXTDIR "" CACHE STRING "NSIS ext dir")
-	set(INSTALLER_COMPRESSION 1 CACHE STRING "NSIS compression level")
-
-	# Retrieve the warzone2100 executable file output_name
-	# (This is set by src/CMakeLists.txt)
-	get_target_property(_warzone_target_output_name warzone2100 OUTPUT_NAME)
-	if("${_warzone_target_output_name}" STREQUAL "NOTFOUND")
-		message( FATAL_ERROR "Could not retrieve the OUTPUT_NAME from the warzone2100 target. Is this file being included after the file that creates the target?" )
-	endif()
-
-	set(PACKAGE "${_warzone_target_output_name}")
-
-	# For the portable build, install `launch_warzone.bat` in the base folder
-	install(FILES
-		"${CMAKE_CURRENT_SOURCE_DIR}/nsis/launch_warzone.bat"
-		COMPONENT PortableConfig DESTINATION "."
-	)
-
-	set(SOURCE_DIR "${CMAKE_SOURCE_DIR}")
-	set(BUILD_DIR "${CMAKE_BINARY_DIR}")
-
-	if(NOT DEFINED WZ_DATADIR)
-		message(FATAL_ERROR "This file should be included in the project's root CMakeLists.txt, after WZ_DATADIR is defined.")
-	endif()
-	if(NOT WZ_DATADIR_ISABSOLUTE)
-		set(NSIS_WZ_DATADIR_APPEND "${WZ_DATADIR}")
-		# NSIS expects backslashes
-		string(REGEX REPLACE "/" "\\\\" NSIS_WZ_DATADIR_APPEND "${NSIS_WZ_DATADIR_APPEND}")
-	else()
-		message(FATAL_ERROR "NSIS installer does not support absolute WZ_DATADIR")
-	endif()
-
-	# Localize component names & descriptions
-	set(CPACK_COMPONENT_GROUP_COREGROUP_DISPLAY_NAME "$(TEXT_SecBase)")
-	set(CPACK_COMPONENT_GROUP_COREGROUP_DESCRIPTION "$(DESC_SecBase)")
-	set(CPACK_COMPONENT_LANGUAGES_DISPLAY_NAME "$(TEXT_SecNLS)")
-	set(CPACK_COMPONENT_LANGUAGES_DESCRIPTION "$(DESC_SecNLS)")
-
-	if(MSVC OR MINGW) # MINGW may link with the Universal C Runtime, and the VC runtime installer can be used to ensure that system component is installed
-		set(NSIS_MSVCRUNTIME "on")
-		# Determine the latest available version of the MSVC runtime
-		# Fetch https://aka.ms/vs/17/release/vc_redist.x64.exe
-		set(_vcredict_dl_url "https://aka.ms/vs/17/release/vc_redist.x64.exe")
-		set(_tmp_vcredist_dl_path "${CMAKE_BINARY_DIR}/_tmp/vc_redist.x64.exe")
-		downloadFile("${_vcredict_dl_url}" "${_tmp_vcredist_dl_path}" 3 _dl_status_code _dl_status_string)
-		if (_dl_status_code EQUAL 0)
-			# Download succeeded - extract version info
-			if(CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
-				execute_process(COMMAND powershell -ExecutionPolicy Bypass -Command "(Get-Command \"${_tmp_vcredist_dl_path}\").FileVersionInfo.FileBuildPart" OUTPUT_VARIABLE _dl_vcredist_bld_version OUTPUT_STRIP_TRAILING_WHITESPACE)
-				message(STATUS "Latest vc_redist FileBuildPart: \"${_dl_vcredist_bld_version}\"")
-				set(NSIS_CALCULATED_MSVCRT_BLD_MINIMUM "${_dl_vcredist_bld_version}")
-			endif()
-		else()
-			message(WARNING "Failed to fetch: ${_vcredict_dl_url}; error: \"${_dl_status_string}\"")
-		endif()
-		# Determine the latest available AppLocalConfig
-		set(_applocalconfig_buildinfo_dl_url "https://github.com/past-due/applocalconfig/releases/latest/download/BUILD_INFO.md")
-		set(_tmp_applocalconfig_dir "${CMAKE_BINARY_DIR}/_tmp/applocalconfig")
-		set(_tmp_applocalconfig_buildinfo_path "${_tmp_applocalconfig_dir}/BUILD_INFO.md")
-		downloadFile("${_applocalconfig_buildinfo_dl_url}" "${_tmp_applocalconfig_buildinfo_path}" 3 _dl_status_code _dl_status_string)
-		if (_dl_status_code EQUAL 0)
-			# Extract the version from the first line of the BUILD_INFO.md
-			file(STRINGS "${_tmp_applocalconfig_buildinfo_path}" _applocalconfig_build_info_strings LIMIT_COUNT 1)
-			list(GET _applocalconfig_build_info_strings 0 NSIS_APPLOCALCONFIG_VERSION)
-			message(STATUS "NSIS_APPLOCALCONFIG_VERSION: \"${NSIS_APPLOCALCONFIG_VERSION}\"")
-			# Calculate the hashes for the current version
-			downloadFileCalculateHash("https://github.com/past-due/applocalconfig/releases/download/${NSIS_APPLOCALCONFIG_VERSION}/applocalconfig-vc2022-x86.zip" "${_tmp_applocalconfig_dir}" SHA512 _applocalconfig_x86_sha512)
-			downloadFileCalculateHash("https://github.com/past-due/applocalconfig/releases/download/${NSIS_APPLOCALCONFIG_VERSION}/applocalconfig-vc2022-x64.zip" "${_tmp_applocalconfig_dir}" SHA512 _applocalconfig_x64_sha512)
-			downloadFileCalculateHash("https://github.com/past-due/applocalconfig/releases/download/${NSIS_APPLOCALCONFIG_VERSION}/applocalconfig-vc2022-arm64.zip" "${_tmp_applocalconfig_dir}" SHA512 _applocalconfig_arm64_sha512)
-			if(NOT _applocalconfig_x86_sha512 OR NOT _applocalconfig_x64_sha512 OR NOT _applocalconfig_arm64_sha512)
-				message(FATAL_ERROR "Unable to fetch / calculate hash for applocalconfig: ${NSIS_APPLOCALCONFIG_VERSION}")
-			endif()
-			set(NSIS_APPLOCALCONFIG_SHA512_X86 "${_applocalconfig_x86_sha512}")
-			set(NSIS_APPLOCALCONFIG_SHA512_X64 "${_applocalconfig_x64_sha512}")
-			set(NSIS_APPLOCALCONFIG_SHA512_ARM64 "${_applocalconfig_arm64_sha512}")
-			message(STATUS "NSIS_APPLOCALCONFIG_SHA512_X86: \"${NSIS_APPLOCALCONFIG_SHA512_X86}\"")
-			message(STATUS "NSIS_APPLOCALCONFIG_SHA512_X64: \"${NSIS_APPLOCALCONFIG_SHA512_X64}\"")
-			message(STATUS "NSIS_APPLOCALCONFIG_SHA512_ARM64: \"${NSIS_APPLOCALCONFIG_SHA512_ARM64}\"")
-
-			if(MSVC)
-				set(WZ_VS_PLATFORM_NAME "${CMAKE_VS_PLATFORM_NAME}")
-			elseif(MINGW)
-				# Map target arch to WZ_VS_PLATFORM_NAME
-				include(TargetArch)
-				target_architecture(_mingw_target_arch)
-				if(_mingw_target_arch MATCHES "^arm")
-					if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-						set(WZ_VS_PLATFORM_NAME "arm64")
-					elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
-						set(WZ_VS_PLATFORM_NAME "arm")
-					else()
-						message(FATAL_ERROR "Unsupported CMAKE_SIZEOF_VOID_P: ${CMAKE_SIZEOF_VOID_P}")
-					endif()
-				elseif(_mingw_target_arch STREQUAL "x86_64")
-					set(WZ_VS_PLATFORM_NAME "x64")
-				elseif(_mingw_target_arch STREQUAL "i386")
-					set(WZ_VS_PLATFORM_NAME "Win32")
-				else()
-					message(FATAL_ERROR "Unsupported MINGW target arch: \"${_mingw_target_arch}\"")
-				endif()
-				message(STATUS "WZ_VS_PLATFORM_NAME: ${WZ_VS_PLATFORM_NAME}")
-			endif()
-		else()
-			message(FATAL_ERROR "Failed to fetch: ${_applocalconfig_buildinfo_dl_url}; error: \"${_dl_status_string}\"")
-		endif()
-	else()
-		unset(NSIS_MSVCRUNTIME)
-	endif()
-
-	# Note: NSIS.definitions.in also uses WZ_PORTABLE directly
-	configure_file(
-		${CMAKE_CURRENT_SOURCE_DIR}/nsis/NSIS.definitions.in
-		${CMAKE_BINARY_DIR}/NSIS.definitions.nsh
-	)
-
-	# IMPORTANT: To generate the NSIS script, CPack must use `nsis/NSIS.template.in`
-	list(INSERT CPACK_MODULE_PATH 0 "${CMAKE_CURRENT_SOURCE_DIR}/nsis")
-
-	# NSIS installer should always have component installation enabled
-	set(CPACK_NSIS_COMPONENT_INSTALL ON)
-
-	# Additional information
-	set(CPACK_NSIS_HELP_LINK "https://wz2100.net")
-	set(CPACK_NSIS_URL_INFO_ABOUT "https://wz2100.net")
+	message(FATAL_ERROR "When targeting Windows, build the NSIS installer.... well then why does the CI builds with InnoSetup then?")
 
 elseif(CMAKE_SYSTEM_NAME MATCHES "Darwin")
 	# macOS builds
@@ -332,14 +205,14 @@ set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
 set(CPACK_RPM_PACKAGE_SUMMARY   "Innovative 3D real-time strategy")
 set(CPACK_RPM_PACKAGE_GROUP     "Amusements/Games")
 set(CPACK_RPM_PACKAGE_LICENSE   "GPLv2+ and CC-BY-SA")
-set(CPACK_RPM_PACKAGE_URL       "https://wz2100.net/")
+set(CPACK_RPM_PACKAGE_URL       "https://warzone2100.retropaganda.info")
 
 #####################
 # DEB Settings
 
 set(CPACK_DEBIAN_PACKAGE_NAME "warzone2100")
 set(CPACK_DEBIAN_PACKAGE_SECTION  "games")
-set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://wz2100.net/")
+set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://warzone2100.retropaganda.info")
 
 set(CPACK_DEBIAN_ENABLE_COMPONENT_DEPENDS ON)
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)

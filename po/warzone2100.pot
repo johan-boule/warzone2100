@@ -7,7 +7,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: warzone2100\n"
-"Report-Msgid-Bugs-To: warzone2100-project@lists.sourceforge.net\n"
+"Report-Msgid-Bugs-To: johan-boule@users.sourceforge.net\n"
 "POT-Creation-Date: 2026-02-03 01:34+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
@@ -16267,7 +16267,7 @@ msgid "View Intro"
 msgstr ""
 
 #: src/frontend.cpp:228
-msgid "Videos are missing, download them from http://wz2100.net"
+msgid "Videos are missing, download them from https://warzone2100.retropaganda.info"
 msgstr ""
 
 #: src/frontend.cpp:235
@@ -16288,7 +16288,7 @@ msgid "MAIN MENU"
 msgstr ""
 
 #: src/frontend.cpp:245
-msgid "Official site: http://wz2100.net/"
+msgid "Web site: https://warzone2100.retropaganda.info"
 msgstr ""
 
 #: src/frontend.cpp:246
@@ -16296,7 +16296,7 @@ msgid "Come visit the forums and all Warzone 2100 news! Click this link."
 msgstr ""
 
 #: src/frontend.cpp:247
-msgid "Donate: http://donations.wz2100.net/"
+msgid "Donate: no donations"
 msgstr ""
 
 #: src/frontend.cpp:249
@@ -16304,11 +16304,11 @@ msgid "Help support the project with our server costs, Click this link."
 msgstr ""
 
 #: src/frontend.cpp:250
-msgid "Chat with players on Discord or IRC"
+msgid "Chat with players on Discord or Concord"
 msgstr ""
 
 #: src/frontend.cpp:252
-msgid "Connect to Discord or Freenode through webchat by clicking this link."
+msgid "Connect to Discord or Concord through webchat by clicking this link."
 msgstr ""
 
 #: src/frontend.cpp:253
@@ -16363,7 +16363,7 @@ msgid "SINGLE PLAYER"
 msgstr ""
 
 #: src/frontend.cpp:395
-msgid "Campaign videos are missing! Get them from http://wz2100.net"
+msgid "Campaign videos are missing! Get them from https://warzone2100.retropaganda.info"
 msgstr ""
 
 #: src/frontend.cpp:461
@@ -19435,7 +19435,7 @@ msgid "Server message:"
 msgstr ""
 
 #: src/multijoin.cpp:763
-msgid "There is an update to the game, please visit https://wz2100.net to download new version."
+msgid "There is an update to the game, please visit https://warzone2100.retropaganda.info to download new version."
 msgstr ""
 
 #. TRANSLATORS: Sidetext of structure limits screen

@@ -169,9 +169,9 @@
 #pragma error "Setup script expects locale folder to be '" WZ_LOCALEDIR "', but it seems to be missing at: " + AddBackslash(SOURCE_DIR) + WZ_LOCALEDIR
 #endif
 
-#define MyAppPublisher "Warzone 2100 Project"
-#define MyAppPublisherURL "https://github.com/Warzone2100"
-#define MyAppURL "https://wz2100.net"
+#define MyAppPublisher "Johan Boule"
+#define MyAppPublisherURL "https://github.com/johan-boule/warzone2100"
+#define MyAppURL "https://warzone2100.retropaganda.info"
 #define MyAppExeName WZ_EXECUTABLE_NAME
 
 #define MSVCRUNTIME
@@ -225,7 +225,7 @@ AppUpdatesURL={#MyAppURL}
 
 // File VersionInfo
 VersionInfoCompany={#MyAppPublisher}
-VersionInfoCopyright=Copyright © 2024-2025 Warzone 2100 Project (https://github.com/Warzone2100)
+VersionInfoCopyright=Copyright © 1999-2000 Eidos Interactive & Pumpkin Studios, 2004-2026 Warzone 2100 Project & Individuals
 VersionInfoDescription={#MyAppName} Installer
 VersionInfoProductName={#MyAppName}
 VersionInfoProductTextVersion={#MyAppInstallerProductTextVersion}
@@ -410,7 +410,7 @@ Source: "{#WZ_DATADIR}\terrain_overrides\classic.wz"; DestDir: "{app}\{#WZ_DATAD
 Source: "{#WZ_DATADIR}\music\*"; DestDir: "{app}\{#WZ_DATADIR}\music"; Components: core; Flags: ignoreversion
 Source: "{#WZ_DATADIR}\music\albums\original_soundtrack\*"; DestDir: "{app}\{#WZ_DATADIR}\music\albums\original_soundtrack"; Components: core; Flags: ignoreversion recursesubdirs createallsubdirs
 // Core Data: Portable Mode Files
-Source: "{#AddBackslash(SourcePath) + "launch_warzone.bat"}"; DestDir: "{app}"; Components: core; Flags: ignoreversion; Check: IsPortableMode
+Source: "{#AddBackslash(SourcePath) + "warzone2100.cmd"}"; DestDir: "{app}"; Components: core; Flags: ignoreversion; Check: IsPortableMode
 // - Note: Creation of the .portable mode config file occurs via code in CurStepChanged(CurStep = ssPostInstall)
 // Addon: High Quality Terrain
 Source: "{#WZ_DATADIR}\terrain_overrides\high.wz"; DestDir: "{app}\{#WZ_DATADIR}\terrain_overrides"; Components: addons\terrain_hq; Flags: ignoreversion
@@ -709,9 +709,5 @@ begin
       Log('Creating portable config file: ' + PortableConfigFilePath);
       SaveStringToFile(PortableConfigFilePath, '# A {#WZ_PORTABLEMODE_CONFIG_FILE_NAME} file in the same directory as the warzone2100 executable enables Portable mode.' + #13#10 + '#' + #13#10 + '# All Warzone 2100 user data will be saved in a subfolder of the directory that contains the warzone2100 executable.' + #13#10, False);
     end;
-  end;
-  if CurStep = ssDone then
-  begin
-    ShellExecAsOriginalUser('open', 'https://warzone2100.github.io/update-data/redirect/afterinstall.html', '', '', SW_SHOW, ewNoWait, ErrCode);
   end;
 end;

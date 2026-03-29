@@ -7723,8 +7723,8 @@ msgstr "Asetukset"
 msgid "View Intro"
 msgstr "Näytä johdanto"
 
-msgid "Videos are missing, download them from http://wz2100.net"
-msgstr "Videot puuttuvat, lataa ne osoitteesta http://wz2100.net"
+msgid "Videos are missing, download them from https://warzone2100.retropaganda.info"
+msgstr "Videot puuttuvat, lataa ne osoitteesta https://warzone2100.retropaganda.info"
 
 msgid "Continue Last Save"
 msgstr "Jatka viimeisintä tallennusta"
@@ -7738,22 +7738,22 @@ msgstr "Poistu pelistä"
 msgid "MAIN MENU"
 msgstr "PÄÄVALIKKO"
 
-msgid "Official site: http://wz2100.net/"
-msgstr "Virallinen sivusto: http://wz2100.net/"
+msgid "Web site: https://warzone2100.retropaganda.info"
+msgstr "Web-sivusto: https://warzone2100.retropaganda.info"
 
 msgid "Come visit the forums and all Warzone 2100 news! Click this link."
 msgstr "Käy foorumeilla ja lue uusimmat Warzone 2100 uutiset! Napsauta tätä linkkiä."
 
-msgid "Donate: http://donations.wz2100.net/"
-msgstr "Lahjoita: http://donations.wz2100.net/"
+msgid "Donate: no donations"
+msgstr "Lahjoita: no donations"
 
 msgid "Help support the project with our server costs, Click this link."
 msgstr "Tue projektia palvelin kustannuksissa. Napsauta tätä linkkiä."
 
-msgid "Chat with players on Discord or IRC"
-msgstr "Keskustele pelaajien kanssa Discordissa tai IRC:issä"
+msgid "Chat with players on Discord or Concord"
+msgstr "Keskustele pelaajien kanssa Discordissa tai Concord:issä"
 
-msgid "Connect to Discord or Freenode through webchat by clicking this link."
+msgid "Connect to Discord or Concord through webchat by clicking this link."
 msgstr ""
 
 msgid "Check for a newer version"
@@ -7790,8 +7790,8 @@ msgstr ""
 msgid "SINGLE PLAYER"
 msgstr "YKSINPELI"
 
-msgid "Campaign videos are missing! Get them from http://wz2100.net"
-msgstr "Kampanjavideot puuttuvat! Hae ne osoitteesta http://wz2100.net"
+msgid "Campaign videos are missing! Get them from https://warzone2100.retropaganda.info"
+msgstr "Kampanjavideot puuttuvat! Hae ne osoitteesta https://warzone2100.retropaganda.info"
 
 msgid "Load Campaign Saved Game"
 msgstr ""
@@ -9998,7 +9998,7 @@ msgstr ""
 msgid "Server message:"
 msgstr ""
 
-msgid "There is an update to the game, please visit https://wz2100.net to download new version."
+msgid "There is an update to the game, please visit https://warzone2100.retropaganda.info to download new version."
 msgstr ""
 
 msgid "LIMITS"

@@ -101,12 +101,7 @@ jobs:
 
         echo "OUTPUT_DIR=output" >> $GITHUB_ENV
 
-        WZ_DISTRIBUTOR="UNKNOWN"
-        if [ "${GITHUB_REPOSITORY}" == "Warzone2100/warzone2100" ]; then
-          WZ_DISTRIBUTOR="wz2100.net"
-        fi
-        echo "WZ_DISTRIBUTOR=${WZ_DISTRIBUTOR}"
-        echo "WZ_DISTRIBUTOR=${WZ_DISTRIBUTOR}" >> $GITHUB_ENV
+        echo WZ_DISTRIBUTOR=${GITHUB_REPOSITORY%/*} >> $GITHUB_ENV
 
         echo "Setting Xcode: ${DESIRED_XCODE_DEV_DIR}"
         sudo xcode-select -s "${DESIRED_XCODE_DEV_DIR}"

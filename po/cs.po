@@ -7735,7 +7735,7 @@ msgstr "Nastavení"
 msgid "View Intro"
 msgstr ""
 
-msgid "Videos are missing, download them from http://wz2100.net"
+msgid "Videos are missing, download them from https://warzone2100.retropaganda.info"
 msgstr ""
 
 msgid "Continue Last Save"
@@ -7750,22 +7750,22 @@ msgstr "Ukončit Hru"
 msgid "MAIN MENU"
 msgstr "HLAVNÍ MENU"
 
-msgid "Official site: http://wz2100.net/"
+msgid "Web site: https://warzone2100.retropaganda.info"
 msgstr ""
 
 msgid "Come visit the forums and all Warzone 2100 news! Click this link."
 msgstr ""
 
-msgid "Donate: http://donations.wz2100.net/"
+msgid "Donate: no donations"
 msgstr ""
 
 msgid "Help support the project with our server costs, Click this link."
 msgstr ""
 
-msgid "Chat with players on Discord or IRC"
+msgid "Chat with players on Discord or Concord"
 msgstr ""
 
-msgid "Connect to Discord or Freenode through webchat by clicking this link."
+msgid "Connect to Discord or Concord through webchat by clicking this link."
 msgstr ""
 
 msgid "Check for a newer version"
@@ -7802,7 +7802,7 @@ msgstr ""
 msgid "SINGLE PLAYER"
 msgstr "HRA JEDNOHO HRÁČE"
 
-msgid "Campaign videos are missing! Get them from http://wz2100.net"
+msgid "Campaign videos are missing! Get them from https://warzone2100.retropaganda.info"
 msgstr ""
 
 msgid "Load Campaign Saved Game"
@@ -10010,7 +10010,7 @@ msgstr ""
 msgid "Server message:"
 msgstr ""
 
-msgid "There is an update to the game, please visit https://wz2100.net to download new version."
+msgid "There is an update to the game, please visit https://warzone2100.retropaganda.info to download new version."
 msgstr ""
 
 msgid "LIMITS"

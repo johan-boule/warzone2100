@@ -757,15 +757,5 @@ void ShowMOTD()
 		ssprintf(buf, "%s", "Null message");
 		addConsoleMessage(buf, DEFAULT_JUSTIFY, NOTIFY_MESSAGE);
 	}
-	if (NetPlay.HaveUpgrade)
-	{
-		audio_PlayBuildFailedOnce();
-		ssprintf(buf, "%s", _("There is an update to the game, please visit https://wz2100.net to download new version."));
-		addConsoleMessage(buf, DEFAULT_JUSTIFY, NOTIFY_MESSAGE);
-	}
-	else
-	{
-		audio_PlayTrack(FE_AUDIO_MESSAGEEND);
-	}
-
+	audio_PlayTrack(FE_AUDIO_MESSAGEEND);
 }

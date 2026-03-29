@@ -245,10 +245,7 @@ jobs:
         # -------------
         # Distributor
 
-        $WZ_DISTRIBUTOR = "UNKNOWN"
-        if (${env:GITHUB_REPOSITORY} -eq "Warzone2100/warzone2100") {
-          $WZ_DISTRIBUTOR = "wz2100.net"
-        }
+        $WZ_DISTRIBUTOR = "${env:GITHUB_REPOSITORY}"
 
         # ----------------
         # Determine vcpkg binary cache directory

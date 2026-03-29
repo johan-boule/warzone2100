@@ -288,9 +288,6 @@
   </head>
   <body class="d-flex text-center text-bg-dark unselectable">
     <svg xmlns="http://www.w3.org/2000/svg" class="d-none">
-      <symbol id="bi-heart" viewBox="0 0 16 16">
-        <path d="m8 2.748-.717-.737C5.6.281 2.514.878 1.4 3.053c-.523 1.023-.641 2.5.314 4.385.92 1.815 2.834 3.989 6.286 6.357 3.452-2.368 5.365-4.542 6.286-6.357.955-1.886.838-3.362.314-4.385C13.486.878 10.4.28 8.717 2.01zM8 15C-7.333 4.868 3.279-3.04 7.824 1.143q.09.083.176.171a3 3 0 0 1 .176-.17C12.72-3.042 23.333 4.867 8 15"/>
-      </symbol>
       <symbol id="bi-discord" viewBox="0 0 16 16">
         <path d="M13.545 2.907a13.2 13.2 0 0 0-3.257-1.011.05.05 0 0 0-.052.025c-.141.25-.297.577-.406.833a12.2 12.2 0 0 0-3.658 0 8 8 0 0 0-.412-.833.05.05 0 0 0-.052-.025c-1.125.194-2.22.534-3.257 1.011a.04.04 0 0 0-.021.018C.356 6.024-.213 9.047.066 12.032q.003.022.021.037a13.3 13.3 0 0 0 3.995 2.02.05.05 0 0 0 .056-.019q.463-.63.818-1.329a.05.05 0 0 0-.01-.059l-.018-.011a9 9 0 0 1-1.248-.595.05.05 0 0 1-.02-.066l.015-.019q.127-.095.248-.195a.05.05 0 0 1 .051-.007c2.619 1.196 5.454 1.196 8.041 0a.05.05 0 0 1 .053.007q.121.1.248.195a.05.05 0 0 1-.004.085 8 8 0 0 1-1.249.594.05.05 0 0 0-.03.03.05.05 0 0 0 .003.041c.24.465.515.909.817 1.329a.05.05 0 0 0 .056.019 13.2 13.2 0 0 0 4.001-2.02.05.05 0 0 0 .021-.037c.334-3.451-.559-6.449-2.366-9.106a.03.03 0 0 0-.02-.019m-8.198 7.307c-.789 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.45.73 1.438 1.613 0 .888-.637 1.612-1.438 1.612m5.316 0c-.788 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.451.73 1.438 1.613 0 .888-.631 1.612-1.438 1.612"/>
       </symbol>
@@ -359,9 +356,8 @@
     <div>
       <span class="h3 float-md-start mb-0"><img src="assets/android-chrome-192x192.png" width="42px" height="42px" class="me-2 nav-wz-img">Warzone 2100 <span class="web-edition-badge d-inline-flex mb-3 px-2 py-1 fw-semibold border rounded-2 align-text-top" id="wz-title-badge">Web Edition</span></span>
       <nav class="nav nav-masthead justify-content-center float-md-end">
-        <a class="nav-link fw-bold py-1 px-0 hide-on-standalone" href="https://wz2100.net" target="_blank" rel="noopener">Get the Full Version</a>
-        <a class="nav-link fw-bold py-1 px-0" title="Donate" href="https://donations.wz2100.net" target="_blank" rel="noopener"><svg class="bi me-1"><use href="#bi-heart"></use></svg>Donate</a>
-        <a class="nav-link fw-bold py-1 px-0" title="Discord Server" href="https://discord.com/invite/ZvRVQ8g" target="_blank" rel="noopener"><svg class="bi"><use href="#bi-discord"></use></svg></a>
+        <a class="nav-link fw-bold py-1 px-0 hide-on-standalone" href="https://warzone2100.retropaganda.info" target="_blank" rel="noopener">Get the Full Version</a>
+        <a class="nav-link fw-bold py-1 px-0" title="Discord Server" href="https://warzone2100.retropaganda.info/chat" target="_blank" rel="noopener"><svg class="bi"><use href="#bi-discord"></use></svg></a>
         <button id="nav-options-button" class="nav-link fw-bold py-1 px-0" title="Options" onclick="wz_open_options_modal()" disabled><svg class="bi"><use href="#bi-gear"></use></svg><span class="d-none show-on-standalone-inline ps-1">Options</span></button>
       </nav>
     </div>
@@ -431,8 +427,6 @@
     <p class="lead">
       <button type="button" class="btn btn-lg btn-outline-secondary fw-bold" id="reload-button" onclick="window.location.reload();"><svg class="bi me-1"><use href="#bi-arrow-clockwise"></use></svg>Reload</button>
     </p>
-    <p class="lead">Or help support by donating:</p>
-    <a class="btn btn-sm btn-outline-secondary btn-block" title="Donate" href="https://donations.wz2100.net" target="_blank" rel="noopener"><svg class="bi me-1"><use href="#bi-heart"></use></svg>Donate</a>
     <div class="alert alert-dark opacity-75 mt-4 small" role="alert" id="viewLogsLink">Troubleshooting: If requested, you can <a onclick="wz_open_logs_modal();" href="#">view logs</a> from this last run.
     </div>
   </main>
@@ -442,7 +436,7 @@
       <div id="full-version-footer-notice" class="hide-on-standalone">
         <p class="lead">Or download the Full Version, with:<br /><small><svg class="bi me-1"><use href="#bi-badge-hd-fill"></use></svg>HQ remastered graphics, <svg class="bi me-1"><use href="#bi-globe2"></use></svg>Online multiplayer, <svg class="bi me-1"><use href="#bi-speedometer"></use></svg>Better performance</small></p>
         <p class="lead">
-          <a href="https://wz2100.net" class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener">Download Warzone 2100</a>
+          <a href="https://warzone2100.retropaganda.info" class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener">Download Warzone 2100</a>
         </p>
       </div>
     </div>
@@ -463,7 +457,7 @@
       <footer class="mt-auto text-white" style="--bs-text-opacity: .5;">
         <p class="hide-on-standalone">Or get the Full Desktop version, with HQ remastered graphics, Online multiplayer, Better performance, and more.</p>
         <p class="hide-on-standalone">
-          <a href="https://wz2100.net" class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener">Download Warzone 2100</a>
+          <a href="https://warzone2100.retropaganda.info" class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener">Download Warzone 2100</a>
         </p>
       </footer>
     </div>
@@ -815,20 +809,9 @@
     let WZ_DATA_FILES_URL_SUBDIR = (() => {
       return window.location.pathname.replace(/[^/]*$/, '');
     })();
-    let WZ_DATA_FILES_URL_HOST = (() => {
-      if (window.location.hostname == 'play.wz2100.net') {
-        return 'https://data.'+window.location.hostname;
-      } else {
-        return '';
-      }
-    })();
-    let WZ_VIDEO_SEQUENCES_BASE_URL = (() => {
-      if (window.location.hostname == 'play.wz2100.net') {
-        return 'https://data.play.wz2100.net/sequences/';
-      } else {
-        return 'sequences/'; // default is just relative to current path
-      }
-    })();
+    // TODO some very messy config in the middle of nowhere
+    let WZ_DATA_FILES_URL_HOST = '';
+    let WZ_VIDEO_SEQUENCES_BASE_URL = 'sequences/';
     let WZ_MUSIC_PKG_SUBDIR = 'pkg/music/';
     let WZ_TERRAIN_PKG_SUBDIR = 'pkg/terrain_overrides/';
     var WZ_CONFIG_DIR_SUFFIX = null; // initialized after async script load

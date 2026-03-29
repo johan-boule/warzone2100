@@ -4,31 +4,7 @@
 Warzone 2100 Quick Start Guide
 ==============================
 
-
-Introduction
-------------
-
 This guide will help you get started playing Warzone 2100.
-
-The Warzone 2100 Project has its website at image:images/www.png[URL]
-https://wz2100.net.
-
-If you want to talk to other Warzone 2100 players, visit the forum at
-image:images/www.png[URL] https://forums.wz2100.net 
-
-You can also talk with us and other players on our official Discord server
-or IRC rooms here: image:images/www.png[URL] https://wz2100.net/webchat/
-
-If you're interested in developing Warzone 2100, the Project is always looking
-for help. Go to image:images/www.png[URL] https://github.com/Warzone2100/warzone2100
-
-If you want more information about Warzone 2100, including mod information,
-individual component statistics, and more, go to image:images/www.png[URL]
-https://betaguide.wz2100.net
-
-Enjoy Warzone 2100!
-
-image::images/logo.png[align="center"]
 
 
 Interface
@@ -301,9 +277,6 @@ unit's experience level will be placed in the next unit that is manufactured.
 Unit experience
 ^^^^^^^^^^^^^^^
 
-See also: image:images/www.png[URL] http://guide.wz2100.net/experience[Unit
-experience]
-
 Units have experience levels depending on how many kills the unit has. A higher
 experience level means that a unit is more accurate, moves faster and takes
 less damage. An icon displaying a unit's rank is displayed next to the unit's
@@ -332,12 +305,9 @@ differences. For one thing, they can 'fly'...
 Design and production
 ~~~~~~~~~~~~~~~~~~~~~
 
-To produce VTOL units, you'll need the image:images/www.png[URL]
-http://guide.wz2100.net/r/vtolpropulsion[VTOL Propulsion] and
-image:images/www.png[URL] http://guide.wz2100.net/r/vtolfactory[VTOL Factory]
+To produce VTOL units, you'll need the VTOL Propulsion and VTOL Factory
 researched, and a VTOL Factory built. You should also research and build a few
-image:images/www.png[URL] http://guide.wz2100.net/r/vtolrearmingpad[VTOL
-Rearming Pads], otherwise, they won't be able to reload ammo.
+VTOL Rearming Pads, otherwise, they won't be able to reload ammo.
 
 Before you produce a VTOL unit, you must design it. VTOLs are designed the same
 way as regular units -- simply select 'VTOL propulsion' -- but they use slightly
@@ -385,7 +355,7 @@ damage, but has limited ammo. VTOL versions of regular weapons, like cyborgs,
 do not need to be researched separately.
 
 In addition to VTOL versions of ground-based direct weapons, VTOLs can also use
-image:images/www.png[URL] http://guide.wz2100.net/w/#vtolbombs[bomb weapons].
+bomb weapons.
 These weapons are the equivalent of artillery, and are very powerful.
 
 Defending against VTOLs
@@ -764,8 +734,7 @@ having 6 non-artillery attacking units assigned to them at first, but this
 limit rises by 2 each time the commander gains a rank, which can happen
 relatively quickly.
 
-Command turrets provide an image:images/www.png[URL]
-http://guide.wz2100.net/experience[accuracy, armor, and movement speed bonus]
+Command turrets provide an accuracy, armor, and movement speed bonus
 to all units assigned to them.
 
 image:images/commander-panel.jpg[]

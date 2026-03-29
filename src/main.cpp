@@ -105,7 +105,6 @@
 #include <time.h>
 #include <LaunchInfo.h>
 #include <sodium.h>
-#include "updatemanager.h"
 #include "activity.h"
 #include "stdinreader.h"
 #include "gamehistorylogger.h"
@@ -1465,58 +1464,6 @@ static bool winCheckIfRunningUnderWine(std::string* output_wineinfostr = nullptr
 #endif /* WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP) */
 }
 
-#define WINEOPENURLWRAPPER(url, cl) \
-openURLInBrowser(url); \
-if (cl) { wzQuit(0); }
-
-void osSpecificPostInit_Win()
-{
-	std::string wineInfoStr;
-	std::string wineHostPlatform;
-	if (winCheckIfRunningUnderWine(&wineInfoStr, &wineHostPlatform))
-	{
-		const char* pWineNativeAvailableMsg = "You are running the Windows version of Warzone 2100 under Wine.\n\nA native version for your platform is likely available (and will perform better).\n\nPlease visit: https://wz2100.net";
-		std::string platformSimple;
-		// Display a messagebox that a native version is available for this platform
-		if (!wineHostPlatform.empty())
-		{
-			if (strncasecmp(wineHostPlatform.c_str(), "Darwin", std::min<size_t>(wineHostPlatform.size(), strlen("Darwin"))) == 0)
-			{
-				// macOS
-				platformSimple = "macOS";
-				pWineNativeAvailableMsg = "You are running the Windows version of Warzone 2100 under Wine.\n\nA native version for macOS is available.\n\nPlease visit: https://wz2100.net";
-			}
-			if (strncasecmp(wineHostPlatform.c_str(), "Linux", std::min<size_t>(wineHostPlatform.size(), strlen("Linux"))) == 0)
-			{
-				// Linux
-				platformSimple = "Linux";
-				pWineNativeAvailableMsg = "You are running the Windows version of Warzone 2100 under Wine.\n\nNative builds for Linux are available.\n\nPlease visit: https://wz2100.net";
-			}
-		}
-
-		wzDisplayDialog(Dialog_Information, "Warzone 2100 under Wine", pWineNativeAvailableMsg);
-
-		std::string url = "https://warzone2100.github.io/update-data/redirect/wine.html";
-		std::string queryString;
-		if (!platformSimple.empty())
-		{
-			queryString += (queryString.empty()) ? "?" : "&";
-			queryString += std::string("platform=") + platformSimple;
-		}
-		std::string variant;
-		if ((GetEnvironmentVariableW(L"STEAM_COMPAT_APP_ID", NULL, 0) > 0) || (GetEnvironmentVariableW(L"SteamAppId", NULL, 0) > 0))
-		{
-			variant = "Proton";
-		}
-		if (!variant.empty())
-		{
-			queryString += (queryString.empty()) ? "?" : "&";
-			queryString += std::string("variant=") + variant;
-		}
-		url += queryString;
-		WINEOPENURLWRAPPER(url.c_str(), !variant.empty())
-	}
-}
 #endif /* defined(WZ_OS_WIN) */
 
 #if defined(__EMSCRIPTEN__)
@@ -1545,28 +1492,6 @@ void osSpecificFirstChanceProcessSetup()
 #if defined(__EMSCRIPTEN__) // must be separate, because WZ_OS_UNIX is also defined for emscripten builds
 	initWZEmscriptenHelpers();
 #endif
-}
-
-void osSpecificPostInit()
-{
-#if defined(WZ_OS_WIN)
-	osSpecificPostInit_Win();
-#elif defined(__EMSCRIPTEN__)
-	initWZEmscriptenHelpers_PostInit();
-#else
-	// currently, no-op
-#endif
-
-	// Perform sanity check that CRC functions were built with proper endianness configuration
-	uint32_t crc = wz::crc_init();
-	uint8_t checkByteArray[] = {0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39};
-	constexpr uint32_t expected_crc = 0xcbf43926;
-	crc = wz::crc_update(crc, checkByteArray, 9);
-	uint32_t finalized_crc = ~crc;
-	if (finalized_crc != expected_crc)
-	{
-		debug(LOG_FATAL, "CRC check failed (value: 0x%08x, expected: 0x%08x)", finalized_crc, expected_crc);
-	}
 }
 
 static std::string getDefaultLogFilePath(const char *platformDirSeparator)
@@ -2113,6 +2038,7 @@ int realmain(int argc, char *argv[])
 
 	asyncGetCompatCheckResults(mainProcessCompatCheckResults);
 	WzInfoManager::initialize();
+
 #if defined(ENABLE_DISCORD)
 	discordRPCInitialize();
 #endif
@@ -2120,7 +2046,6 @@ int realmain(int argc, char *argv[])
 #if defined(WZ_CC_MSVC) && defined(DEBUG)
 	debug_MEMSTATS();
 #endif
-	debug(LOG_MAIN, "Entering main loop");
 
 #if defined(WZ_OS_MAC)
 	if (headlessGameMode())
@@ -2129,8 +2054,11 @@ int realmain(int argc, char *argv[])
 	}
 #endif
 
-	osSpecificPostInit();
+#if defined(__EMSCRIPTEN__)
+	initWZEmscriptenHelpers_PostInit();
+#endif
 
+	debug(LOG_MAIN, "Entering main loop");
 	wzMainEventLoop(mainShutdown);
 
 	int exitCode = wzGetQuitExitCode();

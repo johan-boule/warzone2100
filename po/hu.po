@@ -7735,8 +7735,8 @@ msgstr "Beállítások"
 msgid "View Intro"
 msgstr "Bevezető megtekintése"
 
-msgid "Videos are missing, download them from http://wz2100.net"
-msgstr "A videók hiányoznak, töltse le a http://wz2100.net oldalról"
+msgid "Videos are missing, download them from https://warzone2100.retropaganda.info"
+msgstr "A videók hiányoznak, töltse le a https://warzone2100.retropaganda.info oldalról"
 
 msgid "Continue Last Save"
 msgstr "Utolsó mentés folytatása"
@@ -7750,23 +7750,23 @@ msgstr "Kilépés a játékból"
 msgid "MAIN MENU"
 msgstr "FŐMENÜ"
 
-msgid "Official site: http://wz2100.net/"
-msgstr "Hivatalos oldal: http://wz2100.net/"
+msgid "Web site: https://warzone2100.retropaganda.info"
+msgstr "Web site: https://warzone2100.retropaganda.info"
 
 msgid "Come visit the forums and all Warzone 2100 news! Click this link."
 msgstr "Látogassa meg a fórumot és a Warzone 2100 híreit. Kattintson erre a hivatkozásra."
 
-msgid "Donate: http://donations.wz2100.net/"
-msgstr "Adományozás: http://donations.wz2100.net/"
+msgid "Donate: no donations"
+msgstr "Adományozás: no donations"
 
 msgid "Help support the project with our server costs, Click this link."
 msgstr "Segítsen a projekt támogatásában a kiszolgálóköltségek fedezésével. Kattintson erre a hivatkozásra."
 
-msgid "Chat with players on Discord or IRC"
-msgstr "Csevegés a játékosokkal Discordon vagy IRC-n"
+msgid "Chat with players on Discord or Concord"
+msgstr "Csevegés a játékosokkal Discordon vagy Concord-n"
 
-msgid "Connect to Discord or Freenode through webchat by clicking this link."
-msgstr "Kapcsolódás a Discordhoz vagy a Freenode-hoz webchat segítségével, a hivatkozásra kattintva."
+msgid "Connect to Discord or Concord through webchat by clicking this link."
+msgstr "Kapcsolódás a Discordhoz vagy a Concord-hoz webchat segítségével, a hivatkozásra kattintva."
 
 msgid "Check for a newer version"
 msgstr "Újabb verzió keresése"
@@ -7802,8 +7802,8 @@ msgstr "Csata visszajátszásának megtekintése"
 msgid "SINGLE PLAYER"
 msgstr "EGYJÁTÉKOS"
 
-msgid "Campaign videos are missing! Get them from http://wz2100.net"
-msgstr "A küldetések videói hiányoznak! Szerezze be őket a http://wz2100.net oldalon."
+msgid "Campaign videos are missing! Get them from https://warzone2100.retropaganda.info"
+msgstr "A küldetések videói hiányoznak! Szerezze be őket a https://warzone2100.retropaganda.info oldalon."
 
 msgid "Load Campaign Saved Game"
 msgstr "Mentett küldetési játék betöltése"
@@ -10017,8 +10017,8 @@ msgstr "%s csatlakozik a játékhoz"
 msgid "Server message:"
 msgstr "Kiszolgáló üzenete:"
 
-msgid "There is an update to the game, please visit https://wz2100.net to download new version."
-msgstr "Frissítés érhető el a játékhoz, az új verzió letöltéséhez keresse fel a https://wz2100.net weboldalt."
+msgid "There is an update to the game, please visit https://warzone2100.retropaganda.info to download new version."
+msgstr "Frissítés érhető el a játékhoz, az új verzió letöltéséhez keresse fel a https://warzone2100.retropaganda.info weboldalt."
 
 msgid "LIMITS"
 msgstr "KORLÁTOK"

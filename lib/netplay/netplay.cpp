@@ -1682,7 +1682,6 @@ int NETinit(ConnectionProviderType pt)
 	NetPlay.GamePassworded = false;
 	NetPlay.ShowedMOTD = false;
 	NetPlay.isHostAlive = false;
-	NetPlay.HaveUpgrade = false;
 	NetPlay.gamePassword[0] = '\0';
 	NETstartLogging();
 
@@ -3605,20 +3604,13 @@ static ssize_t readLobbyResponse(IClientConnection& sock, unsigned int timeout)
 	switch (lobbyStatusCode)
 	{
 	case 200:
+	case 400: // This was used to notify that upgrade is available but this doesn't make sense as the client sends a version hardcoded to value 1.
 		debug(LOG_NET, "Lobby success (%u): %s", (unsigned int)lobbyStatusCode, NetPlay.MOTD.c_str());
-		NetPlay.HaveUpgrade = false;
 		break;
-
-	case 400:
-		debug(LOG_NET, "**Upgrade available! Lobby success (%u): %s", (unsigned int)lobbyStatusCode, NetPlay.MOTD.c_str());
-		NetPlay.HaveUpgrade = true;
-		break;
-
 	default:
 		debug(LOG_ERROR, "Lobby error (%u): %s", (unsigned int)lobbyStatusCode, NetPlay.MOTD.c_str());
 		// ensure if the lobby returns an error, we are prepared to display it (once)
 		NetPlay.ShowedMOTD = false;
-		// this is horrible but MOTD can have 0x0a and other junk in it
 		wz_command_interface_output("WZEVENT: lobbyerror (%u): %s\n", (unsigned int)lobbyStatusCode, base64Encode(std::vector<unsigned char>(NetPlay.MOTD.begin(), NetPlay.MOTD.end())).c_str());
 		break;
 	}
@@ -5021,7 +5013,6 @@ bool NEThostGame(const char *SessionName, const char *PlayerName, bool spectator
 	realSelectedPlayer = selectedPlayer;
 	NetPlay.isHost	= true;
 	NetPlay.isHostAlive = true;
-	NetPlay.HaveUpgrade = false;
 	NetPlay.hostPlayer	= selectedPlayer;
 
 	MultiPlayerJoin(selectedPlayer, nullopt);

@@ -7735,8 +7735,8 @@ msgstr "Opcions"
 msgid "View Intro"
 msgstr "Veure la introducció"
 
-msgid "Videos are missing, download them from http://wz2100.net"
-msgstr "No s'han trobat els vídeos, descarregui-se'ls des de http://wz2100.net"
+msgid "Videos are missing, download them from https://warzone2100.retropaganda.info"
+msgstr "No s'han trobat els vídeos, descarregui-se'ls des de https://warzone2100.retropaganda.info"
 
 msgid "Continue Last Save"
 msgstr "Continuar la darrera desada"
@@ -7750,23 +7750,23 @@ msgstr "Sortir"
 msgid "MAIN MENU"
 msgstr "MENÚ PRINCIPAL"
 
-msgid "Official site: http://wz2100.net/"
-msgstr "Lloc web oficial: http://wz2100.net/"
+msgid "Web site: https://warzone2100.retropaganda.info"
+msgstr "Lloc web: https://warzone2100.retropaganda.info"
 
 msgid "Come visit the forums and all Warzone 2100 news! Click this link."
 msgstr "Veniu a visitar els fòrums i novetats de Warzone 2100! Cliqueu l'enllaç."
 
-msgid "Donate: http://donations.wz2100.net/"
-msgstr "Donacions: http://donations.wz2100.net/"
+msgid "Donate: no donations"
+msgstr "Donacions: no donations"
 
 msgid "Help support the project with our server costs, Click this link."
 msgstr "Ajudi a suportar el projecte amb els costs de servidors, cliqui sobre l'enllaç."
 
-msgid "Chat with players on Discord or IRC"
-msgstr "Xateja amb els jugadors per Discord o IRC"
+msgid "Chat with players on Discord or Concord"
+msgstr "Xateja amb els jugadors per Discord o Concord"
 
-msgid "Connect to Discord or Freenode through webchat by clicking this link."
-msgstr "Connecteu-vos a Discord o a Freenode clicant sobre l'enllaç."
+msgid "Connect to Discord or Concord through webchat by clicking this link."
+msgstr "Connecteu-vos a Discord o a Concord clicant sobre l'enllaç."
 
 msgid "Check for a newer version"
 msgstr "Comprova les actualitzacions disponibles"
@@ -7802,8 +7802,8 @@ msgstr "Veure el replay de l'escaramussa"
 msgid "SINGLE PLAYER"
 msgstr "UN JUGADOR"
 
-msgid "Campaign videos are missing! Get them from http://wz2100.net"
-msgstr "Falten els vídeos de la campanya! Obteniu-los a http://wz2100.net"
+msgid "Campaign videos are missing! Get them from https://warzone2100.retropaganda.info"
+msgstr "Falten els vídeos de la campanya! Obteniu-los a https://warzone2100.retropaganda.info"
 
 msgid "Load Campaign Saved Game"
 msgstr "Carrega una campanya desada"
@@ -10017,8 +10017,8 @@ msgstr "%s s'està unint a la partida"
 msgid "Server message:"
 msgstr "missatge del servidor:"
 
-msgid "There is an update to the game, please visit https://wz2100.net to download new version."
-msgstr "Hi ha una actualització disponible, visiti https://wz2100.net per descarregar-se l'última versió."
+msgid "There is an update to the game, please visit https://warzone2100.retropaganda.info to download new version."
+msgstr "Hi ha una actualització disponible, visiti https://warzone2100.retropaganda.info per descarregar-se l'última versió."
 
 msgid "LIMITS"
 msgstr "LÍMITS"

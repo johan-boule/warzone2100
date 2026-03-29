@@ -7729,8 +7729,8 @@ msgstr "Opsi"
 msgid "View Intro"
 msgstr "Putar Intro"
 
-msgid "Videos are missing, download them from http://wz2100.net"
-msgstr "File video tidak ditemukan, unduh mereka di http://wz2100.net"
+msgid "Videos are missing, download them from https://warzone2100.retropaganda.info"
+msgstr "File video tidak ditemukan, unduh mereka di https://warzone2100.retropaganda.info"
 
 msgid "Continue Last Save"
 msgstr "Lanjutkan Permainan Tersimpan Terakhir"
@@ -7744,23 +7744,23 @@ msgstr "Keluar Permainan"
 msgid "MAIN MENU"
 msgstr "MENU UTAMA"
 
-msgid "Official site: http://wz2100.net/"
-msgstr "Situs resmi: http://wz2100.net/"
+msgid "Web site: https://warzone2100.retropaganda.info"
+msgstr "Situs web: https://warzone2100.retropaganda.info"
 
 msgid "Come visit the forums and all Warzone 2100 news! Click this link."
 msgstr "Kunjungilah forum dan semua berita mengenai Warzone 2100! Klik link ini."
 
-msgid "Donate: http://donations.wz2100.net/"
-msgstr "Donasi: http://donations.wz2100.net/"
+msgid "Donate: no donations"
+msgstr "Donasi: no donations"
 
 msgid "Help support the project with our server costs, Click this link."
 msgstr "Bantulah kami membayar biaya server kami untuk mendukung proyek kami. Klik link disini."
 
-msgid "Chat with players on Discord or IRC"
-msgstr "Bercakaplah dengan sesama pemain di Discord atau IRC"
+msgid "Chat with players on Discord or Concord"
+msgstr "Bercakaplah dengan sesama pemain di Discord atau Concord"
 
-msgid "Connect to Discord or Freenode through webchat by clicking this link."
-msgstr "Sambungkan ke Discord atau Freenode lewat webchat dengan mengeklik link ini."
+msgid "Connect to Discord or Concord through webchat by clicking this link."
+msgstr "Sambungkan ke Discord atau Concord lewat webchat dengan mengeklik link ini."
 
 msgid "Check for a newer version"
 msgstr "Periksa untuk versi terbaru"
@@ -7796,8 +7796,8 @@ msgstr "Tonton Tayangan Ulang Skirmish"
 msgid "SINGLE PLAYER"
 msgstr "PEMAIN TUNGGAL"
 
-msgid "Campaign videos are missing! Get them from http://wz2100.net"
-msgstr "Video kampanye tidak ditemukan! Dapatkan mereka di http://wz2100.net"
+msgid "Campaign videos are missing! Get them from https://warzone2100.retropaganda.info"
+msgstr "Video kampanye tidak ditemukan! Dapatkan mereka di https://warzone2100.retropaganda.info"
 
 msgid "Load Campaign Saved Game"
 msgstr "Muat Permainan Kampanye Tersimpan"
@@ -10011,8 +10011,8 @@ msgstr "%s bergabung dalam permainan"
 msgid "Server message:"
 msgstr "Pesan server:"
 
-msgid "There is an update to the game, please visit https://wz2100.net to download new version."
-msgstr "Perbaruan permainan tersedia, silakan kunjungi https://wz2100.net untuk mengunduh versi baru."
+msgid "There is an update to the game, please visit https://warzone2100.retropaganda.info to download new version."
+msgstr "Perbaruan permainan tersedia, silakan kunjungi https://warzone2100.retropaganda.info untuk mengunduh versi baru."
 
 msgid "LIMITS"
 msgstr "BATAS-BATAS"

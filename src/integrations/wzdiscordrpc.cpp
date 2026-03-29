@@ -267,11 +267,6 @@ static void findAndJoinLobbyGameImpl(const std::string& lobbyAddress, unsigned i
 	addNotification(notification, WZ_Notification_Trigger::Immediate());
 }
 
-static bool isTrustedLobbyServer(const std::string& lobbyAddress, unsigned int lobbyPort)
-{
-	return lobbyAddress == "lobby.wz2100.net";
-}
-
 static void joinGameFromSecret_v1(const std::string joinSecretStr)
 {
 	std::vector<JoinConnectionDescription> joinConnectionDetails;
@@ -339,35 +334,7 @@ static void joinGameFromSecret_v1(const std::string joinSecretStr)
 				return;
 			}
 
-			if (isTrustedLobbyServer(lobbyAddress, lobbyPort))
-			{
-				// trusted lobby servers can proceed directly to finding and joining the game
-				findAndJoinLobbyGameImpl(lobbyAddress, lobbyPort, lobbyGameId);
-				return;
-			}
-			else
-			{
-				// asynchronously prompt via notification system to trust lobby server before connecting
-				std::ostringstream content;
-				content << _("The invite link you have followed specifies a non-default lobby server:") << "\n";
-				content << " ⇢ " << lobbyAddress << " : " << lobbyPort << "\n";
-				content << "\n";
-				content << _("Do you wish to trust this lobby server, and continue?") << "\n";
-
-				WZ_Notification notification;
-				notification.duration = 0;
-				notification.contentTitle = _("Discord: Connect to Untrusted Lobby?");
-				notification.contentText = content.str();
-				notification.action = WZ_Notification_Action(_("Trust & Connect"), [lobbyAddress, lobbyPort, lobbyGameId](const WZ_Notification&){
-					wzAsyncExecOnMainThread([lobbyAddress, lobbyPort, lobbyGameId]{
-						findAndJoinLobbyGameImpl(lobbyAddress, lobbyPort, lobbyGameId);
-					});
-				});
-				notification.largeIcon = WZ_Notification_Image("images/notifications/shield_questionmark.png");
-				notification.tag = JOIN_NOTIFICATION_TAG_PREFIX "untrusted_lobby_server_prompt";
-				addNotification(notification, WZ_Notification_Trigger::Immediate());
-				return;
-			}
+			findAndJoinLobbyGameImpl(lobbyAddress, lobbyPort, lobbyGameId);
 		}
 		else
 		{
@@ -421,25 +388,7 @@ static void joinGameFromSecret_v1(const std::string joinSecretStr)
 			return;
 		}
 
-		// Prompt the user to permit direct connection join
-		std::ostringstream content;
-		content << _("The invite link you have followed specifies a direct connection.") << "\n";
-		content << _("It has not been vetted / verified by a lobby server.") << "\n";
-		content << "\n";
-		content << _("Do you wish to trust this direct connection invite?") << "\n";
-
-		WZ_Notification notification;
-		notification.duration = 0;
-		notification.contentTitle = _("Discord: Direct Connection Invite");
-		notification.contentText = content.str();
-		notification.action = WZ_Notification_Action(_("Trust & Connect"), [joinConnectionDetails](const WZ_Notification&){
-			wzAsyncExecOnMainThread([joinConnectionDetails]{
-				joinGameImpl(joinConnectionDetails);
-			});
-		});
-		notification.largeIcon = WZ_Notification_Image("images/notifications/user_questionmark.png");
-		notification.tag = JOIN_NOTIFICATION_TAG_PREFIX "direct_invite_prompt";
-		addNotification(notification, WZ_Notification_Trigger::Immediate());
+		joinGameImpl(joinConnectionDetails);
 	}
 }
 

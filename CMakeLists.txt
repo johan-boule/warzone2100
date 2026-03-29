@@ -767,7 +767,7 @@ include_directories(SYSTEM "3rdparty/date/include")
 SET(STDC_HEADERS ON)
 
 SET(PACKAGE "warzone2100${WZ_OUTPUT_NAME_SUFFIX}")
-SET(PACKAGE_BUGREPORT "http://wz2100.net/")
+SET(PACKAGE_BUGREPORT http://warzone2100.retropaganda.info)
 SET(PACKAGE_NAME "Warzone 2100")
 SET(PACKAGE_TARNAME "warzone2100")
 SET(PACKAGE_DISTRIBUTOR "${WZ_DISTRIBUTOR}")

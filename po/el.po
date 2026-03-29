@@ -7731,8 +7731,8 @@ msgstr "επιλογές"
 msgid "View Intro"
 msgstr "πρόλογος"
 
-msgid "Videos are missing, download them from http://wz2100.net"
-msgstr "Τα βίντεα της εκστρατείας λείπουν. Μπορείς να τα κατεβάσεις από την http://wz2100.net"
+msgid "Videos are missing, download them from https://warzone2100.retropaganda.info"
+msgstr "Τα βίντεα της εκστρατείας λείπουν. Μπορείς να τα κατεβάσεις από την https://warzone2100.retropaganda.info"
 
 msgid "Continue Last Save"
 msgstr "Συνέχιση του Τελευταίου Αποθηκευμένου"
@@ -7746,22 +7746,22 @@ msgstr "τερματισμός"
 msgid "MAIN MENU"
 msgstr "ΚΥΡΙΟ ΜΕΝΟΥ"
 
-msgid "Official site: http://wz2100.net/"
-msgstr "Επίσημος ιστότοπος: http://wz2100.net"
+msgid "Web site: https://warzone2100.retropaganda.info"
+msgstr "Web site: https://warzone2100.retropaganda.info"
 
 msgid "Come visit the forums and all Warzone 2100 news! Click this link."
 msgstr "Αν θες να παρακολουθήσεις τις συζητήσεις, και να μάθεις όλα τα νέα του Warzone 2100, κάνε κλικ σε αυτό το δεσμό !"
 
-msgid "Donate: http://donations.wz2100.net/"
-msgstr "Δωρεές: http://donations.wz2100.net/"
+msgid "Donate: no donations"
+msgstr "Δωρεές: no donations"
 
 msgid "Help support the project with our server costs, Click this link."
 msgstr "Αν θες να υποστηρίξεις το εγχείρημα στα έξοδα των σέρβερ, κάνε Κλικ σε αυτό το δεσμό."
 
-msgid "Chat with players on Discord or IRC"
+msgid "Chat with players on Discord or Concord"
 msgstr ""
 
-msgid "Connect to Discord or Freenode through webchat by clicking this link."
+msgid "Connect to Discord or Concord through webchat by clicking this link."
 msgstr ""
 
 msgid "Check for a newer version"
@@ -7798,8 +7798,8 @@ msgstr ""
 msgid "SINGLE PLAYER"
 msgstr "ΓΙΑ ΕΝΑΝ ΠΑΙΚΤΗ"
 
-msgid "Campaign videos are missing! Get them from http://wz2100.net"
-msgstr "Τα βίντεο τς εκστρατείας λείπουν. Μπορείς να τα κατεβάσεις από την http://wz2100.net"
+msgid "Campaign videos are missing! Get them from https://warzone2100.retropaganda.info"
+msgstr "Τα βίντεο τς εκστρατείας λείπουν. Μπορείς να τα κατεβάσεις από την https://warzone2100.retropaganda.info"
 
 msgid "Load Campaign Saved Game"
 msgstr "Φόρτωση Αποθηκευμένης Εκστρατείας"
@@ -10013,7 +10013,7 @@ msgstr "Ο %s συμμετέχει στο παιχνίδι"
 msgid "Server message:"
 msgstr "Μήνυμα διακομιστή:"
 
-msgid "There is an update to the game, please visit https://wz2100.net to download new version."
+msgid "There is an update to the game, please visit https://warzone2100.retropaganda.info to download new version."
 msgstr ""
 
 msgid "LIMITS"

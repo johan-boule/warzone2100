@@ -36,14 +36,7 @@
 			<li>100% free and open source</li>
 		</ul>
 	</description>
-	<url type="homepage">https://wz2100.net/</url>
-	<url type="bugtracker">https://github.com/Warzone2100/warzone2100/issues/new</url>
-	<url type="vcs-browser">https://github.com/Warzone2100/warzone2100</url>
-	<url type="faq">https://wz2100.net/#faq</url>
-	<url type="translate">https://github.com/Warzone2100/warzone2100/blob/master/doc/Translations.md</url>
-	<url type="help">https://betaguide.wz2100.net/</url>
-	<url type="donation">https://opencollective.com/warzone2100</url>
-	<url type="contact">https://github.com/Warzone2100/warzone2100/discussions</url>
+	<url type="homepage">https://warzone2100.retropaganda.info</url>
 	<recommends>
 		<control>keyboard</control>
 		<control>pointing</control>
@@ -62,18 +55,18 @@
 	<screenshots>
 		<screenshot type="default">
 			<caption>Compete in massive battles, with up to 10 players</caption>
-			<image>https://wz2100.net/img/screenshots/multiplayer_massive_battle.png</image>
+			<image>https://warzone2100.retropaganda.info/images/presentation/game31.jpeg</image>
 		</screenshot>
 		<screenshot>
 			<caption>Seize territory + resources, build extensive bases</caption>
-			<image>https://wz2100.net/img/screenshots/base_build.png</image>
+			<image>https://warzone2100.retropaganda.info/images/presentation/game33.jpeg</image>
 		</screenshot>
 	</screenshots>
 	<developer_name>Warzone 2100 Project</developer_name>
 	<releases>
 	  <release version="@WZ_METAINFO_RELEASE_VERSION@" type="@WZ_METAINFO_RELEASE_TYPE@" date="@WZ_METAINFO_RELEASE_DATE@">
 			<description>
-				<p>Bug fixes and improvements</p>
+				<p>Improvements</p>
 			</description>
 			<url>https://github.com/Warzone2100/warzone2100/blob/master/ChangeLog</url>
 		</release>
@@ -99,6 +92,6 @@
 		<keyword translate="no">wz2100</keyword>
 	</keywords>
 	<custom>
-		<value key="flathub::manifest">https://github.com/Warzone2100/warzone2100/blob/master/.github/workflows/CI_flatpak.yml</value>
+		<value key="flathub::manifest">https://github.com/johan-boule/warzone2100/blob/master/.github/workflows/flatpak.yaml</value>
 	</custom>
 </component>

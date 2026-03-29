@@ -5136,7 +5136,7 @@ static bool writeGameFile(const char *fileName, SDWORD saveType)
 			if (saveGame.sNetPlay.players[i].difficulty == AIDifficulty::HUMAN)
 			{
 				ASSERT(!"savegame corruption!", "savegame corruption!");
-				debug(LOG_ERROR, "Savegame corruption detected, trying to salvage.  Please Report this issue @ wz2100.net");
+				debug(LOG_ERROR, "Savegame corruption detected, trying to salvage. Please Report this issue.");
 				debug(LOG_ERROR, "players[i].difficulty was %d, level %s / %s, ", (int) static_cast<int8_t>(saveGame.sNetPlay.players[i].difficulty), saveGame.levelName, saveGame.sGame.map);
 				saveGame.sNetPlay.players[i].difficulty = AIDifficulty::DISABLED;
 			}

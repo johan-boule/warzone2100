@@ -7719,8 +7719,8 @@ msgstr "옵션"
 msgid "View Intro"
 msgstr "인트로 영상 보기"
 
-msgid "Videos are missing, download them from http://wz2100.net"
-msgstr "동영상이 없습니다. http://wz2100.net에서 다운로드하십시오."
+msgid "Videos are missing, download them from https://warzone2100.retropaganda.info"
+msgstr "동영상이 없습니다. https://warzone2100.retropaganda.info에서 다운로드하십시오."
 
 msgid "Continue Last Save"
 msgstr "최근 저장에서 계속"
@@ -7734,22 +7734,22 @@ msgstr "게임 종료"
 msgid "MAIN MENU"
 msgstr "메인 메뉴"
 
-msgid "Official site: http://wz2100.net/"
+msgid "Web site: https://warzone2100.retropaganda.info"
 msgstr ""
 
 msgid "Come visit the forums and all Warzone 2100 news! Click this link."
 msgstr ""
 
-msgid "Donate: http://donations.wz2100.net/"
+msgid "Donate: no donations"
 msgstr ""
 
 msgid "Help support the project with our server costs, Click this link."
 msgstr ""
 
-msgid "Chat with players on Discord or IRC"
+msgid "Chat with players on Discord or Concord"
 msgstr ""
 
-msgid "Connect to Discord or Freenode through webchat by clicking this link."
+msgid "Connect to Discord or Concord through webchat by clicking this link."
 msgstr ""
 
 msgid "Check for a newer version"
@@ -7786,7 +7786,7 @@ msgstr "소규모전투 리플레이 보기"
 msgid "SINGLE PLAYER"
 msgstr "싱글 플레이어"
 
-msgid "Campaign videos are missing! Get them from http://wz2100.net"
+msgid "Campaign videos are missing! Get them from https://warzone2100.retropaganda.info"
 msgstr ""
 
 msgid "Load Campaign Saved Game"
@@ -9997,7 +9997,7 @@ msgstr "%s 님이 게임에 참여했습니다"
 msgid "Server message:"
 msgstr "서버 메시지:"
 
-msgid "There is an update to the game, please visit https://wz2100.net to download new version."
+msgid "There is an update to the game, please visit https://warzone2100.retropaganda.info to download new version."
 msgstr ""
 
 msgid "LIMITS"

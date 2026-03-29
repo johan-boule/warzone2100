@@ -7735,8 +7735,8 @@ msgstr "Einstellungen"
 msgid "View Intro"
 msgstr "Intro zeigen"
 
-msgid "Videos are missing, download them from http://wz2100.net"
-msgstr "Videos fehlen, laden Sie sie von http://wz2100.net herunter"
+msgid "Videos are missing, download them from https://warzone2100.retropaganda.info"
+msgstr "Videos fehlen, laden Sie sie von https://warzone2100.retropaganda.info herunter"
 
 msgid "Continue Last Save"
 msgstr "Mit letztem Spielstand fortfahren"
@@ -7750,23 +7750,23 @@ msgstr "Spiel beenden"
 msgid "MAIN MENU"
 msgstr "HAUPTMENÜ"
 
-msgid "Official site: http://wz2100.net/"
-msgstr "Offizielle Webseite: http://wz2100.net/"
+msgid "Web site: https://warzone2100.retropaganda.info"
+msgstr "Webseite: https://warzone2100.retropaganda.info"
 
 msgid "Come visit the forums and all Warzone 2100 news! Click this link."
 msgstr "Besuchen Sie die Foren und alle Warzone-2100-Neuigkeiten! Klicken Sie auf diesen Link."
 
-msgid "Donate: http://donations.wz2100.net/"
-msgstr "Spende: http://donations.wz2100.net/"
+msgid "Donate: no donations"
+msgstr "Spende: no donations"
 
 msgid "Help support the project with our server costs, Click this link."
 msgstr "Helfen Sie dem Projekt bei der Deckung unserer Serverkosten, klicken Sie auf diesen Link."
 
-msgid "Chat with players on Discord or IRC"
-msgstr "Chatte mit Spielern bei Discord oder IRC"
+msgid "Chat with players on Discord or Concord"
+msgstr "Chatte mit Spielern bei Discord oder Concord"
 
-msgid "Connect to Discord or Freenode through webchat by clicking this link."
-msgstr "Verbinde Dich mit Discord oder Freenode, indem Du auf diesen Link klickst."
+msgid "Connect to Discord or Concord through webchat by clicking this link."
+msgstr "Verbinde Dich mit Discord oder Concord, indem Du auf diesen Link klickst."
 
 msgid "Check for a newer version"
 msgstr "Nach neuer Version suchen"
@@ -7802,8 +7802,8 @@ msgstr "Scharmützel Aufzeichnung ansehen"
 msgid "SINGLE PLAYER"
 msgstr "EINZELSPIELER"
 
-msgid "Campaign videos are missing! Get them from http://wz2100.net"
-msgstr "Kampagnenvideos fehlen! Holen Sie sie von http://wz2100.net/"
+msgid "Campaign videos are missing! Get them from https://warzone2100.retropaganda.info"
+msgstr "Kampagnenvideos fehlen! Holen Sie sie von https://warzone2100.retropaganda.info"
 
 msgid "Load Campaign Saved Game"
 msgstr "Kampagnenspielstand laden"
@@ -10017,8 +10017,8 @@ msgstr "%s tritt dem Spiel bei"
 msgid "Server message:"
 msgstr "Servernachricht:"
 
-msgid "There is an update to the game, please visit https://wz2100.net to download new version."
-msgstr "Es gibt ein Update für das Spiel, bitte besuche https://wz2100.net, um die neue Version herunterzuladen."
+msgid "There is an update to the game, please visit https://warzone2100.retropaganda.info to download new version."
+msgstr "Es gibt ein Update für das Spiel, bitte besuche https://warzone2100.retropaganda.info, um die neue Version herunterzuladen."
 
 msgid "LIMITS"
 msgstr "BESCHRÄNKUNGEN"

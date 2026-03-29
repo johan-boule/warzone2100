@@ -7757,8 +7757,8 @@ msgstr "الإعدادات"
 msgid "View Intro"
 msgstr "عرض فيديو المقدمة"
 
-msgid "Videos are missing, download them from http://wz2100.net"
-msgstr "لم نعثر على الفيديوهات. قم بتحميلها من http://wz2100.net"
+msgid "Videos are missing, download them from https://warzone2100.retropaganda.info"
+msgstr "لم نعثر على الفيديوهات. قم بتحميلها من https://warzone2100.retropaganda.info"
 
 msgid "Continue Last Save"
 msgstr "تحميل ملف الحفظ الأخير"
@@ -7772,22 +7772,22 @@ msgstr "الخروج من اللعبة"
 msgid "MAIN MENU"
 msgstr "القائمة الرئيسية"
 
-msgid "Official site: http://wz2100.net/"
-msgstr "الموقع الرسمي: http://wz2100.net/"
+msgid "Web site: https://warzone2100.retropaganda.info"
+msgstr "Web site: https://warzone2100.retropaganda.info"
 
 msgid "Come visit the forums and all Warzone 2100 news! Click this link."
 msgstr "قم بزيارة المنتديات واطلع على آخر أخبار Warzone 2100! اضغط على هذا الرابط."
 
-msgid "Donate: http://donations.wz2100.net/"
-msgstr "تبرع عبر الرابط: http://donations.wz2100.net/"
+msgid "Donate: no donations"
+msgstr "تبرع عبر الرابط: no donations"
 
 msgid "Help support the project with our server costs, Click this link."
 msgstr "ادعم المشروع بتكاليف الخوادم التي نملكها. اضغط على هذا الرابط."
 
-msgid "Chat with players on Discord or IRC"
-msgstr "دردش مع اللاعبين عبر Discord أو برامج بروتوكول IRC"
+msgid "Chat with players on Discord or Concord"
+msgstr "دردش مع اللاعبين عبر Discord أو برامج بروتوكول Concord"
 
-msgid "Connect to Discord or Freenode through webchat by clicking this link."
+msgid "Connect to Discord or Concord through webchat by clicking this link."
 msgstr ""
 
 msgid "Check for a newer version"
@@ -7824,8 +7824,8 @@ msgstr "مشاهدة إعادةٍ لمباراة"
 msgid "SINGLE PLAYER"
 msgstr "الطور الفردي"
 
-msgid "Campaign videos are missing! Get them from http://wz2100.net"
-msgstr "إن الفيديوهات الخاصة بالقصة مفقودة! قم بتحميلها من http://wz2100.net"
+msgid "Campaign videos are missing! Get them from https://warzone2100.retropaganda.info"
+msgstr "إن الفيديوهات الخاصة بالقصة مفقودة! قم بتحميلها من https://warzone2100.retropaganda.info"
 
 msgid "Load Campaign Saved Game"
 msgstr "تحميل لعبةٍ من طور القصة"
@@ -10032,8 +10032,8 @@ msgstr "سينضم %s إلى اللعبة"
 msgid "Server message:"
 msgstr ""
 
-msgid "There is an update to the game, please visit https://wz2100.net to download new version."
-msgstr "يوجدٌ تحديثٌ جديدٌ للعبة. قم من فضلك بزيارة https://wz2100.net لتحميل النسخة الجديدة."
+msgid "There is an update to the game, please visit https://warzone2100.retropaganda.info to download new version."
+msgstr "يوجدٌ تحديثٌ جديدٌ للعبة. قم من فضلك بزيارة https://warzone2100.retropaganda.info لتحميل النسخة الجديدة."
 
 msgid "LIMITS"
 msgstr ""

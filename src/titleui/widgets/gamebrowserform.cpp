@@ -38,7 +38,6 @@
 #include "src/frend.h"
 #include "src/multiint.h"
 #include "src/activity.h"
-#include "src/updatemanager.h"
 #include "frontendimagebutton.h"
 #include "advcheckbox.h"
 #include "src/screens/joiningscreen.h"

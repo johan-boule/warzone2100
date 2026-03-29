@@ -1,3 +1,9 @@
+# CI status of master branch
+
+[![Ubuntu](https://github.com/johan-boule/warzone2100/actions/workflows/ubuntu.yaml/badge.svg)](https://github.com/johan-boule/warzone2100/actions/workflows/ubuntu.yaml)
+[![Windows](https://github.com/johan-boule/warzone2100/actions/workflows/windows.yaml/badge.svg)](https://github.com/johan-boule/warzone2100/actions/workflows/windows.yaml)
+[![macOS](https://github.com/johan-boule/warzone2100/actions/workflows/macos.yaml/badge.svg)](https://github.com/johan-boule/warzone2100/actions/workflows/macos.yaml)
+
 <h1 align="center">
   <img src="icons/warzone2100logo.png" alt="Warzone 2100">
   <br />
@@ -17,18 +23,6 @@
 - Support for multiple graphics backends (OpenGL, OpenGL ES, Vulkan)
 - 100% free and open source
 
-For more info, see: https://warzone2100.retropaganda.info
-
-# Installation
-
-**Visit https://warzone2100.retropaganda.info for the latest stable release for Windows, macOS and Linux.**
-
-> Note for videos in Ubuntu: For important information during the game, download the videos manually. Assuming the game is installed in the standard `~/.local/share/` folder, use these commands:
-> ```shell
-> mkdir ~/.local/share/warzone2100
-> wget https://github.com/Warzone2100/wz-sequences/releases/download/v3/standard-quality-en-sequences.wz -O ~/.local/share/warzone2100/sequences.wz
-> ```
-
 # Origins
 
 Warzone 2100 was originally developed by Pumpkin Studios and published by Eidos Interactive in 1999.
@@ -44,65 +38,10 @@ what made the original release so great.
 
 Development continues, and bug reports & contributions are welcome!
 
-# Latest development builds
+# In-game videos sequences
 
-[![Windows Build Status](https://img.shields.io/github/actions/workflow/status/johan-boule/warzone2100/CI_windows.yml?branch=master&label=Windows&logo=windows)](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AWindows+branch%3Amaster+event%3Apush)
-[![macOS Build Status](https://img.shields.io/github/actions/workflow/status/johan-boule/warzone2100/CI_macos.yml?branch=master&label=macOS&logo=apple)](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AmacOS+branch%3Amaster+event%3Apush)
-[![Ubuntu Build Status](https://img.shields.io/github/actions/workflow/status/johan-boule/warzone2100/CI_ubuntu.yml?branch=master&label=Ubuntu&logo=ubuntu&logoColor=FFFFFF)](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AUbuntu+branch%3Amaster+event%3Apush)
-[![Fedora Build Status](https://img.shields.io/github/actions/workflow/status/johan-boule/warzone2100/CI_fedora.yml?branch=master&label=Fedora&logo=fedora&logoColor=FFFFFF)](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AFedora+branch%3Amaster+event%3Apush)
-[![WebAssembly Build Status](https://img.shields.io/github/actions/workflow/status/johan-boule/warzone2100/CI_emscripten.yml?branch=master&label=WebASM&logo=webassembly&logoColor=FFFFFF)](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AEmscripten+branch%3Amaster+event%3Apush)
-[![Packaging status](https://repology.org/badge/tiny-repos/warzone2100.svg)](https://repology.org/project/warzone2100/versions)
-
-### Windows
-
-How to get the latest Windows development builds:
-1. View the **[latest successful Windows builds](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AWindows+branch%3Amaster+event%3Apush+is%3Asuccess)**.
-2. Select the latest workflow run in the table / list.
-   This should display a list of **Artifacts** from the run.
-3. Download the `warzone2100_win_installer` artifact.
-> Note: A free GitHub account is currently required to download the artifacts.
-
-### macOS
-
-How to get the latest macOS development builds:
-1. View the **[latest successful macOS builds](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AmacOS+branch%3Amaster+event%3Apush+is%3Asuccess)**.
-2. Select the latest workflow run in the table / list.
-   This should display a list of **Artifacts** from the run.
-3. Download the `warzone2100_macOS_universal` or `warzone2100_macOS_universal_novideos` artifact (depending on whether you want the full app bundle or not).
-> Note: A free GitHub account is currently required to download the artifacts.
-
-### Ubuntu
-
-How to get the latest Ubuntu development builds:
-1. View the **[latest successful Ubuntu builds](https://github.com/johan-boule/warzone2100/actions?query=workflow%3AUbuntu+branch%3Amaster+event%3Apush+is%3Asuccess)**.
-2. Select the latest workflow run in the table / list.
-   This should display a list of **Artifacts** from the run.
-3. Download the appropriate `warzone2100_ubuntu<version>_amd64_deb` artifact.
-   - If you are running Ubuntu 22.04: `warzone2100_ubuntu22.04_amd64_deb`
-   - If you are running Ubuntu 24.04: `warzone2100_ubuntu24.04_amd64_deb`
-> Note: A free GitHub account is currently required to download the artifacts.
-4. Extract the contents of the downloaded .zip (`warzone2100_ubuntu<version>_amd64.deb`) to your Desktop.
-5. Execute the following commands in Terminal:
-```shell
-cd ~/Desktop
-sudo apt install ./warzone2100_ubuntu<version>_amd64.deb
-```
-6. Download the video for crucial information during the game, for more see "Videos" section. Assuming the game is installed in the standard `~/.local/share/` folder, use this command (update `warzone2100-<version>`):
-```shell
-wget https://github.com/Warzone2100/wz-sequences/releases/download/v3/standard-quality-en-sequences.wz -O ~/.local/share/warzone2100-<version>/sequences.wz
-```
-
-### Linux (from source)
-
-Clone this Git repo and build, following the instructions under:
-[How to Build](#how-to-build)
-
-> Development builds are a snapshot of the current state of development, from the
-> latest (successfully-built) commit. Help testing these builds is always welcomed,
-> but they should be considered a work-in-progress.
-
-### Videos
-You can download videos from [here](https://github.com/Warzone2100/wz-sequences/releases/tag/v3), or [here](https://sourceforge.net/projects/warzone2100/files/warzone2100/Videos/). You will need to rename the downloaded file to `sequences.wz`, and place it into your Warzone 2100 directory, as described above.
+You can download the videos from [here](https://github.com/Warzone2100/wz-sequences/releases), or [here](https://sourceforge.net/projects/warzone2100/files/warzone2100/Videos/).
+You will need to rename the downloaded file to `sequences.wz`, and place it into your Warzone 2100 directory.
 Note that `.wz` files are just `.zip` in disguise, you can rename it and extract the content if wish to inspect them.
 
 # Configuration
@@ -118,7 +57,7 @@ location of this directory depends on the operating system.
 > 2. Click "Options"
 > 3. Click the small "Open Configuration Directory" link in the bottom-left
 
-### Configuration file
+## Configuration file
 
 The configuration file is just called 'config' and contains several configuration
 options, some of them can be changed by using command-line options or using
@@ -184,25 +123,16 @@ Links to further information
 
 # How to build
 
-### Getting the Source
-
-To properly build the game, either:
-- Download a release `tar.xz`, which contains all the source code and revision information.
-
-  _OR_
+## Getting the source
 
 - Clone the Git repo:
   ```shell
   git clone https://github.com/johan-boule/warzone2100.git
-  cd warzone2100
-  git fetch --tags
-  git submodule update --init --recursive
+  git -C warzone2100 submodule update --init --recursive
   ```
   > Note: Initializing submodules is required.
 
-Do **not** use GitHub's "Download Zip" option, as it **does not contain submodules** or the Git-based autorevision information.
-
-### Linux
+## Linux
 
 * Prerequisites
    * Compiling tools (ex. CMake, GCC/G++/Clang, ninja-build)
@@ -229,38 +159,31 @@ Do **not** use GitHub's "Download Zip" option, as it **does not contain submodul
    * To build with Vulkan support: the full [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) _(strongly recommended: ≥ 1.2.148.1)_
 * **Installing prerequisites:**
    * Using `get-dependencies_linux.sh`:
-      1. Specify one of the linux distros supported by the script: (`ubuntu`, `fedora`, `alpine`, `archlinux`, `opensuse-tumbleweed`, `gentoo`, `debian`, `raspberrypios`) _REQUIRED_
-      2. Specify a mode: (`build-all` (default), `build-dependencies`) _OPTIONAL_
-
+      Specify one of the linux distros supported by the script: (`ubuntu`, `fedora`, `alpine`, `archlinux`, `opensuse-tumbleweed`, `gentoo`, `debian`, `raspberrypios`)
       Example:
       ```shell
-      sudo ./get-dependencies_linux.sh ubuntu build-dependencies
+      sudo ./get-dependencies_linux.sh ubuntu
       ```
 * **Building from the command-line:**
-   1. Starting from the _parent_ directory of the warzone2100 repository, create an [out-of-source](https://cmake.org/cmake/help/book/mastering-cmake/chapter/Getting%20Started.html#directory-structure) build directory:
+   1. Configure how to build:
       ```shell
-      mkdir build
+      cmake -S warzone2100 -B warzone2100.build --install-prefix $PWD/warzone2100.install -G Ninja -D CMAKE_BUILD_TYPE=Release
       ```
-   2. Change directory into the `build` directory:
+      > - The argument  `-S warzone2100` should point to the source directory.
+      > - The argument  `-B warzone2100.build` indicates where to create the build directory.
+      > - Choose the installation directory by changing the `--install-prefix` argument as desired.
+   2. Build:
       ```shell
-      cd build
+      cmake --build warzone2100.build --config Release --parallel $(nproc)
       ```
-   3. Run CMake configure to generate the build files:
+   3. Install:
       ```shell
-      cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_INSTALL_PREFIX:PATH=~/wz/install -GNinja ../warzone2100
+      cmake --install warzone2100.build --config Release --parallel $(nproc)
       ```
-      > - [Modify the `CMAKE_INSTALL_PREFIX` parameter value as desired](https://cmake.org/cmake/help/latest/variable/CMAKE_INSTALL_PREFIX.html) to configure the base installation path.
-      > - The `../warzone2100` path at the end should point to the warzone2100 repo directory. This example assumes that the repo directory and the build directory are siblings, and that the repo was cloned into a directory named `warzone2100`.
-   4. Run CMake build:
-      ```shell
-      cmake --build . --target install
-      ```
+## Windows
+See [platforms/windows/README.md](platforms/windows/README.md)
 
-### Windows using MSVC
-
-See [platforms/windows/README-build.md](platforms/windows/README-build.md)
-
-### macOS
+## macOS
 See [platforms/macos/README.md](platforms/macos/README.md)
 
 # Licensing

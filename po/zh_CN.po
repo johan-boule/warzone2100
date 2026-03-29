@@ -7731,8 +7731,8 @@ msgstr "选项"
 msgid "View Intro"
 msgstr "查看介绍"
 
-msgid "Videos are missing, download them from http://wz2100.net"
-msgstr "战役视频丢失！从 http://wz2100.net 获取"
+msgid "Videos are missing, download them from https://warzone2100.retropaganda.info"
+msgstr "战役视频丢失！从 https://warzone2100.retropaganda.info 获取"
 
 msgid "Continue Last Save"
 msgstr "加载最近存档"
@@ -7746,23 +7746,23 @@ msgstr "退出游戏"
 msgid "MAIN MENU"
 msgstr "主菜单"
 
-msgid "Official site: http://wz2100.net/"
-msgstr "官方网址：http://wz2100.net/"
+msgid "Web site: https://warzone2100.retropaganda.info"
+msgstr "Web site: https://warzone2100.retropaganda.info"
 
 msgid "Come visit the forums and all Warzone 2100 news! Click this link."
 msgstr "点击此连接，访问论坛和 Warzone 2100 的所有新闻！"
 
-msgid "Donate: http://donations.wz2100.net/"
-msgstr "捐赠：http://donations.wz2100.net/"
+msgid "Donate: no donations"
+msgstr "捐赠：no donations"
 
 msgid "Help support the project with our server costs, Click this link."
 msgstr "帮助支持数据中心的运作，点击这个连接"
 
-msgid "Chat with players on Discord or IRC"
-msgstr "在 Discord 或 IRC 上与玩家聊天"
+msgid "Chat with players on Discord or Concord"
+msgstr "在 Discord 或 Concord 上与玩家聊天"
 
-msgid "Connect to Discord or Freenode through webchat by clicking this link."
-msgstr "连接到 Discord 或使用 Freenode 网页聊天，点击此链接。"
+msgid "Connect to Discord or Concord through webchat by clicking this link."
+msgstr "连接到 Discord 或使用 Concord 网页聊天，点击此链接。"
 
 msgid "Check for a newer version"
 msgstr "检查更新"
@@ -7798,8 +7798,8 @@ msgstr "查看遭遇战回放"
 msgid "SINGLE PLAYER"
 msgstr "单人游戏"
 
-msgid "Campaign videos are missing! Get them from http://wz2100.net"
-msgstr "战役视频丢失！请从 http://wz2100.net 获取"
+msgid "Campaign videos are missing! Get them from https://warzone2100.retropaganda.info"
+msgstr "战役视频丢失！请从 https://warzone2100.retropaganda.info 获取"
 
 msgid "Load Campaign Saved Game"
 msgstr "加载战役存档"
@@ -10013,8 +10013,8 @@ msgstr "%s 正在加入游戏"
 msgid "Server message:"
 msgstr "服务器信息："
 
-msgid "There is an update to the game, please visit https://wz2100.net to download new version."
-msgstr "游戏有更新，请访问 https://wz2100.net 下载新版本。"
+msgid "There is an update to the game, please visit https://warzone2100.retropaganda.info to download new version."
+msgstr "游戏有更新，请访问 https://warzone2100.retropaganda.info 下载新版本。"
 
 msgid "LIMITS"
 msgstr "限制"

@@ -99,9 +99,6 @@ bool			bLimiterLoaded = false;
 
 static std::shared_ptr<IMAGEFILE> pFlagsImages;
 
-#define TUTORIAL_LEVEL "TUTORIAL3"
-#define TRANSLATION_URL "https://translate.wz2100.net"
-
 // ////////////////////////////////////////////////////////////////////////////
 // Forward definitions
 
@@ -150,32 +147,10 @@ static void moveToParentRightEdge(WIDGET *widget, int32_t right)
 
 // ////////////////////////////////////////////////////////////////////////////
 // Title Screen
-static void runUpgrdHyperlink()
-{
-	std::string link = "https://wz2100.net/versioncheck/?ver=";
-	std::string version = version_getVersionString();
-	std::string versionStr;
-	for (char ch : version)
-	{
-		versionStr += (ch == ' ') ? '_' : ch;
-	}
-	link += urlEncode(versionStr.c_str());
-	openURLInBrowser(link.c_str());
-}
 
 static void runHyperlink()
 {
-	openURLInBrowser("https://wz2100.net/");
-}
-
-static void rundonatelink()
-{
-	openURLInBrowser("http://donations.wz2100.net/");
-}
-
-static void runchatlink()
-{
-	openURLInBrowser("https://wz2100.net/webchat/");
+	openURLInBrowser("https://warzone2100.retropaganda.info");
 }
 
 const char * VIDEO_TAG = "videoMissing";
@@ -190,7 +165,7 @@ void notifyAboutMissingVideos()
 		notification.contentText = _("See our FAQ on how to install videos");
 		notification.tag = VIDEO_TAG;
 		notification.largeIcon = WZ_Notification_Image("images/notifications/exclamation_triangle.png");
-		notification.action = WZ_Notification_Action("Open wz2100.net", [](const WZ_Notification&) {
+		notification.action = WZ_Notification_Action("Open warzone2100.retropaganda.info", [](const WZ_Notification&) {
 			runHyperlink();
 		});
 		notification.displayOptions = WZ_Notification_Display_Options::makeIgnorable("campaignVideoNotification", 2);
@@ -225,7 +200,7 @@ void startTitleMenu()
 	else
 	{
 		addTextButton(FRONTEND_PLAYINTRO, FRONTEND_POS6X, FRONTEND_POS6Y, _("View Intro"), WBUT_TXTCENTRE | WBUT_DISABLE);
-		widgSetTip(psWScreen, FRONTEND_PLAYINTRO, _("Videos are missing, download them from http://wz2100.net"));
+		widgSetTip(psWScreen, FRONTEND_PLAYINTRO, _("Videos are missing, download them from http://warzone2100.retropaganda.info"));
 
 		notifyAboutMissingVideos();
 	}
@@ -242,15 +217,8 @@ void startTitleMenu()
 	addTextButton(FRONTEND_QUIT, FRONTEND_POS8X, FRONTEND_POS8Y, _("Quit Game"), WBUT_TXTCENTRE);
 	addSideText(FRONTEND_SIDETEXT, FRONTEND_SIDEX, FRONTEND_SIDEY, _("MAIN MENU"));
 
-	addSmallTextButton(FRONTEND_HYPERLINK, FRONTEND_POS9X, FRONTEND_POS9Y, _("Official site: http://wz2100.net/"), 0);
-	widgSetTip(psWScreen, FRONTEND_HYPERLINK, _("Come visit the forums and all Warzone 2100 news! Click this link."));
-	W_BUTTON * pRightAlignedButton = addSmallTextButton(FRONTEND_DONATELINK, FRONTEND_POS9X + 360, FRONTEND_POS9Y, _("Donate: http://donations.wz2100.net/"), 0);
-	moveToParentRightEdge(pRightAlignedButton, 1);
-	widgSetTip(psWScreen, FRONTEND_DONATELINK, _("Help support the project with our server costs, Click this link."));
-	pRightAlignedButton = addSmallTextButton(FRONTEND_CHATLINK, FRONTEND_POS9X + 360, 0, _("Chat with players on Discord or IRC"), 0);
-	moveToParentRightEdge(pRightAlignedButton, 6);
-	widgSetTip(psWScreen, FRONTEND_CHATLINK, _("Connect to Discord or Freenode through webchat by clicking this link."));
-	addMultiBut(psWScreen, FRONTEND_BOTFORM, FRONTEND_UPGRDLINK, 7, 7, MULTIOP_BUTW, MULTIOP_BUTH, _("Check for a newer version"), IMAGE_GAMEVERSION, IMAGE_GAMEVERSION_HI, true);
+	addSmallTextButton(FRONTEND_WEB_SITE_HYPERLINK, FRONTEND_POS9X, FRONTEND_POS9Y, _("Web site: http://warzone2100.retropagnanda.info"), 0);
+	widgSetTip(psWScreen, FRONTEND_WEB_SITE_HYPERLINK, _("Come visit the forums and all Warzone 2100 news! Click this link."));
 }
 
 void runContinue()
@@ -273,7 +241,7 @@ bool runTitleMenu()
 	case FRONTEND_MULTIPLAYER:
 		changeTitleMode(MULTI);
 #if defined(__EMSCRIPTEN__)
-		wzDisplayDialog(Dialog_Information, "Multiplayer requires the native version.", "The web version of Warzone 2100 does not support online multiplayer. Please visit https://wz2100.net to download the native version for your platform.");
+		wzDisplayDialog(Dialog_Information, "Multiplayer requires the native version.", "The web version of Warzone 2100 does not support online multiplayer. Please visit https://warzone2100.retropaganda.info to download the native version for your platform.");
 #endif
 		break;
 	case FRONTEND_SINGLEPLAYER:
@@ -288,17 +256,8 @@ bool runTitleMenu()
 	case FRONTEND_PLAYINTRO:
 		changeTitleMode(SHOWINTRO);
 		break;
-	case FRONTEND_HYPERLINK:
+	case FRONTEND_WEB_SITE_HYPERLINK:
 		runHyperlink();
-		break;
-	case FRONTEND_UPGRDLINK:
-		runUpgrdHyperlink();
-		break;
-	case FRONTEND_DONATELINK:
-		rundonatelink();
-		break;
-	case FRONTEND_CHATLINK:
-		runchatlink();
 		break;
 	case FRONTEND_CONTINUE:
 		runContinue();
@@ -340,7 +299,7 @@ bool runTutorialMenu()
 	{
 	case FRONTEND_TUTORIAL:
 		SPinit(LEVEL_TYPE::CAMPAIGN);
-		sstrcpy(aLevelName, TUTORIAL_LEVEL);
+		sstrcpy(aLevelName, "TUTORIAL3");
 		setGroupButtonEnabled(false); // hack to disable the groups UI for the tutorial
 		changeTitleMode(STARTGAME);
 		break;
@@ -392,7 +351,7 @@ void startSinglePlayerMenu()
 	// show this only when the video sequences are not installed
 	if (!seq_hasVideos())
 	{
-		addSmallTextButton(FRONTEND_HYPERLINK, FRONTEND_POS9X, FRONTEND_POS9Y, _("Campaign videos are missing! Get them from http://wz2100.net"), 0);
+		addSmallTextButton(FRONTEND_WEB_SITE_HYPERLINK, FRONTEND_POS9X, FRONTEND_POS9Y, _("Campaign videos are missing! Get them from http://warzone2100.retropaganda.info"), 0);
 	}
 }
 
@@ -492,7 +451,7 @@ bool runSinglePlayerMenu()
 			addChallenges();
 			break;
 
-		case FRONTEND_HYPERLINK:
+		case FRONTEND_WEB_SITE_HYPERLINK:
 			runHyperlink();
 			break;
 
@@ -817,7 +776,7 @@ void displayTextOption(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		{
 			colour = WZCOL_TEXT_BRIGHT;
 		}
-		else if (psWidget->id == FRONTEND_HYPERLINK || psWidget->id == FRONTEND_DONATELINK || psWidget->id == FRONTEND_CHATLINK) // special case for our hyperlink
+		else if (psWidget->id == FRONTEND_WEB_SITE_HYPERLINK) // special case for our hyperlink
 		{
 			colour = WZCOL_YELLOW;
 		}

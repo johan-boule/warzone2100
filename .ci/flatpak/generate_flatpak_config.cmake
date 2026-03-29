@@ -3,8 +3,8 @@ cmake_minimum_required(VERSION 3.16...3.31)
 # Automatically generate a Flatpak manifest from the template file
 #
 # Required input defines:
-# - TEMPLATE_FILE: the full filename + path for the input net.wz2100.wz2100.yaml.in template file
-# - OUTPUT_FILE: the full filename + path for the output net.wz2100.wz2100.yaml file
+# - TEMPLATE_FILE: the full filename + path for the input info.retropaganda.warzone2100.yaml.in template file
+# - OUTPUT_FILE: the full filename + path for the output info.retropaganda..warzone2100.yaml file
 # - PROJECT_ROOT: the path the project root (${PROJECT_SOURCE_DIR})
 #
 # And also, these input defines:

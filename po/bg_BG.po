@@ -7723,8 +7723,8 @@ msgstr "Настройки"
 msgid "View Intro"
 msgstr "Интродукция"
 
-msgid "Videos are missing, download them from http://wz2100.net"
-msgstr "Видеоклиповете липсват, изтеглете ги от http://wz2100.net"
+msgid "Videos are missing, download them from https://warzone2100.retropaganda.info"
+msgstr "Видеоклиповете липсват, изтеглете ги от https://warzone2100.retropaganda.info"
 
 msgid "Continue Last Save"
 msgstr "Продължение от посл. игра"
@@ -7738,23 +7738,23 @@ msgstr "Излизане от играта"
 msgid "MAIN MENU"
 msgstr "ЗАГЛАВНО МЕНЮ"
 
-msgid "Official site: http://wz2100.net/"
-msgstr "Официален сайт: http://wz2100.net/"
+msgid "Web site: https://warzone2100.retropaganda.info"
+msgstr "Web site: https://warzone2100.retropaganda.info"
 
 msgid "Come visit the forums and all Warzone 2100 news! Click this link."
 msgstr "Посетете форумите за всички Warzone 2100 новини! Кликнете този линк."
 
-msgid "Donate: http://donations.wz2100.net/"
-msgstr "Дарете: http://donations.wz2100.net/"
+msgid "Donate: no donations"
+msgstr "Дарете: no donations"
 
 msgid "Help support the project with our server costs, Click this link."
 msgstr "Помогнете на проекта да поддържа сървърите си, Кликнете този линк."
 
-msgid "Chat with players on Discord or IRC"
-msgstr "Общувайте с играчи в Discord или IRC"
+msgid "Chat with players on Discord or Concord"
+msgstr "Общувайте с играчи в Discord или Concord"
 
-msgid "Connect to Discord or Freenode through webchat by clicking this link."
-msgstr "Свържете се в Discord или Freenode през уеб чат чрез този линк."
+msgid "Connect to Discord or Concord through webchat by clicking this link."
+msgstr "Свържете се в Discord или Concord през уеб чат чрез този линк."
 
 msgid "Check for a newer version"
 msgstr "Проверка за нова версия"
@@ -7790,8 +7790,8 @@ msgstr "Покажи запис от сражение"
 msgid "SINGLE PLAYER"
 msgstr "САМОСТОЯТЕЛНА ИГРА"
 
-msgid "Campaign videos are missing! Get them from http://wz2100.net"
-msgstr "Видеоклиповете от кампанията липсват! Вземете ги от http://wz2100.net"
+msgid "Campaign videos are missing! Get them from https://warzone2100.retropaganda.info"
+msgstr "Видеоклиповете от кампанията липсват! Вземете ги от https://warzone2100.retropaganda.info"
 
 msgid "Load Campaign Saved Game"
 msgstr "Зареждане на съхранена кампания"
@@ -9998,7 +9998,7 @@ msgstr ""
 msgid "Server message:"
 msgstr ""
 
-msgid "There is an update to the game, please visit https://wz2100.net to download new version."
+msgid "There is an update to the game, please visit https://warzone2100.retropaganda.info to download new version."
 msgstr ""
 
 msgid "LIMITS"

@@ -7735,8 +7735,8 @@ msgstr "Ayarlar"
 msgid "View Intro"
 msgstr "Oyun Videosunu İzle"
 
-msgid "Videos are missing, download them from http://wz2100.net"
-msgstr "Videolar eksik! Videoları http://wz2100.net'den indirin"
+msgid "Videos are missing, download them from https://warzone2100.retropaganda.info"
+msgstr "Videolar eksik! Videoları https://warzone2100.retropaganda.info'den indirin"
 
 msgid "Continue Last Save"
 msgstr "Son Kayıttan Devam Et"
@@ -7750,23 +7750,23 @@ msgstr "Oyundan Çık"
 msgid "MAIN MENU"
 msgstr "ANA MENÜ"
 
-msgid "Official site: http://wz2100.net/"
-msgstr "Resmi site: http://wz2100.net/"
+msgid "Web site: https://warzone2100.retropaganda.info"
+msgstr "Web site: https://warzone2100.retropaganda.info"
 
 msgid "Come visit the forums and all Warzone 2100 news! Click this link."
 msgstr "Gelin, forum ve Warzone 2100 haberlerine bakın! Bu bağlantıya tıklayın."
 
-msgid "Donate: http://donations.wz2100.net/"
-msgstr "Bağış yapın: http://donations.wz2100.net/"
+msgid "Donate: no donations"
+msgstr "Bağış yapın: no donations"
 
 msgid "Help support the project with our server costs, Click this link."
 msgstr "Projeye sunucu masraflarımızı karşılayarak yardım edin. Bu bağlantıya tıklayın."
 
-msgid "Chat with players on Discord or IRC"
-msgstr "Oyuncularla Discord veya IRC üzerinden sohbet et"
+msgid "Chat with players on Discord or Concord"
+msgstr "Oyuncularla Discord veya Concord üzerinden sohbet et"
 
-msgid "Connect to Discord or Freenode through webchat by clicking this link."
-msgstr "Bu bağlantıya tıklayarak Discord veya Freenode web sohbetine bağlan."
+msgid "Connect to Discord or Concord through webchat by clicking this link."
+msgstr "Bu bağlantıya tıklayarak Discord veya Concord web sohbetine bağlan."
 
 msgid "Check for a newer version"
 msgstr "Daha yeni sürümü denetle"
@@ -7802,8 +7802,8 @@ msgstr "Çatışma Tekrarını Görüntüle"
 msgid "SINGLE PLAYER"
 msgstr "TEK OYUNCU"
 
-msgid "Campaign videos are missing! Get them from http://wz2100.net"
-msgstr "Seferberlik videolarını kaçırıyorsun! Videoları http://wz2100.net'den indir"
+msgid "Campaign videos are missing! Get them from https://warzone2100.retropaganda.info"
+msgstr "Seferberlik videolarını kaçırıyorsun! Videoları https://warzone2100.retropaganda.info'den indir"
 
 msgid "Load Campaign Saved Game"
 msgstr "Seferberlik Kayıtlı Oyunu Yükle"
@@ -10017,8 +10017,8 @@ msgstr "%s Oyuna katılıyor"
 msgid "Server message:"
 msgstr "Sunucu iletisi:"
 
-msgid "There is an update to the game, please visit https://wz2100.net to download new version."
-msgstr "Oyunda bir güncelleme var, lütfen yeni sürümü indirmek için https://wz2100.net adresini ziyaret edin."
+msgid "There is an update to the game, please visit https://warzone2100.retropaganda.info to download new version."
+msgstr "Oyunda bir güncelleme var, lütfen yeni sürümü indirmek için https://warzone2100.retropaganda.info adresini ziyaret edin."
 
 msgid "LIMITS"
 msgstr "SINIRLAR"
