@@ -242,8 +242,6 @@ private:
 NETPLAY	NetPlay;
 static bool allow_joining = false;
 static bool server_not_there = false;
-static bool lobby_disabled = false;
-static std::string lobby_disabled_info_link_url;
 static GAMESTRUCT	gamestruct;
 
 static std::vector<WZFile> DownloadingWzFiles;
@@ -428,22 +426,6 @@ uint32_t NETGetMinorVersion()
 bool NETGameIsLocked()
 {
 	return NetPlay.GamePassworded;
-}
-
-bool NET_getLobbyDisabled()
-{
-	return lobby_disabled;
-}
-
-const std::string& NET_getLobbyDisabledInfoLinkURL()
-{
-	return lobby_disabled_info_link_url;
-}
-
-void NET_setLobbyDisabled(const std::string& infoLinkURL)
-{
-	lobby_disabled = true;
-	lobby_disabled_info_link_url = infoLinkURL;
 }
 
 uint32_t NET_getCurrentHostedLobbyGameId()

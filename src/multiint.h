@@ -177,7 +177,6 @@ void sendRoomNotifyMessage(char const *text);
 void sendRoomSystemMessageToSingleReceiver(char const *text, uint32_t receiver, bool skipLocalDisplay = false);
 void displayRoomSystemMessage(char const *text);
 void displayRoomNotifyMessage(char const *text);
-void displayLobbyDisabledNotification();
 
 void multiLobbyHandleHostOptionsChanges(const std::array<bool, MAX_CONNECTED_PLAYERS>& priorHostChatPermissions);
 

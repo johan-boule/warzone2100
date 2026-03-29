@@ -136,7 +136,6 @@
 #include "3rdparty/gsl_finally.h"
 
 #define MAP_PREVIEW_DISPLAY_TIME 2500	// number of milliseconds to show map in preview
-#define LOBBY_DISABLED_TAG       "lobbyDisabled"
 #define KICK_REASON_TAG          "kickReason"
 #define SLOTTYPE_TAG_PREFIX      "slotType"
 #define SLOTTYPE_REQUEST_TAG     SLOTTYPE_TAG_PREFIX "::request"
@@ -6122,34 +6121,6 @@ void multiLobbyRandomizeOptions()
 	NETregisterServer(WZ_SERVER_UPDATE);
 }
 
-void displayLobbyDisabledNotification()
-{
-	if (!hasNotificationsWithTag(LOBBY_DISABLED_TAG))
-	{
-		WZ_Notification notification;
-		notification.duration = 0;
-		notification.contentTitle = _("Multiplayer Lobby Support Unavailable");
-
-		notification.contentText = _("Your client cannot connect to the mutiplayer lobby.");
-		notification.contentText += "\n\n";
-		notification.contentText += _("Please click the button below for more information on how to fix it.");
-
-		std::string infoLink = NET_getLobbyDisabledInfoLinkURL();
-		notification.action = WZ_Notification_Action(_("More Information"), [infoLink](const WZ_Notification&) {
-			// Open the infoLink url
-			wzAsyncExecOnMainThread([infoLink]{
-				if (!openURLInBrowser(infoLink.c_str()))
-				{
-					debug(LOG_ERROR, "Failed to open url in browser: \"%s\"", infoLink.c_str());
-				}
-			});
-		});
-		notification.tag = LOBBY_DISABLED_TAG;
-
-		addNotification(notification, WZ_Notification_Trigger::Immediate());
-	}
-}
-
 bool WzMultiplayerOptionsTitleUI::startHost()
 {
 	debug(LOG_NET, "MULTIOP_HOST enabled");
@@ -6184,11 +6155,6 @@ bool WzMultiplayerOptionsTitleUI::startHost()
 			wzQuit(1);
 		}
 		return false;
-	}
-
-	if (NET_getLobbyDisabled())
-	{
-		displayLobbyDisabledNotification();
 	}
 
 	updateInActualHostedLobby(true);
@@ -6340,7 +6306,6 @@ void startMultiplayerGame()
 	wz_command_interface_output("WZEVENT: startMultiplayerGame\n");
 	debug(LOG_INFO, "startMultiplayerGame");
 
-	cancelOrDismissNotificationsWithTag(LOBBY_DISABLED_TAG);
 	cancelOrDismissNotificationIfTag([](const std::string& tag) {
 		return (tag.rfind(SLOTTYPE_TAG_PREFIX, 0) == 0);
 	});
@@ -7016,7 +6981,6 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 			}
 		case NET_FIREUP:					// campaign game started.. can fire the whole shebang up...
 			cancelOrDismissVoteNotifications(); // don't need vote notifications anymore
-			cancelOrDismissNotificationsWithTag(LOBBY_DISABLED_TAG);
 			cancelOrDismissNotificationIfTag([](const std::string& tag) {
 				return (tag.rfind(SLOTTYPE_TAG_PREFIX, 0) == 0);
 			});
@@ -7484,7 +7448,6 @@ TITLECODE WzMultiplayerOptionsTitleUI::run()
 	if (!NetPlay.isHostAlive && ingame.side == InGameSide::MULTIPLAYER_CLIENT)
 	{
 		cancelOrDismissVoteNotifications();
-		cancelOrDismissNotificationsWithTag(LOBBY_DISABLED_TAG);
 		cancelOrDismissNotificationIfTag([](const std::string& tag) {
 			return (tag.rfind(SLOTTYPE_TAG_PREFIX, 0) == 0);
 		});

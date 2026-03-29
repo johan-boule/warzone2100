@@ -889,13 +889,6 @@ void LobbyBrowser::triggerAsyncGameListFetch()
 {
 	if (currentFetchThread) { return; }
 
-	if (NET_getLobbyDisabled())
-	{
-		lobbyStatusOverlayWidg->setString(_("There appears to be a game update available!"));
-		lobbyStatusOverlayWidg->show();
-		return;
-	}
-
 	refreshButton->setState(WBUT_DISABLE);
 	lobbyStatusOverlayWidg->showIndeterminateIndicator(true);
 	lobbyStatusOverlayWidg->setString("");
@@ -1009,7 +1002,7 @@ void LobbyBrowser::populateTableFromGameList()
 	{
 		const auto& gameInfo = currentResults[idx];
 
-		foundGreaterVersion = foundGreaterVersion || NETisGreaterVersion(gameInfo.netcode_version_major, gameInfo.netcode_version_minor);
+		foundGreaterVersion |= NETisGreaterVersion(gameInfo.netcode_version_major, gameInfo.netcode_version_minor);
 
 		bool isCompatibleGame = NETisCorrectVersion(gameInfo.netcode_version_major, gameInfo.netcode_version_minor);
 		if (filterIncompatible && !isCompatibleGame)
@@ -1081,7 +1074,7 @@ void LobbyBrowser::populateTableFromGameList()
 			lobbyStatusOverlayWidg->setString(statusStr);
 		}
 
-		if (NET_getLobbyDisabled() || getVersionCheckNewVersionAvailable().value_or(false) || foundGreaterVersion)
+		if (foundGreaterVersion)
 		{
 			lobbyStatusOverlayWidg->setString(_("There appears to be a game update available!"));
 		}
@@ -1223,18 +1216,8 @@ void LobbyBrowser::initialize(const std::function<void()>& onBackButtonFunc)
 	attach(lobbyStatusMessageContainer);
 	lobbyStatusMessageContainer->setGeometry(0, 0, 100, (iV_GetTextLineSize(font_regular) * 3) + 30);
 
-	if (!NET_getLobbyDisabled())
-	{
-		// Start up background thread to gather lobby listing
-		triggerAsyncGameListFetch();
-	}
-	else
-	{
-		lobbyStatusOverlayWidg->setString(_("There appears to be a game update available!"));
-		lobbyStatusOverlayWidg->show();
-
-		displayLobbyDisabledNotification();
-	}
+	// Start up background thread to gather lobby listing
+	triggerAsyncGameListFetch();
 }
 
 void LobbyBrowser::geometryChanged()
