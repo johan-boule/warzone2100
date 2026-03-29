@@ -39,12 +39,6 @@ set(host_doc_FILES
 	"${CMAKE_CURRENT_SOURCE_DIR}/hosting/AutohostConfig.md"
 	"${CMAKE_CURRENT_SOURCE_DIR}/hosting/DedicatedHost.md"
 	)
-set(host_doc_linux_scripts_FILES
-	"${CMAKE_CURRENT_SOURCE_DIR}/hosting/linux_scripts/common.sh"
-	"${CMAKE_CURRENT_SOURCE_DIR}/hosting/linux_scripts/config_sample.sh"
-	"${CMAKE_CURRENT_SOURCE_DIR}/hosting/linux_scripts/game_sample.sh"
-	"${CMAKE_CURRENT_SOURCE_DIR}/hosting/linux_scripts/wz2100host_sample.service"
-	)
 
 #######################
 # Main documentation
@@ -255,7 +249,6 @@ if(wz2100_doc_IMAGES_FILES)
 endif()
 install(FILES ${wz2100_doc_FILES} DESTINATION "${CMAKE_INSTALL_DOCDIR}${WZ_OUTPUT_NAME_SUFFIX}" COMPONENT Docs)
 install(FILES ${host_doc_FILES} DESTINATION "${CMAKE_INSTALL_DOCDIR}${WZ_OUTPUT_NAME_SUFFIX}/hosting" COMPONENT Docs)
-install(FILES ${host_doc_linux_scripts_FILES} DESTINATION "${CMAKE_INSTALL_DOCDIR}${WZ_OUTPUT_NAME_SUFFIX}/hosting/linux_scripts" COMPONENT Docs)
 
 if(UNIX AND NOT EMSCRIPTEN AND NOT SKIPPED_DOC_GENERATION)
 	# Man-page gzip and installation
