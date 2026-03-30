@@ -28,8 +28,6 @@ list(APPEND wz2100_doc_FILES
 	"${CMAKE_CURRENT_BINARY_DIR}/js-objects.md"
 	"${CMAKE_CURRENT_BINARY_DIR}/js-campaign.md"
 	"${CMAKE_CURRENT_BINARY_DIR}/Scripting.md"
-
-	"${CMAKE_CURRENT_SOURCE_DIR}/ScriptingManual.htm"
 )
 
 #######################
