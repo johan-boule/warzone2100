@@ -2420,7 +2420,7 @@ void moveUpdateDroid(DROID *psDroid)
 //			{
 //				psDroid->sMove.target = Vector2i(fx, fy);
 //				moveCalcBoundary(psDroid);
-//				// See: https://github.com/Warzone2100/warzone2100/commit/4bbd0e9b5fb972d4049456a9c89c3caf2829c4a0#diff-a3ba5fb329c14069f6d815e17db0ac6144cc42aca71effe59d026ddc9278d800
+//				// See git diff 4bbd0e9b5fb972d4049456a9c89c3caf2829c4a0..a3ba5fb329c14069f6d815e17db0ac6144cc42aca71effe59d026ddc9278d800
 //				// which removed boundary vectors (which would have picked up this target change via moveCalcBoundary?)
 //			}
 		}

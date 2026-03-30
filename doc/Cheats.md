@@ -46,4 +46,4 @@ There are many cheat commands. Some examples:
 * `showorders` - Displays unit order/action state
 * `droidinfo` - Shows unit stats
 
-All available commands can be found in this file: https://github.com/Warzone2100/warzone2100/blob/master/src/cheat.cpp
+All available commands can be found in the C++ source file: cheat.cpp

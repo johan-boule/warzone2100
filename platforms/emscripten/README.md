@@ -18,7 +18,7 @@ The Warzone 2100 Web Edition runs in modern web browsers via [WebAssembly](https
    ```
    npm install --ignore-scripts workbox-cli --global
    ```
-3. Follow the instructions for [Warzone 2100: Getting the Source](https://github.com/Warzone2100/warzone2100#getting-the-source)
+3. Follow the instructions for [Warzone 2100: Getting the Source](https://github.com/johan-boule/warzone2100)
 4. `mkdir` a new build folder (as a sibling directory to the warzone2100 repo)
 5. `cd` into the build folder
 6. Clone vcpkg into the build folder
@@ -99,7 +99,7 @@ This port is able to support most core Warzone 2100 features, including: campaig
 
 The Web Edition also ships with textures that have been optimized for size, at the expense of quality.
 
-> If you want the highest quality textures, and the complete set of features, you should consider downloading the latest [native build for your system](https://github.com/Warzone2100/warzone2100/releases/latest).
+> If you want the highest quality textures, and the complete set of features, you should consider downloading the latest [native build for your system](https://github.com/johan-boule/warzone2100/releases/latest).
 
 ## Persisting Data:
 

@@ -501,7 +501,7 @@ static void debugDisplayFatalErrorMsgBox(const char* outputLogLine)
 #if defined(WZ_OS_WIN)
 	char wbuf[MAX_LEN_LOG_LINE+512];
 	ssprintf(wbuf, "%s\n\nPlease check the file (%s) in your configuration directory for more details. \
-		\nDo not forget to upload the %s file, WZdebuginfo.txt and the warzone2100.rpt files in your bug reports at https://github.com/Warzone2100/warzone2100/issues/new!", outputLogLine, WZ_DBGFile, WZ_DBGFile);
+		\nDo not forget to upload the %s file, WZdebuginfo.txt and the warzone2100.rpt files in your bug report.", outputLogLine, WZ_DBGFile, WZ_DBGFile);
 	wzDisplayDialog(Dialog_Error, "Warzone has terminated unexpectedly", wbuf);
 #elif defined(WZ_OS_MAC)
 	char wbuf[MAX_LEN_LOG_LINE+128];
@@ -509,11 +509,11 @@ static void debugDisplayFatalErrorMsgBox(const char* outputLogLine)
 	size_t clickedIndex = wzDisplayDialogAdvanced(Dialog_Error, "Warzone has quit unexpectedly.", wbuf, {"Show Log Files & Open Bug Reporter", "Ignore"});
 	if (clickedIndex == 1)
 	{
-		if (!cocoaOpenURL("https://github.com/Warzone2100/warzone2100/issues/new"))
+		if (!cocoaOpenURL("https://github.com/johan-boule/warzone2100/issues/new"))
 		{
 			wzDisplayDialogAdvanced(Dialog_Error,
 									"Failed to open URL",
-									"Could not open URL: https://github.com/Warzone2100/warzone2100/issues/new\nPlease open this URL manually in your web browser.", {"Continue"});
+									"Could not open URL: https://github.com/johan-boule/warzone2100/issues/new\nPlease open this URL manually in your web browser.", {"Continue"});
 		}
 		if (strnlen(WZ_DBGFile, sizeof(WZ_DBGFile)/sizeof(WZ_DBGFile[0])) <= 0)
 		{

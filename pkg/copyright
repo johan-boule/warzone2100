@@ -1,6 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: Warzone 2100
-Source: https://github.com/Warzone2100/warzone2100
+Source: https://github.com/johan-boule/warzone2100
 
 Files: *
 Copyright: 1999-2004, Eidos Interactive

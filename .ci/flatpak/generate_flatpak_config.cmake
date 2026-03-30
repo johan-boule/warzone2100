@@ -57,7 +57,7 @@ else()
 	message( STATUS "WZ_RELEASE_PUBLISH_BUILD detected - configuring for build from source tarball for \"${WZ_RELEASE_TAG}\"" )
 	set(WZ_MAIN_MODULE_SOURCE "
       - type: archive\n\
-        url: https://github.com/Warzone2100/warzone2100/releases/download/${WZ_RELEASE_TAG}/warzone2100_src.tar.xz\n\
+        url: https://github.com/johan-boule/warzone2100/releases/download/${WZ_RELEASE_TAG}/warzone2100_src.tar.xz\n\
         sha256: ${WZ_RELEASE_TARBALL_SHA256}\n\
 ")
 

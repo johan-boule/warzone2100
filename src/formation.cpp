@@ -614,7 +614,7 @@ bool formationGetPos( FORMATION *psFormation, DROID* psDroid,
 		return false;
 	}
 
-// NOTE: fpathTileLOS was removed in: https://github.com/Warzone2100/warzone2100/commit/1cc62d6d9d9d95354e10522c8618423565779b89
+// NOTE: fpathTileLOS was removed in git commit 1cc62d6d9d9d95354e10522c8618423565779b89
 //	// check the unit can get to the formation position
 //	if (bCheckLOS && !fpathTileLOS(psDroid, Vector3i_Init(x, y, 0)))
 //	{
