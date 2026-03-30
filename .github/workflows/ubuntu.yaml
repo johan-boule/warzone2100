@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
   release:
+    types:
+      - prereleased
+      - released
 
 jobs:
   ubuntu-build:
@@ -12,9 +15,9 @@ jobs:
         include:
           - name: Ubuntu 24.04 GCC AMD64
             docker: ubuntu-24.04
-            arch: amd64
             output-suffix: ubuntu24.04
             compiler: gcc
+            arch: amd64
             publish_artifact: true
             deploy_release: true
       fail-fast: true
@@ -34,31 +37,18 @@ jobs:
       - name: Export Environment
         run: |
           set -eu
-          if [[ $GITHUB_REF_TYPE == tag ]]; then
-            WZ_BUILD_DESC_IS_TAG=true
-          else
-            WZ_BUILD_DESC_IS_TAG=false
-          fi
-          echo WZ_BUILD_DESC_IS_TAG=$WZ_BUILD_DESC_IS_TAG >> $GITHUB_ENV
-
-          if [[ -v GITHUB_HEAD_REF ]]; then
-            WZ_BUILD_DESC_PREFIX=$GITHUB_HEAD_REF
-          else
-            WZ_BUILD_DESC_PREFIX=$GITHUB_REF_NAME
-          fi
-          WZ_BUILD_DESC_PREFIX=${WZ_BUILD_DESC_PREFIX////_}
-          WZ_BUILD_DESC_PREFIX=${WZ_BUILD_DESC_PREFIX//-/_}
-          echo WZ_BUILD_DESC_PREFIX=$WZ_BUILD_DESC_PREFIX >> $GITHUB_ENV
-
-          WZ_OUTPUT_NAME_SUFFIX=
           WZ_NAME_SUFFIX=
+          WZ_OUTPUT_NAME_SUFFIX=
           if [[ $GITHUB_REF_TYPE != tag ]]; then
-            suffix=$(sed 's/[^a-zA-Z0-9\.]/_/g' <<< "$WZ_BUILD_DESC_PREFIX")
-            WZ_OUTPUT_NAME_SUFFIX=_$suffix
+            suffix=${GITHUB_HEAD_REF-$GITHUB_REF_NAME}
+            suffix=${suffix////_}
+            suffix=${suffix//-/_}
+            suffix=$(sed 's/[^a-zA-Z0-9\.]/_/g' <<< "$suffix")
             WZ_NAME_SUFFIX=" ($suffix)"
+            WZ_OUTPUT_NAME_SUFFIX=_$suffix
           fi
-          echo WZ_OUTPUT_NAME_SUFFIX=$WZ_OUTPUT_NAME_SUFFIX >> $GITHUB_ENV
           echo WZ_NAME_SUFFIX=$WZ_NAME_SUFFIX >> $GITHUB_ENV
+          echo WZ_OUTPUT_NAME_SUFFIX=$WZ_OUTPUT_NAME_SUFFIX >> $GITHUB_ENV
 
           echo WZ_DISTRIBUTOR=${GITHUB_REPOSITORY%/*} >> $GITHUB_ENV
 
@@ -78,7 +68,7 @@ jobs:
           echo "::add-matcher::$GITHUB_WORKSPACE/src/.ci/githubactions/pattern_matchers/cmake.json"
           docker run --rm \
             --env CI \
-            --env GITHUB_WORKFLOW --env GITHUB_ACTIONS --env GITHUB_REPOSITORY --env GITHUB_WORKSPACE \
+            --env GITHUB_ACTIONS --env GITHUB_REPOSITORY --env GITHUB_WORKFLOW --env GITHUB_WORKSPACE \
             --env GITHUB_SHA --env GITHUB_REF --env GITHUB_HEAD_REF --env GITHUB_BASE_REF \
             --env CC --env CXX \
             --volume $GITHUB_WORKSPACE:$GITHUB_WORKSPACE \
@@ -88,8 +78,8 @@ jobs:
                 -S $GITHUB_WORKSPACE/src \
                 -B $GITHUB_WORKSPACE/build \
                 -D CMAKE_BUILD_TYPE=Release \
-                -D WZ_OUTPUT_NAME_SUFFIX="$WZ_OUTPUT_NAME_SUFFIX" \
                 -D WZ_NAME_SUFFIX="$WZ_NAME_SUFFIX" \
+                -D WZ_OUTPUT_NAME_SUFFIX="$WZ_OUTPUT_NAME_SUFFIX" \
                 -D WZ_DISTRIBUTOR="$WZ_DISTRIBUTOR" \
                 -D WZ_ENABLE_WARNINGS=0 \
                 -D WZ_BUILD_SENTRY=0 \
@@ -102,7 +92,7 @@ jobs:
           echo "::add-matcher::$GITHUB_WORKSPACE/src/.ci/githubactions/pattern_matchers/${{ matrix.compiler }}.json"
           docker run --rm \
             --env CI \
-            --env GITHUB_WORKFLOW --env GITHUB_ACTIONS --env GITHUB_REPOSITORY --env GITHUB_WORKSPACE \
+            --env GITHUB_ACTIONS --env GITHUB_REPOSITORY --env GITHUB_WORKFLOW --env GITHUB_WORKSPACE \
             --env GITHUB_SHA --env GITHUB_REF --env GITHUB_HEAD_REF --env GITHUB_BASE_REF \
             --env CC --env CXX \
             --volume $GITHUB_WORKSPACE:$GITHUB_WORKSPACE \
@@ -110,15 +100,14 @@ jobs:
               cmake --build $GITHUB_WORKSPACE/build
           echo '::remove-matcher owner=${{ matrix.compiler }}::'
       - name: CPack Debian
-        working-directory: '${{ github.workspace }}/build'
         run: |
           set -eu
           docker run --rm \
             --env CI \
-            --env GITHUB_WORKFLOW --env GITHUB_ACTIONS --env GITHUB_REPOSITORY --env GITHUB_WORKSPACE \
+            --env GITHUB_ACTIONS --env GITHUB_REPOSITORY --env GITHUB_WORKFLOW --env GITHUB_WORKSPACE \
             --env GITHUB_SHA --env GITHUB_REF --env GITHUB_HEAD_REF --env GITHUB_BASE_REF \
             --volume $GITHUB_WORKSPACE:$GITHUB_WORKSPACE \
-            --workdir $PWD \
+            --workdir $GITHUB_WORKSPACE/build \
             ubuntu \
               cpack \
                 --config ./CPackConfig.cmake \
@@ -126,24 +115,18 @@ jobs:
                 -D CPACK_DEBIAN_PACKAGE_MAINTAINER="$WZ_DISTRIBUTOR" \
                 -D CPACK_DEB_COMPONENT_INSTALL=ON \
                 -D CPACK_COMPONENTS_GROUPING=ALL_COMPONENTS_IN_ONE \
-                -D CPACK_DEBIAN_PACKAGE_NAME="warzone2100$(sed 's/[^a-zA-Z0-9\.\+\-]/-/g' <<< "$WZ_OUTPUT_NAME_SUFFIX")" \
-                -D CPACK_DEBIAN_FILE_NAME=warzone2100.deb
-
-          OUTPUT_DIR=$HOME/output
-          echo "OUTPUT_DIR=$OUTPUT_DIR" >> $GITHUB_ENV
-          mkdir --parents $OUTPUT_DIR
-          OUTPUT_FILE_NAME=warzone2100_${{ matrix.output-suffix }}_${{ matrix.arch }}.deb
-          mv warzone2100.deb $OUTPUT_DIR/$OUTPUT_FILE_NAME
-          echo WZ_FULL_OUTPUT_DEB_PATH=$OUTPUT_DIR/$OUTPUT_FILE_NAME >> $GITHUB_ENV
-      - uses: actions/upload-artifact@v6
-        if: success() && (github.event_name != 'release') && (matrix.publish_artifact == true)
+                -D CPACK_DEBIAN_PACKAGE_NAME=warzone2100$WZ_OUTPUT_NAME_SUFFIX \
+                -D CPACK_DEBIAN_FILE_NAME=warzone2100_${{ matrix.output-suffix }}_${{ matrix.arch }}.deb
+      - uses: actions/upload-artifact@v7
+        if: success() && github.event_name != 'release' && matrix.publish_artifact
         with:
           name: warzone2100_${{ matrix.output-suffix }}_${{ matrix.arch }}_deb
-          path: ${{ env.OUTPUT_DIR }}
+          archive: false # do not zip
+          path: ${{ github.workspace }}/build/warzone2100_${{ matrix.output-suffix }}_${{ matrix.arch }}.deb
           if-no-files-found: error
       - name: GH Release Upload
-        if: success() && (github.event_name == 'release') && (matrix.deploy_release == true)
+        if: success() && github.event_name == 'release' && matrix.deploy_release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: set -eu && gh release upload "$GITHUB_REF_NAME" $WZ_FULL_OUTPUT_DEB_PATH
+        run: set -eu && gh release upload "$GITHUB_REF_NAME" $GITHUB_WORKSPACE/build/warzone2100_${{ matrix.output-suffix }}_${{ matrix.arch }}.deb
