@@ -137,14 +137,6 @@ template <typename T> static T pow2Cycle(T value, T min, T max)
 		min < value ? (value / 2 > 1 ? value / 2 : 0) : max;  // Cycle backwards.
 }
 
-static void moveToParentRightEdge(WIDGET *widget, int32_t right)
-{
-	if (auto parent = widget->parent())
-	{
-		widget->move(parent->width() - (widget->width() + right), widget->y());
-	}
-}
-
 // ////////////////////////////////////////////////////////////////////////////
 // Title Screen
 
