@@ -14,71 +14,12 @@ install(FILES
 
 #########################
 
-function(copyFileToDir _file _destDir)
-	get_filename_component(_filename "${_file}" NAME)
-	configure_file(
-		${_file}
-		${_destDir}/${_filename}
-		COPYONLY
-	)
-endfunction()
-
-function(downloadFile URL OUTPUT_FILENAME RETRY_COUNT RESULT_STATUS_CODE RESULT_STATUS_STRING)
-	set(_dl_attempts 0)
-	message(STATUS "Fetching: ${URL}")
-	while(_dl_attempts LESS ${RETRY_COUNT})
-		if(EXISTS "${OUTPUT_FILENAME}")
-			file(REMOVE "${OUTPUT_FILENAME}")
-		endif()
-		file(
-			DOWNLOAD "${URL}" "${OUTPUT_FILENAME}"
-			INACTIVITY_TIMEOUT 60
-			TLS_VERIFY ON
-			STATUS _dl_status
-			LOG _dl_log
-		)
-		list(GET _dl_status 0 _dl_status_code)
-		list(GET _dl_status 1 _dl_status_string)
-		if (_dl_status_code EQUAL 0)
-			# Download succeeded
-			set(${RESULT_STATUS_CODE} ${_dl_status_code} PARENT_SCOPE)
-			set(${RESULT_STATUS_STRING} ${_dl_status_string} PARENT_SCOPE)
-			return()
-		else()
-			MATH(EXPR _num_attempt "${_dl_attempts}+1")
-			message(STATUS "Error (${_dl_status_code}); Attempt (${_num_attempt})...")
-		endif()
-		MATH(EXPR _dl_attempts "${_dl_attempts}+1")
-	endwhile()
-	set(${RESULT_STATUS_CODE} ${_dl_status_code} PARENT_SCOPE)
-	set(${RESULT_STATUS_STRING} ${_dl_status_string} PARENT_SCOPE)
-endfunction()
-
-function(downloadFileCalculateHash URL TMP_DIR HASH RETURN_VARIABLE)
-	set(_tmp_dl_path "${TMP_DIR}/_tmpFileDl")
-	downloadFile("${URL}" "${_tmp_dl_path}" 3 _dl_status_code _dl_status_string)
-	if (_dl_status_code EQUAL 0)
-		# Download succeeded - calculate hash
-		file(${HASH} "${_tmp_dl_path}" _result_hash)
-		set(${RETURN_VARIABLE} "${_result_hash}" PARENT_SCOPE)
-	else()
-		message(WARNING "Failed to fetch: ${URL}")
-		set(${RETURN_VARIABLE} FALSE PARENT_SCOPE)
-	endif()
-	# Delete the temporary download file
-	if(EXISTS "${_tmp_dl_path}")
-		file(REMOVE "${_tmp_dl_path}")
-	endif()
-endfunction()
-
-#########################
-
 if(NOT DEFINED WZ_DIST_LICENSE OR NOT EXISTS "${WZ_DIST_LICENSE}")
 	message(FATAL_ERROR "This file should be included in the project's root CMakeLists.txt, after WZ_DIST_LICENSE is defined.")
 endif()
 
 set(CPACK_PACKAGE_NAME			"Warzone 2100")
-set(CPACK_PACKAGE_VENDOR		"Warzone 2100 Project")
+set(CPACK_PACKAGE_VENDOR		"${WZ_DISTRIBUTOR}")
 set(CPACK_RESOURCE_FILE_LICENSE "${WZ_DIST_LICENSE}")
 set(CPACK_PACKAGE_CHECKSUM		SHA256)
 set(CPACK_PACKAGE_DESCRIPTION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/Description.txt")
@@ -156,10 +97,7 @@ if(NOT DEFINED CPACK_SOURCE_PACKAGE_FILE_NAME)
 	set(CPACK_SOURCE_PACKAGE_FILE_NAME "warzone2100")
 endif()
 
-if(CMAKE_SYSTEM_NAME MATCHES "Windows")
-	message(FATAL_ERROR "When targeting Windows, build the NSIS installer.... well then why does the CI builds with InnoSetup then?")
-
-elseif(CMAKE_SYSTEM_NAME MATCHES "Darwin")
+if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
 	# macOS builds
 
 	# Only install the "Core" component (the application), as the macOS app bundle contains all of the data & supporting files & languages
@@ -229,71 +167,6 @@ set(CPACK_DEBIAN_CORE_PACKAGE_DEPENDS "${wz_deb_sdl3_depends}")
 
 set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "${wz_deb_sdl3_recommends}")
 
-#####################
-# Package Source
-
-set(CPACK_SOURCE_GENERATOR "TXZ")
-
-if(NOT DEFINED CPACK_SOURCE_IGNORE_FILES)
-	set (CPACK_SOURCE_IGNORE_FILES)
-endif()
-
-# Ignore version control
-list (APPEND CPACK_SOURCE_IGNORE_FILES "\\\\.#")
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/#")
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/\\\\.git")
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/\\\\.svn")
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/\\\\.hg/")
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/\\\\.bzr/")
-
-# Ignore various CI / Github-config related files
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/\\\\.ci/")
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/\\\\.github/")
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/\\\\.cirrus.yml")
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/\\\\.lgtm.yml")
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/\\\\.travis.yml")
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/\\\\appveyor.yml")
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/\\\\azure-pipelines.yml")
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/\\\\crowdin.yml")
-
-# Ignore development / runtime created files
-list (APPEND CPACK_SOURCE_IGNORE_FILES "~$")
-list (APPEND CPACK_SOURCE_IGNORE_FILES "\\\\.DS_Store$")
-
-# The build directory (if user configured to build in the core repo folder)
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/build/")
-
-# Ignore sequences.wz if it's in the data directory
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/data/sequences.wz")
-
-# Ignore any autorevision.cache file in the src directory
-# (the install script below handles generating a fresh one)
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/build_tools/autorevision.cache")
-
-# The macosx build directories
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/platforms/macos/build/")
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/platforms/macos/external/.*/")
-
-# Ignore in-source vcpkg directory
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/vcpkg/")
-
-######################
-# Ignore various extra files, not needed for build
-
-# Basis Universal: Ignore large test files + WebGL examples
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/3rdparty/basis_universal/test_files/")
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/3rdparty/basis_universal/webgl/")
-
-# GameNetworkingSockets: Ignore large test vectors
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/3rdparty/GameNetworkingSockets/tests/")
-
-# GameNetworkingSockets: Ignore folders only needed for old WebRTC module, which isn't used in our build
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/3rdparty/GameNetworkingSockets/src/external/abseil/")
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/3rdparty/GameNetworkingSockets/src/external/webrtc/")
-
-# SQLiteCpp: Ignore GTest submodule
-list (APPEND CPACK_SOURCE_IGNORE_FILES "/3rdparty/SQLiteCpp/googletest/")
-
 ######################
 # Configure Installer Version-info at Package Build-Time
 
@@ -311,4 +184,3 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/autorevisionForSourcePackage.cmake.in
 set(CPACK_INSTALL_SCRIPT "${CMAKE_BINARY_DIR}/autorevisionForSourcePackage.cmake")
 
 INCLUDE(CPack)
-
