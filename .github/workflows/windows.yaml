@@ -15,12 +15,12 @@ jobs:
         include:
           - name: Windows MinGW Clang AMD64
             compiler: LLVM_MINGW
-            arch: x86
+            arch: x64
             publish_artifact: true
             deploy_release: true
           #- name: Windows MinGW Clang I686
           #  compiler: LLVM_MINGW
-          #  arch: x64
+          #  arch: x86
           #  publish_artifact: true
           #  deploy_release: true
           #- name: Windows MinGW Clang ARM64
