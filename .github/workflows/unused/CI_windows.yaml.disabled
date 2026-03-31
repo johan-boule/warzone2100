@@ -34,12 +34,12 @@ jobs:
             architecture: "x86"
             artifact_description: "msvc_x86"
             deploy_release: false
-            support_sentry: true
+            support_sentry: false
           - compiler: "MSVC_2022"
             architecture: "x64"
             artifact_description: "msvc_x64"
             deploy_release: false
-            support_sentry: true
+            support_sentry: false
           # - compiler: "MSVC_2022"
           #   architecture: "arm64"
           #   artifact_description: "msvc_arm64"
@@ -47,17 +47,17 @@ jobs:
           - compiler: "LLVM_MINGW"
             architecture: "x86"
             deploy_release: true
-            support_sentry: true
+            support_sentry: false
             sentry_backend: breakpad
           - compiler: "LLVM_MINGW"
             architecture: "x64"
             deploy_release: true
-            support_sentry: true
+            support_sentry: false
             sentry_backend: crashpad
           - compiler: "LLVM_MINGW"
             architecture: "arm64"
             deploy_release: true
-            support_sentry: true
+            support_sentry: false
             sentry_backend: crashpad
       fail-fast: false
     env:
@@ -245,7 +245,7 @@ jobs:
         # -------------
         # Distributor
 
-        $WZ_DISTRIBUTOR = "${env:GITHUB_REPOSITORY}"
+        $WZ_DISTRIBUTOR = $Env:GITHUB_REPOSITORY.Split("/")[0]
 
         # ----------------
         # Determine vcpkg binary cache directory
