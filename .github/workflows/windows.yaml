@@ -63,6 +63,7 @@ jobs:
         echo WZ_GITHUB_BASE_REF=$WZ_GITHUB_BASE_REF >> $GITHUB_ENV
         echo WZ_GITHUB_BASE_REF=$WZ_GITHUB_BASE_REF >> $GITHUB_OUTPUT
     - name: Git Submodule
+      shell: bash
       run: git -C $GITHUB_WORKSPACE/src submodule update --init --recursive
     - name: Remove Strawberry Perl from PATH # Workaround for https://github.com/actions/runner-images/issues/8598:
       run: |
