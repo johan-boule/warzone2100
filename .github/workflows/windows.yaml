@@ -169,9 +169,6 @@ jobs:
         $WZ_MINGW_ENV_PATH = "$Env:LLVM_MINGW_INSTALL_PATH\bin;$Env:WZ_GIT_PATH;$POWERSHELL_FOLDER;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;$Env:WZ_NINJA_INSTALL_PATH;$Env:WZ_ASCIIDOCTOR_PATH;$Env:WZ_MSGMERGE_PATH;$Env:WZ_MSGFMT_PATH"
         echo "WZ_MINGW_ENV_PATH=$WZ_MINGW_ENV_PATH" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
         echo "WZ_MINGW_DIST_PATH=$WZ_MINGW_DIST_PATH" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
-    - name: Mkdir
-      shell: bash
-      run: mkdir --parents build output/archive output/portable
     - name: Cache vcpkg dependencies
       uses: actions/cache@v5
       with:
@@ -186,10 +183,8 @@ jobs:
         $Env:PATH = "$Env:WZ_MINGW_ENV_PATH"
         & "$Env:WZ_POWERSHELL_PATH" .\src\get-dependencies_win.ps1 -VCPKG_BUILD_TYPE release
     - name: Clean vcpkg temp files
-      shell: pwsh
-      run: |
-        # Remove the vcpkg\buildtrees folder. (Once all dependencies are installed, it isn't needed, and it takes up a lot of space in the cache.)
-        if (Test-Path vcpkg\buildtrees) { Remove-Item vcpkg\buildtrees -Force -Recurse -ErrorAction SilentlyContinue; }
+      shell: bash
+      run: rm --recursive --force vcpkg/buildtrees
     - name: CMake Configure
       shell: pwsh
       run: |
@@ -216,24 +211,23 @@ jobs:
         & "$Env:WZ_CMAKE_PATH\cmake.exe" --build build --config Release --target warzone2100
         echo "::remove-matcher owner=${{matrix.compiler}}::"
     - name: CPack Zip
-      working-directory: ${{github.workspace}}/build
       shell: pwsh
       run: |
         & "$Env:WZ_CMAKE_PATH\cpack.exe" `
           -G ZIP `
+          --config build `
           -C Release `
           -D CPACK_PACKAGE_FILE_NAME=warzone2100 `
           -D CPACK_INCLUDE_TOPLEVEL_DIRECTORY=0 `
           -D CPACK_ARCHIVE_COMPONENT_INSTALL=1 `
           -D CPACK_COMPONENTS_ALL_IN_ONE_PACKAGE=1
-        # Rename the archive
-        Move-Item -LiteralPath warzone2100.zip -Destination output\archive\warzone2100-${{matrix.filename}}.zip
+        Move-Item -LiteralPath build\warzone2100.zip -Destination warzone2100-${{matrix.filename}}.zip
     - name: Upload Artifact
       uses: actions/upload-artifact@v7
       if: success() && github.event_name != 'release' && matrix.publish_artifact
       with:
         name: warzone2100-${{matrix.filename}}
-        path: ${{github.workspace}}\output\archive\warzone2100-${{matrix.filename}}.zip
+        path: ${{github.workspace}}\warzone2100-${{matrix.filename}}.zip
         archive: false # do not zip
         if-no-files-found: error
     - name: Upload Release
@@ -242,4 +236,4 @@ jobs:
         GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
         GH_REPO: ${{github.repository}}
       shell: bash
-      run: set -eu && gh release upload "$GITHUB_REF_NAME" output/archive/warzone2100-${{matrix.filename}}.zip
+      run: set -eu && gh release upload "$GITHUB_REF_NAME" warzone2100-${{matrix.filename}}.zip
