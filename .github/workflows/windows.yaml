@@ -28,10 +28,16 @@ jobs:
       contents: write # Needed to upload to releases
     runs-on: windows-2022 # https://github.com/actions/runner-images/tree/main/images/windows
     steps:
-    - name: Dump Environment
+    - name: Dump Environment (pwsh)
+      shell: pwsh
+      run: echo $Env:PATH
+    - name: Dump Environment (bash)
       shell: bash
       run: |
         set -eu
+        uname -a
+        mount
+        echo ===============================================================================
         env | sort
         echo ===============================================================================
         IFS=: read -ra path <<< "$PATH"
