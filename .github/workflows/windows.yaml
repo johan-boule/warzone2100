@@ -28,6 +28,9 @@ jobs:
       contents: write # Needed to upload to releases
     runs-on: windows-2022 # https://github.com/actions/runner-images/tree/main/images/windows
     steps:
+    - name: Dump Environment
+      shell: bash
+      run: env | sort
     - name: Remove Strawberry Perl from PATH # Workaround for https://github.com/actions/runner-images/issues/8598:
       shell: pwsh
       run: |
