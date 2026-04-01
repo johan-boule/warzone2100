@@ -1,5 +1,3 @@
-name: Windows
-
 on:
   push:
   pull_request:
@@ -13,126 +11,78 @@ jobs:
     strategy:
       matrix:
         include:
-          - name: Windows MinGW Clang AMD64
-            compiler: LLVM_MINGW
-            arch: x64
+          - name: Windows mingw ucrt clang x86_64
+            filename: windows-x86_64
+            compiler: clang
+            arch: x86_64
             publish_artifact: true
             deploy_release: true
-          #- name: Windows MinGW Clang I686
-          #  compiler: LLVM_MINGW
-          #  arch: x86
-          #  publish_artifact: true
-          #  deploy_release: true
-          #- name: Windows MinGW Clang ARM64
-          #  compiler: LLVM_MINGW
+          #- name: Windows mingw ucrt clang arm64
+          #  filename: windows-arm64
+          #  compiler: clang
           #  arch: arm64
           #  publish_artifact: true
           #  deploy_release: true
-      fail-fast: false
-    name: ${{ matrix.name }}
+    name: ${{matrix.name}}
     permissions:
       contents: write # Needed to upload to releases
     runs-on: windows-2022
-    env:
-      WZ_COMPILER_VER: ${{ matrix.compiler }}
-      WZ_TARGET_ARCH: ${{ matrix.arch }}
-      VSCMD_SKIP_SENDTELEMETRY: 1
-      # MSVC parallel builds: https://devblogs.microsoft.com/cppblog/improved-parallelism-in-msbuild/
-      UseMultiToolTask: true
-      EnforceProcessCountAcrossBuilds: true
     steps:
+    - name: Remove Strawberry Perl from PATH # Workaround for https://github.com/actions/runner-images/issues/8598:
+      run: |
+        $Env:PATH = $Env:PATH -replace "C:\\Strawberry\\c\\bin;", ""
+        echo "PATH=$Env:PATH" | Out-File -FilePath $Env:GITHUB_ENV -Append
     - name: Git Checkout
       uses: actions/checkout@v6
       with:
         fetch-depth: 0
         path: src
-    - name: Export Environment
-      shell: bash
-      run: |
-        set -eu
-        WZ_GITHUB_SHA=$GITHUB_SHA
-        WZ_GITHUB_REF=$GITHUB_REF
-        WZ_GITHUB_HEAD_REF=$GITHUB_HEAD_REF
-        WZ_GITHUB_BASE_REF=$GITHUB_BASE_REF
-        echo WZ_GITHUB_SHA=$WZ_GITHUB_SHA >> $GITHUB_ENV
-        echo WZ_GITHUB_SHA=$WZ_GITHUB_SHA >> $GITHUB_OUTPUT
-        echo WZ_GITHUB_REF=$WZ_GITHUB_REF >> $GITHUB_ENV
-        echo WZ_GITHUB_REF=$WZ_GITHUB_REF >> $GITHUB_OUTPUT
-        echo WZ_GITHUB_HEAD_REF=$WZ_GITHUB_HEAD_REF >> $GITHUB_ENV
-        echo WZ_GITHUB_HEAD_REF=$WZ_GITHUB_HEAD_REF >> $GITHUB_OUTPUT
-        echo WZ_GITHUB_BASE_REF=$WZ_GITHUB_BASE_REF >> $GITHUB_ENV
-        echo WZ_GITHUB_BASE_REF=$WZ_GITHUB_BASE_REF >> $GITHUB_OUTPUT
     - name: Git Submodule
       shell: bash
       run: git -C $GITHUB_WORKSPACE/src submodule update --init --recursive
-    - name: Remove Strawberry Perl from PATH # Workaround for https://github.com/actions/runner-images/issues/8598:
+    - name: Export Environment
       run: |
-        $env:PATH = $env:PATH -replace "C:\\Strawberry\\c\\bin;", ""
-        "PATH=$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
-    - name: Install Asciidoctor
-      id: asciidoctor-dl
-      run: |
-        echo "Installing Asciidoctor"
-        gem install asciidoctor -v 2.0.23 --no-document | Out-Null
-        echo "Installing Asciidoctor... finished"
-        $AsciidoctorBat = (Get-Command asciidoctor.bat).Path
-        echo "Asciidoctor.bat: ${AsciidoctorBat}"
-        $AsciidoctorBatPath = Split-Path -Path "${AsciidoctorBat}"
-        echo "Asciidoctor.bat path: ${AsciidoctorBatPath}"
-        echo "ASCIIDOCTOR_PATH=${AsciidoctorBatPath}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-    - name: Generate Settings for Run [${{ matrix.compiler }}:${{ matrix.arch }}]
-      id: settings
-      env:
-        WZ_DEPLOY_TO_RELEASE: ${{ matrix.deploy_release }}
-      run: |
-        $WZ_VC_TARGET_PLATFORMNAME = "$env:WZ_TARGET_ARCH"
-        $WZ_BUILD_DESC_PREFIX = "win"
-        $WZ_BUILD_DESC = "${WZ_BUILD_DESC_PREFIX}_${env:WZ_TARGET_ARCH}"
+        echo "WZ_DISTRIBUTOR=$($Env:GITHUB_REPOSITORY.Split("/")[0])" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
 
-        if ($env:WZ_COMPILER_VER -eq "LLVM_MINGW") {
-          $WZ_USING_MINGW = "true"
-          if ($env:WZ_TARGET_ARCH -eq "x86") {
-            $VCPKG_DEFAULT_TRIPLET = "x86-mingw-dynamic"
-            $WZ_MINGW_PKG_PREFIX = "i686-w64-mingw32"
-            $WZ_ASM_MASM_COMPILER = "llvm-ml"
-          }
-          elseif ($env:WZ_TARGET_ARCH -eq "x64") {
-            $VCPKG_DEFAULT_TRIPLET = "x64-mingw-dynamic"
-            $WZ_MINGW_PKG_PREFIX = "x86_64-w64-mingw32"
-            $WZ_ASM_MASM_COMPILER = "llvm-ml;-m64"
-          }
-          elseif ($env:WZ_TARGET_ARCH -eq "arm64") {
-            $VCPKG_DEFAULT_TRIPLET = "arm64-mingw-dynamic"
-            $WZ_MINGW_PKG_PREFIX = "aarch64-w64-mingw32"
-          }
-          $VCPKG_DEFAULT_HOST_TRIPLET = "x64-mingw-static"
+        if ("${{matrix.arch}}" -eq "x86_64") {
+          $VCPKG_DEFAULT_TRIPLET = "x64-mingw-dynamic"
+          $WZ_MINGW_PKG_PREFIX = "x86_64-w64-mingw32"
+          $WZ_ASM_MASM_COMPILER = "llvm-ml;-m64"
+        } elseif ("${{matrix.arch}}" -eq "arm64") {
+          $VCPKG_DEFAULT_TRIPLET = "arm64-mingw-dynamic"
+          $WZ_MINGW_PKG_PREFIX = "aarch64-w64-mingw32"
+          $WZ_ASM_MASM_COMPILER = ""
         }
-        else {
-          $WZ_USING_MINGW = "false"
-          if ($env:WZ_TARGET_ARCH -eq "x86") {
-            $VCPKG_DEFAULT_TRIPLET = "x86-windows"
-            $WZ_VC_TARGET_PLATFORMNAME = "Win32" # special case, map "x86" -> "Win32"
-          }
-          elseif ($env:WZ_TARGET_ARCH -eq "x64") {
-            $VCPKG_DEFAULT_TRIPLET = "x64-windows"
-          }
-          elseif ($env:WZ_TARGET_ARCH -eq "arm64") {
-            $VCPKG_DEFAULT_TRIPLET = "arm64-windows"
-          }
-          $VCPKG_DEFAULT_HOST_TRIPLET = "x64-windows"
-        }
+        echo "VCPKG_DEFAULT_TRIPLET=$VCPKG_DEFAULT_TRIPLET" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+        echo "WZ_MINGW_PKG_PREFIX=$WZ_MINGW_PKG_PREFIX" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+        echo "WZ_ASM_MASM_COMPILER=$WZ_ASM_MASM_COMPILER" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+        
+        $VCPKG_DEFAULT_HOST_TRIPLET = ""
+        echo "VCPKG_DEFAULT_HOST_TRIPLET=x64-mingw-static" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+
+        $WZ_VCPKG_BINARYCACHE_DIR = "$Env:GITHUB_WORKSPACE\vcpkg_cache"
+        echo "WZ_VCPKG_BINARYCACHE_DIR=$VCPKG_BINARYCACHE_DIR" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+
+        $VCPKG_BINARY_SOURCES = "clear;files,$WZ_VCPKG_BINARYCACHE_DIR,readwrite"
+        echo "VCPKG_BINARY_SOURCES=$VCPKG_BINARY_SOURCES" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
 
         $WZ_FULL_POWERSHELL_PATH = (Get-Command powershell.exe).Path
+        echo "WZ_FULL_POWERSHELL_PATH=$WZ_FULL_POWERSHELL_PATH" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+
         $WZ_FULL_GIT_PATH = Split-Path -Path ((Get-Command git.exe).Path)
-        echo "WZ_FULL_GIT_PATH=${WZ_FULL_GIT_PATH}"
+        echo "WZ_FULL_GIT_PATH=$WZ_FULL_GIT_PATH" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+
         $WZ_FULL_CMAKE_PATH = Split-Path -Path ((Get-Command cmake.exe).Path)
-        echo "WZ_FULL_CMAKE_PATH=${WZ_FULL_CMAKE_PATH}"
-
-        # ------------------------------
-        # Install Gettext tools
-
-        $origPath = $env:PATH
-        $env:PATH = "C:\msys64\mingw64\bin;C:\msys64\usr\bin;$origPath"
+        echo "WZ_FULL_CMAKE_PATH=$WZ_FULL_CMAKE_PATH" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+    - name: Setup AsciiDoctor
+      run: |
+        gem install asciidoctor -v 2.0.23 --no-document | Out-Null
+        $AsciidoctorBat = (Get-Command asciidoctor.bat).Path
+        $AsciidoctorBatPath = Split-Path -Path "$AsciidoctorBat"
+        echo "WZ_ASCIIDOCTOR_PATH=$AsciidoctorBatPath" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+    - name: Setup GetText
+      run: |
+        $Env:PATH = "C:\msys64\mingw64\bin;C:\msys64\usr\bin;$Env:PATH"
 
         pacman --noconfirm -S --needed gettext
         if ($LastExitCode -ne 0) {
@@ -140,326 +90,132 @@ jobs:
         }
 
         $WZ_FULL_MSGMERGE_PATH = Split-Path -Path ((Get-Command msgmerge.exe).Path)
-        echo "WZ_FULL_MSGMERGE_PATH=${WZ_FULL_MSGMERGE_PATH}"
+        echo "WZ_FULL_MSGMERGE_PATH=$WZ_FULL_MSGMERGE_PATH" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+
         $WZ_FULL_MSGFMT_PATH = Split-Path -Path ((Get-Command msgfmt.exe).Path)
-        echo "WZ_FULL_MSGFMT_PATH=${WZ_FULL_MSGFMT_PATH}"
-
-        $env:PATH = $origPath
-
-        # ------------------------------
-        # MSVC version / generator info
-
-        $WZ_VISUAL_STUDIO_INSTALL_PATH = ""
-        if ($env:WZ_COMPILER_VER -eq "MSVC_2022") {
-          $WZ_VC_GENERATOR = "Visual Studio 17 2022"
-          #$env:WZ_VC_TOOLCHAIN = "v143"
-          # Get the installation path for a specific version of MSVC (2022)
-          $WZ_VISUAL_STUDIO_INSTALL_PATH = & "vswhere.exe" -latest -property installationPath -version "[17.0,18.0)"
-          if ($LastExitCode -ne 0)
-          {
-            echo "::warning ::Could not find MSVC 2022"
-            $WZ_VISUAL_STUDIO_INSTALL_PATH = ""
-          }
-        }
-
-        if ([string]::IsNullOrWhitespace(${WZ_VISUAL_STUDIO_INSTALL_PATH}))
-        {
-          $WZ_VISUAL_STUDIO_INSTALL_PATH = & "vswhere.exe" -latest -property installationPath
-          if ($env:WZ_COMPILER_VER -ne "LLVM_MINGW") {
-            echo "::warning ::Default to 'latest' MSVC: `"${WZ_VISUAL_STUDIO_INSTALL_PATH}`""
-          }
-        }
-
-        $WZ_VISUAL_STUDIO_INSTALL_VERSION = & "vswhere.exe" -path "${WZ_VISUAL_STUDIO_INSTALL_PATH}" -property installationVersion
-        echo "WZ_VISUAL_STUDIO_INSTALL_VERSION = ${WZ_VISUAL_STUDIO_INSTALL_VERSION}"
-
-        $VCPKG_VISUAL_STUDIO_PATH = "${WZ_VISUAL_STUDIO_INSTALL_PATH}"
-        #$CMAKE_GENERATOR_INSTANCE = "${WZ_VISUAL_STUDIO_INSTALL_PATH}"
-
-        # -------------
-        # Distributor
-
-        $WZ_DISTRIBUTOR = $Env:GITHUB_REPOSITORY.Split("/")[0]
-
-        # ----------------
-        # Determine vcpkg binary cache directory
-
-        $VCPKG_BINARYCACHE_DIR = "${{ github.workspace }}\vcpkg_cache"
-        $VCPKG_BINARY_SOURCES = "clear;files,${VCPKG_BINARYCACHE_DIR},readwrite"
-
-        echo "VCPKG_BINARYCACHE_DIR = ${VCPKG_BINARYCACHE_DIR}"
-
-        # ----------------
-        # Export Variables
-
-        $WZ_REPO_PATH = "${{ github.workspace }}\src"
-
-        # Export everything important to environment variables (for future steps)
-        echo "WZ_USING_MINGW=${WZ_USING_MINGW}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        echo "WZ_MINGW_PKG_PREFIX=${WZ_MINGW_PKG_PREFIX}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        echo "WZ_ASM_MASM_COMPILER=${WZ_ASM_MASM_COMPILER}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        echo "WZ_FULL_POWERSHELL_PATH=${WZ_FULL_POWERSHELL_PATH}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        echo "WZ_FULL_GIT_PATH=${WZ_FULL_GIT_PATH}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        echo "WZ_FULL_CMAKE_PATH=${WZ_FULL_CMAKE_PATH}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        echo "WZ_FULL_MSGMERGE_PATH=${WZ_FULL_MSGMERGE_PATH}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        echo "WZ_FULL_MSGFMT_PATH=${WZ_FULL_MSGFMT_PATH}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        echo "WZ_REPO_PATH=${WZ_REPO_PATH}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        echo "WZ_REPO_PATH=${WZ_REPO_PATH}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        echo "VCPKG_DEFAULT_TRIPLET=${VCPKG_DEFAULT_TRIPLET}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        echo "VCPKG_DEFAULT_HOST_TRIPLET=${VCPKG_DEFAULT_HOST_TRIPLET}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        echo "WZ_VC_TARGET_PLATFORMNAME=${WZ_VC_TARGET_PLATFORMNAME}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        echo "WZ_BUILD_DESC=${WZ_BUILD_DESC}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        echo "WZ_BUILD_DESC=${WZ_BUILD_DESC}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        echo "WZ_VC_GENERATOR=${WZ_VC_GENERATOR}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        #echo "WZ_VC_TOOLCHAIN=${WZ_VC_TOOLCHAIN}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        echo "WZ_VISUAL_STUDIO_INSTALL_PATH=${WZ_VISUAL_STUDIO_INSTALL_PATH}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        echo "WZ_VISUAL_STUDIO_INSTALL_VERSION=${WZ_VISUAL_STUDIO_INSTALL_VERSION}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        echo "VCPKG_VISUAL_STUDIO_PATH=${VCPKG_VISUAL_STUDIO_PATH}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        echo "WZ_DISTRIBUTOR=${WZ_DISTRIBUTOR}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        echo "VCPKG_BINARYCACHE_DIR=${VCPKG_BINARYCACHE_DIR}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        echo "VCPKG_BINARY_SOURCES=${VCPKG_BINARY_SOURCES}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        echo "VCPKG_BINARY_SOURCES=${VCPKG_BINARY_SOURCES}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-    #####################################################
-    - name: Download & Install Vulkan SDK
+        echo "WZ_FULL_MSGFMT_PATH=$WZ_FULL_MSGFMT_PATH" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+    - name: Setup Vulkan SDK
       run: |
         Start-Sleep -Milliseconds 1 # See: https://stackoverflow.com/a/49859001
-
         $VerbosePreference = "Continue"
-        . "${env:WZ_REPO_PATH}\.ci\powershell\request.ps1"
-
-        Write-Host "Current value of env:VULKAN_SDK:${env:VULKAN_SDK}"
+        . src\.ci\powershell\request.ps1
 
         $VULKAN_DL_URL = "https://sdk.lunarg.com/sdk/download/1.4.328.1/windows/vulkansdk-windows-X64-1.4.328.1.exe?Human=true"
         $VULKAN_DL_SHA256 = "a8675df6d538079c2a719a9373994948091db785b48f142e024254e76348d16c"
 
-        $VK_DL_BASEDIR = "${{ github.workspace }}\dl"
-        $VK_DL_PATH = "${VK_DL_BASEDIR}\vulkan.exe"
+        $VK_DL_BASEDIR = "$Env:GITHUB_WORKSPACE\dl"
+        $VK_DL_PATH = "$VK_DL_BASEDIR\vulkan.exe"
         New-Item -ItemType Directory -Force -Path "$VK_DL_BASEDIR"
 
-        $req = Req -Params @{ 'Method'='GET';'Uri'="$VULKAN_DL_URL";'OutFile'="${VK_DL_PATH}" } -Retries 3 -SecondsDelay 10 -ExpectedHash "${VULKAN_DL_SHA256}" -Algorithm SHA256
+        $req = Req -Params @{ 'Method'='GET';'Uri'="$VULKAN_DL_URL";'OutFile'="$VK_DL_PATH" } -Retries 3 -SecondsDelay 10 -ExpectedHash "$VULKAN_DL_SHA256" -Algorithm SHA256
 
-        Write-Host "Running Vulkan SDK installer..."
-        Start-Process "${VK_DL_PATH}" -ArgumentList "--accept-licenses","--default-answer","--confirm-command","install" -Wait
-        Write-Host "Vulkan SDK installer completed"
+        Start-Process "$VK_DL_PATH" -ArgumentList "--accept-licenses","--default-answer","--confirm-command","install" -Wait
 
-        $machineEnvironment = [Environment]::GetEnvironmentVariables("Machine")
-        if (-not ($machineEnvironment.Contains("VULKAN_SDK")))
-        {
-          Write-Error "Failed to find updated VULKAN_SDK system environment variable"
-        }
-        Write-Host "New system VULKAN_SDK environment variable: $($machineEnvironment["VULKAN_SDK"])"
-
-        # Ensure future steps pick up the new VULKAN_SDK environment variable
-        echo "VULKAN_SDK=$($machineEnvironment["VULKAN_SDK"])" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-    - name: Check environment
-      run: |
-        if ([string]::IsNullOrWhitespace(${env:VULKAN_SDK}))
-        {
-          Write-Error "Missing env:VULKAN_SDK in next step: ${env:VULKAN_SDK}"
-        }
-        else
-        {
-          # Verify the VULKAN_SDK path exists
-          if (-not (Test-Path "${env:VULKAN_SDK}"))
-          {
-            Write-Error "env:VULKAN_SDK path does not exist: `"${env:VULKAN_SDK}`""
-          }
-        }
-        Write-Output "env:VULKAN_SDK configured for the following steps: `"${env:VULKAN_SDK}`""
-    - name: Create directories
-      run: |
-        New-Item -ItemType Directory -Force -Path "${{ github.workspace }}\build"
-        New-Item -ItemType Directory -Force -Path "${{ github.workspace }}\output"
-        New-Item -ItemType Directory -Force -Path "${{ github.workspace }}\output\portable"
-        New-Item -ItemType Directory -Force -Path "${{ github.workspace }}\output\installer"
-        New-Item -ItemType Directory -Force -Path "${{ github.workspace }}\output\debugsymbols"
-        New-Item -ItemType Directory -Force -Path "${{ github.workspace }}\output\archive"
-        New-Item -ItemType Directory -Force -Path "${{ github.workspace }}\logs\error_logs"
-    - name: Download & Install Ninja-Build
-      id: ninja-dl
+        echo "VULKAN_SDK=$([Environment]::GetEnvironmentVariables("Machine")["VULKAN_SDK"])" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+    - name: Setup Ninja
       run: |
         Start-Sleep -Milliseconds 1 # See: https://stackoverflow.com/a/49859001
-
         $VerbosePreference = "Continue"
-        . "${env:WZ_REPO_PATH}\.ci\powershell\request.ps1"
-
-        Write-Host "Current value of env:VULKAN_SDK:${env:VULKAN_SDK}"
+        . src\.ci\powershell\request.ps1
 
         $NINJA_DL_URL = "https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-win.zip"
         $NINJA_DL_SHA512 = "55d3d891e8fc6c8ad7f92e172125319896761e57c5125944613d9bbfa5b9374387e9fc1468ad5bcb31464f43fb1c455ea251343942595f42955dc67090aa12ee"
 
-        $NINJA_DL_BASEDIR = "${{ github.workspace }}\dl"
-        $NINJA_DL_PATH = "${NINJA_DL_BASEDIR}\ninja-win.zip"
+        $NINJA_DL_BASEDIR = "$Env:GITHUB_WORKSPACE\dl"
+        $NINJA_DL_PATH = "$NINJA_DL_BASEDIR\ninja-win.zip"
         if (!(Test-Path -Path "$NINJA_DL_BASEDIR")) { New-Item -ItemType Directory -Force -Path "$NINJA_DL_BASEDIR" }
 
-        $req = Req -Params @{ 'Method'='GET';'Uri'="$NINJA_DL_URL";'OutFile'="${NINJA_DL_PATH}" } -Retries 3 -SecondsDelay 10 -ExpectedHash "${NINJA_DL_SHA512}" -Algorithm SHA512
+        $req = Req -Params @{ 'Method'='GET';'Uri'="$NINJA_DL_URL";'OutFile'="$NINJA_DL_PATH" } -Retries 3 -SecondsDelay 10 -ExpectedHash "$NINJA_DL_SHA512" -Algorithm SHA512
 
-        Write-Host "Extracting Ninja-Build..."
-        $NINJA_INSTALL_PATH = "${{ github.workspace }}\buildtools\ninja"
-        New-Item -ItemType Directory -Force -Path "${NINJA_INSTALL_PATH}"
-        Expand-Archive -LiteralPath "${NINJA_DL_PATH}" -DestinationPath "${NINJA_INSTALL_PATH}"
+        $WZ_NINJA_INSTALL_PATH = "$Env:GITHUB_WORKSPACE\buildtools\ninja"
+        New-Item -ItemType Directory -Force -Path $WZ_NINJA_INSTALL_PATH
+        Expand-Archive -LiteralPath $NINJA_DL_PATH -DestinationPath $WZ_NINJA_INSTALL_PATH
 
-        # Export the NINJA executable path
-        echo "NINJA_INSTALL_PATH=${NINJA_INSTALL_PATH}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        echo "NINJA_INSTALL_PATH=${NINJA_INSTALL_PATH}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-    - name: Setup LLVM-MINGW
-      if: success() && steps.settings.outputs.WZ_USING_MINGW == 'true'
+        echo "WZ_NINJA_INSTALL_PATH=$WZ_NINJA_INSTALL_PATH" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+    - name: Setup LLVM-MinGW
       run: |
         Start-Sleep -Milliseconds 1 # See: https://stackoverflow.com/a/49859001
-
         $VerbosePreference = "Continue"
-        . "${env:WZ_REPO_PATH}\.ci\powershell\request.ps1"
+        . src\.ci\powershell\request.ps1
 
         $LLVM_MINGW_RELEASE = "20250709";
-        $LLVM_MINGW_PKG = "llvm-mingw-${LLVM_MINGW_RELEASE}-ucrt-x86_64"
-        $LLVM_MINGW_DL_URL = "https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_RELEASE}/${LLVM_MINGW_PKG}.zip"
+        $LLVM_MINGW_PKG = "llvm-mingw-$LLVM_MINGW_RELEASE-ucrt-x86_64"
+        $LLVM_MINGW_DL_URL = "https://github.com/mstorsjo/llvm-mingw/releases/download/$LLVM_MINGW_RELEASE/$LLVM_MINGW_PKG.zip"
         $LLVM_MINGW_DL_SHA512 = "e080a8928d7ae6263a54d506949421ca03e269a1829f7fdaae53accb9b060a404ec1e6c32eb8b08e051769edd943437635e0dd8beb16ed06b9b04e9423609714"
 
-        $LLVM_MINGW_DL_BASEDIR = "${{ github.workspace }}\dl"
-        $LLVM_MINGW_DL_PATH = "${LLVM_MINGW_DL_BASEDIR}\llvm-mingw.zip"
+        $LLVM_MINGW_DL_BASEDIR = "$Env:GITHUB_WORKSPACE\dl"
+        $LLVM_MINGW_DL_PATH = "$LLVM_MINGW_DL_BASEDIR\llvm-mingw.zip"
         if (!(Test-Path -Path "$LLVM_MINGW_DL_BASEDIR")) { New-Item -ItemType Directory -Force -Path "$LLVM_MINGW_DL_BASEDIR" }
 
-        $req = Req -Params @{ 'Method'='GET';'Uri'="$LLVM_MINGW_DL_URL";'OutFile'="${LLVM_MINGW_DL_PATH}" } -Retries 3 -SecondsDelay 10 -ExpectedHash "${LLVM_MINGW_DL_SHA512}" -Algorithm SHA512
+        $req = Req -Params @{ 'Method'='GET';'Uri'="$LLVM_MINGW_DL_URL";'OutFile'="$LLVM_MINGW_DL_PATH" } -Retries 3 -SecondsDelay 10 -ExpectedHash "$LLVM_MINGW_DL_SHA512" -Algorithm SHA512
 
-        Write-Host "Extracting LLVM-mingw..."
-        $LLVM_MINGW_INSTALL_PATH = "${{ github.workspace }}\buildtools\llvm-mingw"
-        New-Item -ItemType Directory -Force -Path "${LLVM_MINGW_INSTALL_PATH}"
-        Expand-Archive -LiteralPath "${LLVM_MINGW_DL_PATH}" -DestinationPath "${LLVM_MINGW_INSTALL_PATH}"
+        $LLVM_MINGW_INSTALL_PATH = "$Env:GITHUB_WORKSPACE\buildtools\llvm-mingw"
+        New-Item -ItemType Directory -Force -Path "$LLVM_MINGW_INSTALL_PATH"
+        Expand-Archive -LiteralPath "$LLVM_MINGW_DL_PATH" -DestinationPath "$LLVM_MINGW_INSTALL_PATH"
 
         # Export the LLVM-mingw install path
-        $LLVM_MINGW_INSTALL_PATH = "${LLVM_MINGW_INSTALL_PATH}\${LLVM_MINGW_PKG}"
-        echo "LLVM_MINGW_INSTALL_PATH=${LLVM_MINGW_INSTALL_PATH}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        echo "LLVM_MINGW_INSTALL_PATH=${LLVM_MINGW_INSTALL_PATH}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        $LLVM_MINGW_INSTALL_PATH = "$LLVM_MINGW_INSTALL_PATH\$LLVM_MINGW_PKG"
+        echo "LLVM_MINGW_INSTALL_PATH=$LLVM_MINGW_INSTALL_PATH" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
 
-        # Prepend bin path to the system PATH
-        echo "Path to LLVM-mingw bin folder: ${LLVM_MINGW_INSTALL_PATH}\bin"
-        echo "${LLVM_MINGW_INSTALL_PATH}\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        # Add bin path to the system PATH
+        echo "$LLVM_MINGW_INSTALL_PATH\bin" | Out-File -FilePath $Env:GITHUB_PATH -Encoding utf8 -Append
     - name: Prep MINGW Environment
-      id: mingwsettings
-      if: success() && steps.settings.outputs.WZ_USING_MINGW == 'true'
-      working-directory: ${{ github.workspace }}/build
-      env:
-        WZ_FULL_GIT_PATH: ${{ steps.settings.outputs.WZ_FULL_GIT_PATH }}
-        NINJA_INSTALL_PATH: ${{ steps.ninja-dl.outputs.NINJA_INSTALL_PATH }}
-        ASCIIDOCTOR_PATH: ${{ steps.asciidoctor-dl.outputs.ASCIIDOCTOR_PATH }}
-        WZ_FULL_POWERSHELL_PATH: ${{ steps.settings.outputs.WZ_FULL_POWERSHELL_PATH }}
-        WZ_FULL_MSGMERGE_PATH: ${{ steps.settings.outputs.WZ_FULL_MSGMERGE_PATH }}
-        WZ_FULL_MSGFMT_PATH: ${{ steps.settings.outputs.WZ_FULL_MSGFMT_PATH }}
-        WZ_MINGW_PKG_PREFIX: '${{ steps.settings.outputs.WZ_MINGW_PKG_PREFIX }}'
       run: |
-        echo "PATH=${env:PATH}"
-        echo "WZ_FULL_GIT_PATH=${env:WZ_FULL_GIT_PATH}"
-        echo "NINJA_INSTALL_PATH=${env:NINJA_INSTALL_PATH}"
-        echo "ASCIIDOCTOR_PATH=${env:ASCIIDOCTOR_PATH}"
-        $POWERSHELL_FOLDER = Split-Path -Path "${env:WZ_FULL_POWERSHELL_PATH}"
-        $WZ_MINGW_DIST_PATH = "${env:LLVM_MINGW_INSTALL_PATH}\${env:WZ_MINGW_PKG_PREFIX}\bin"
-        echo "WZ_MINGW_DIST_PATH=\"${WZ_MINGW_DIST_PATH}\""
-        $WZ_MINGW_ENV_PATH = "${env:LLVM_MINGW_INSTALL_PATH}\bin;${env:WZ_FULL_GIT_PATH};${POWERSHELL_FOLDER};C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;${env:NINJA_INSTALL_PATH};${env:ASCIIDOCTOR_PATH};${env:WZ_FULL_MSGMERGE_PATH}"
-        if ("${env:WZ_FULL_MSGMERGE_PATH}" -ne "${env:WZ_FULL_MSGFMT_PATH}") {
-          $WZ_MINGW_ENV_PATH = "${WZ_MINGW_ENV_PATH};${env:WZ_FULL_MSGFMT_PATH}"
-        }
-        echo "WZ_MINGW_ENV_PATH=\"${WZ_MINGW_ENV_PATH}\""
-        echo "WZ_MINGW_ENV_PATH=${WZ_MINGW_ENV_PATH}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        echo "WZ_MINGW_ENV_PATH=${WZ_MINGW_ENV_PATH}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        echo "WZ_MINGW_DIST_PATH=${WZ_MINGW_DIST_PATH}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        echo "WZ_MINGW_DIST_PATH=${WZ_MINGW_DIST_PATH}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        $POWERSHELL_FOLDER = Split-Path -Path "$Env:WZ_FULL_POWERSHELL_PATH"
+        $WZ_MINGW_DIST_PATH = "$Env:LLVM_MINGW_INSTALL_PATH\$Env:WZ_MINGW_PKG_PREFIX\bin"
+        $WZ_MINGW_ENV_PATH = "$Env:LLVM_MINGW_INSTALL_PATH\bin;$Env:WZ_FULL_GIT_PATH;$POWERSHELL_FOLDER;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;$Env:WZ_NINJA_INSTALL_PATH;$Env:WZ_ASCIIDOCTOR_PATH;$Env:WZ_FULL_MSGMERGE_PATH;$Env:WZ_FULL_MSGFMT_PATH"
+        echo "WZ_MINGW_ENV_PATH=$WZ_MINGW_ENV_PATH" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+        echo "WZ_MINGW_DIST_PATH=$WZ_MINGW_DIST_PATH" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+    - name: Mkdir
+      run: |
+        New-Item -ItemType Directory -Force -Path build
+        New-Item -ItemType Directory -Force -Path output
+        New-Item -ItemType Directory -Force -Path output\portable
+        New-Item -ItemType Directory -Force -Path output\archive
     - name: Cache vcpkg dependencies
-      id: vcpkg-cache
       uses: actions/cache@v5
       with:
-        path: ${{ steps.settings.outputs.VCPKG_BINARYCACHE_DIR }}
-        key: ${{ runner.os }}-${{ matrix.compiler }}-${{ matrix.arch }}-${{ steps.settings.outputs.WZ_VISUAL_STUDIO_INSTALL_VERSION }}-${{ hashFiles('**/get-dependencies_win.ps1') }}-${{ hashFiles('**/vcpkg.json') }}-${{ hashFiles('**/.ci/vcpkg/**') }}
+        path: ${{env.WZ_VCPKG_BINARYCACHE_DIR}}
+        key: ${{runner.os}}-${{matrix.compiler}}-${{matrix.arch}}-${{hashFiles('**/get-dependencies_win.ps1')}}-${{hashFiles('**/vcpkg.json')}}-${{hashFiles('**/.ci/vcpkg/**')}}
         restore-keys: |
-          ${{ runner.os }}-${{ matrix.compiler }}-${{ matrix.arch }}-${{ steps.settings.outputs.WZ_VISUAL_STUDIO_INSTALL_VERSION }}-${{ hashFiles('**/get-dependencies_win.ps1') }}-${{ hashFiles('**/vcpkg.json') }}
-          ${{ runner.os }}-${{ matrix.compiler }}-${{ matrix.arch }}-${{ steps.settings.outputs.WZ_VISUAL_STUDIO_INSTALL_VERSION }}-${{ hashFiles('**/get-dependencies_win.ps1') }}-
+          ${{runner.os}}-${{matrix.compiler}}-${{matrix.arch}}-${{hashFiles('**/get-dependencies_win.ps1')}}-${{hashFiles('**/vcpkg.json')}}
+          ${{runner.os}}-${{matrix.compiler}}-${{matrix.arch}}-${{hashFiles('**/get-dependencies_win.ps1')}}-
     - name: Build vcpkg + dependencies
-      working-directory: ${{ github.workspace }}/build
-      env:
-        WZ_USING_MINGW: ${{ steps.settings.outputs.WZ_USING_MINGW }}
-        WZ_FULL_POWERSHELL_PATH: ${{ steps.settings.outputs.WZ_FULL_POWERSHELL_PATH }}
+      working-directory: ${{github.workspace}}/build
       run: |
-        Write-Host "env:VCPKG_DEFAULT_TRIPLET=`"${env:VCPKG_DEFAULT_TRIPLET}`""
-        Write-Host "env:VCPKG_VISUAL_STUDIO_PATH=`"${env:VCPKG_VISUAL_STUDIO_PATH}`""
-        Write-Host "env:VCPKG_BINARY_SOURCES=`"${env:VCPKG_BINARY_SOURCES}`""
-        Write-Host "env:PATH=`"${env:PATH}`""
-
-        if ("${env:WZ_USING_MINGW}" -eq "true") {
-          $env:PATH = "${env:WZ_MINGW_ENV_PATH}";
-          Write-Host "env:PATH=`"${env:PATH}`""
-        }
-        else {
-          # Workaround: https://github.com/actions/runner-images/issues/10004
-          $env:CXXFLAGS = "${env:CXXFLAGS} /D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR"
-        }
-
-        & "${env:WZ_FULL_POWERSHELL_PATH}" "${env:WZ_REPO_PATH}\get-dependencies_win.ps1" -VCPKG_BUILD_TYPE "release"
+        $Env:PATH = "$Env:WZ_MINGW_ENV_PATH"
+        & "$Env:WZ_FULL_POWERSHELL_PATH" src\get-dependencies_win.ps1 -VCPKG_BUILD_TYPE release
     - name: Clean vcpkg temp files
-      working-directory: ${{ github.workspace }}/build
       run: |
         # Remove the vcpkg\buildtrees folder. (Once all dependencies are installed, it isn't needed, and it takes up a lot of space in the cache.)
-        if (Test-Path .\vcpkg\buildtrees) { Remove-Item .\vcpkg\buildtrees -Force -Recurse -ErrorAction SilentlyContinue; }
-
-        # Clean the build remnants of vcpkg itself. (Since it's rebuilt fresh - even from a cached vcpkg directory - these aren't needed.)
-        . "${env:WZ_REPO_PATH}\.ci\powershell\importVCvars.ps1"
-        Import-VCVarsEnv "${env:WZ_VISUAL_STUDIO_INSTALL_PATH}" "-arch=${env:WZ_TARGET_ARCH} -host_arch=x64"
-    - name: CMake Configure (MSVC)
-      if: success() && steps.settings.outputs.WZ_USING_MINGW != 'true'
-      working-directory: ${{ github.workspace }}/build
-      env:
-        DISCORD_RPC_APPID: '${{ secrets.DISCORD_RPC_APPID }}'
-        WZ_FULL_MSGMERGE_PATH: ${{ steps.settings.outputs.WZ_FULL_MSGMERGE_PATH }}
-        WZ_FULL_MSGFMT_PATH: ${{ steps.settings.outputs.WZ_FULL_MSGFMT_PATH }}
+        if (Test-Path build\vcpkg\buildtrees) { Remove-Item build\vcpkg\buildtrees -Force -Recurse -ErrorAction SilentlyContinue; }
+    - name: CMake Configure
       run: |
-        $ADDITIONAL_CMAKE_PARAMS = "-DWZ_MSVC_MULTITHREADED_COMPILATION:BOOL=ON -DENABLE_GNS_NETWORK_BACKEND:BOOL=ON"
-        $env:PATH = "${env:PATH};${env:WZ_FULL_MSGMERGE_PATH}";
-
-        # Workaround: https://github.com/actions/runner-images/issues/10004
-        $env:CXXFLAGS = "${env:CXXFLAGS} /D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR"
-
-        # Use CMake to configure with the appropriate Visual Studio (MSBUILD) generator, toolchain, and target platform
-        echo "::add-matcher::${{ github.workspace }}\src\.ci\githubactions\pattern_matchers\cmake.json"
-        cmake -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}\build\vcpkg\scripts\buildsystems\vcpkg.cmake" -DCPACK_PACKAGE_FILE_NAME:STRING="warzone2100_portable" -DWZ_DISTRIBUTOR:STRING="${env:WZ_DISTRIBUTOR}" -DCMAKE_GENERATOR_INSTANCE="${env:WZ_VISUAL_STUDIO_INSTALL_PATH}" -DENABLE_DISCORD:BOOL=ON -DDISCORD_RPC_APPID:STRING="${env:DISCORD_RPC_APPID}" -G "${env:WZ_VC_GENERATOR}" -A "${env:WZ_VC_TARGET_PLATFORMNAME}" "${env:WZ_REPO_PATH}"
+        echo "::add-matcher::$Env:GITHUB_WORKSPACE\src\.github\log-matchers\cmake.json"
+        $Env:PATH = "$Env:WZ_MINGW_ENV_PATH"
+        & "$Env:WZ_FULL_CMAKE_PATH\cmake.exe" `
+          -G Ninja `
+          -S src `
+          -B build `
+          -D CMAKE_ASM_MASM_COMPILER="$Env:WZ_ASM_MASM_COMPILER" `
+          -D WZ_MINGW_DIST_PATH="$Env:WZ_MINGW_DIST_PATH" `
+          -D CMAKE_TOOLCHAIN_FILE="$Env:GITHUB_WORKSPACE\build\vcpkg\scripts\buildsystems\vcpkg.cmake" `
+          -D VCPKG_CHAINLOAD_TOOLCHAIN_FILE="$Env:GITHUB_WORKSPACE\src\.ci\cmake\toolchains\$WZ_MINGW_PKG_PREFIX.cmake" `
+          -D CMAKE_BUILD_TYPE=Release `
+          -D WZ_DISTRIBUTOR="$Env:WZ_DISTRIBUTOR" `
+          -D ENABLE_DISCORD=1 `
+          -D DISCORD_RPC_APPID="${{secrets.DISCORD_RPC_APPID}}" `
+          -D ENABLE_GNS_NETWORK_BACKEND=1
         echo "::remove-matcher owner=cmake::"
-    - name: CMake Configure (MinGW)
-      if: success() && steps.settings.outputs.WZ_USING_MINGW == 'true'
-      working-directory: ${{ github.workspace }}/build
-      env:
-        DISCORD_RPC_APPID: '${{ secrets.DISCORD_RPC_APPID }}'
-        WZ_FULL_CMAKE_PATH: '${{ steps.settings.outputs.WZ_FULL_CMAKE_PATH }}'
-        WZ_MINGW_PKG_PREFIX: '${{ steps.settings.outputs.WZ_MINGW_PKG_PREFIX }}'
-        WZ_MINGW_CHAINLOAD_TOOLCHAIN_FILE: '${{ steps.settings.outputs.WZ_REPO_PATH }}\.ci\cmake\toolchains\${{ steps.settings.outputs.WZ_MINGW_PKG_PREFIX }}.cmake'
-        WZ_ASM_MASM_COMPILER: '${{ steps.settings.outputs.WZ_ASM_MASM_COMPILER }}'
+    - name: CMake Build
       run: |
-        echo "::add-matcher::${{ github.workspace }}\src\.ci\githubactions\pattern_matchers\cmake.json"
-        $env:PATH = "${env:WZ_MINGW_ENV_PATH}";
-        & "${env:WZ_FULL_CMAKE_PATH}\cmake.exe" -DCMAKE_ASM_MASM_COMPILER="${env:WZ_ASM_MASM_COMPILER}" -DWZ_MINGW_DIST_PATH="${env:WZ_MINGW_DIST_PATH}" -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}\build\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="${env:WZ_MINGW_CHAINLOAD_TOOLCHAIN_FILE}" -DCMAKE_BUILD_TYPE=Release -DWZ_DISTRIBUTOR:STRING="${env:WZ_DISTRIBUTOR}" -DENABLE_DISCORD:BOOL=ON -DDISCORD_RPC_APPID:STRING="${env:DISCORD_RPC_APPID}" -DENABLE_GNS_NETWORK_BACKEND:BOOL=ON -G "Ninja" "${{ steps.settings.outputs.WZ_REPO_PATH }}"
-        echo "::remove-matcher owner=cmake::"
-    - name: CMake Build (MSVC)
-      if: success() && steps.settings.outputs.WZ_USING_MINGW != 'true'
-      working-directory: ${{ github.workspace }}/build
-      run: |
-        # Workaround: https://github.com/actions/runner-images/issues/10004
-        $env:CXXFLAGS = "${env:CXXFLAGS} /D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR"
-
-        echo "::add-matcher::${{ github.workspace }}\src\.ci\githubactions\pattern_matchers\msvc.json"
-        & cmake --build . --config Release --target warzone2100 -- /m
-        echo "::remove-matcher owner=msvc::"
-    - name: CMake Build (MinGW)
-      if: success() && steps.settings.outputs.WZ_USING_MINGW == 'true'
-      working-directory: ${{ github.workspace }}/build
-      run: |
-        echo "::add-matcher::${{ github.workspace }}\src\.ci\githubactions\pattern_matchers\clang.json"
-        & cmake --build . --config Release --target warzone2100 -- -k0
-        echo "::remove-matcher owner=clang::"
+        echo "::add-matcher::$Env:GITHUB_WORKSPACE\src\.github\log-matchers\${{matrix.compiler}}.json"
+        & "$Env:WZ_FULL_CMAKE_PATH\cmake.exe" --build build --config Release --target warzone2100
+        echo "::remove-matcher owner=${{matrix.compiler}}::"
     - name: CPack Zip
-      working-directory: ${{ github.workspace }}/build
-      env:
-        FULL_CMAKE_PATH: ${{ steps.settings.outputs.WZ_FULL_CMAKE_PATH }}
+      working-directory: ${{github.workspace}}/build
       run: |
-        . "${env:WZ_REPO_PATH}\.ci\powershell\importVCvars.ps1"
-        Import-VCVarsEnv "${env:WZ_VISUAL_STUDIO_INSTALL_PATH}" "-arch=${env:WZ_TARGET_ARCH} -host_arch=x64"
-        # Run CPack
-        & "${env:FULL_CMAKE_PATH}\cpack.exe" `
+        & "$Env:FULL_CMAKE_PATH\cpack.exe" `
           -G ZIP `
           -C Release `
           -D CPACK_PACKAGE_FILE_NAME=warzone2100 `
@@ -467,18 +223,18 @@ jobs:
           -D CPACK_ARCHIVE_COMPONENT_INSTALL=1 `
           -D CPACK_COMPONENTS_ALL_IN_ONE_PACKAGE=1
         # Rename the archive
-        Move-Item -LiteralPath warzone2100.zip -Destination "$Env:GITHUB_WORKSPACE\output\archive\warzone2100_${Env:WZ_BUILD_DESC}.zip"
+        Move-Item -LiteralPath warzone2100.zip -Destination output\archive\warzone2100-${{matrix.filename}}.zip
     - name: Upload Artifact
       uses: actions/upload-artifact@v7
       if: success() && github.event_name != 'release' && matrix.publish_artifact
       with:
-        name: warzone2100_${{ steps.settings.outputs.WZ_BUILD_DESC }}
+        name: warzone2100-${{matrix.filename}}
         archive: false # do not zip
-        path: ${{ github.workspace }}\output\archive\warzone2100_${{ steps.settings.outputs.WZ_BUILD_DESC }}.zip
+        path: ${{github.workspace}}\output\archive\warzone2100-${{matrix.filename}}.zip
         if-no-files-found: error
     - name: Upload Release
       if: success() && github.event_name == 'release' && matrix.deploy_release
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        GH_REPO: ${{ github.repository }}
-      run: gh release upload "$Env:GITHUB_REF_NAME" "$Env:GITHUB_WORKSPACE\output\archive\warzone2100_${Env:WZ_BUILD_DESC}.zip"
+        GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
+        GH_REPO: ${{github.repository}}
+      run: gh release upload "$Env:GITHUB_REF_NAME" output\archive\warzone2100-${{matrix.filename}}.zip
