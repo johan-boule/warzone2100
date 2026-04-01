@@ -186,11 +186,11 @@ jobs:
       shell: pwsh
       run: |
         # $Env:PATH = "C:\msys64\ucrt64\bin;C:\msys64\usr\bin;$Env:PATH"
-        $POWERSHELL_FOLDER = Split-Path -Path "$Env:WZ_POWERSHELL_PATH"
         $WZ_MINGW_DIST_PATH = "$Env:LLVM_MINGW_INSTALL_PATH\$Env:WZ_MINGW_PKG_PREFIX\bin"
+        echo "WZ_MINGW_DIST_PATH=$WZ_MINGW_DIST_PATH" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+        $POWERSHELL_FOLDER = Split-Path -Path "$Env:WZ_POWERSHELL_PATH"
         $WZ_MINGW_ENV_PATH = "$Env:LLVM_MINGW_INSTALL_PATH\bin;$Env:WZ_GIT_PATH;$POWERSHELL_FOLDER;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;$Env:WZ_NINJA_INSTALL_PATH;$Env:WZ_ASCIIDOCTOR_PATH;$Env:WZ_MSGMERGE_PATH;$Env:WZ_MSGFMT_PATH"
         echo "WZ_MINGW_ENV_PATH=$WZ_MINGW_ENV_PATH" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
-        echo "WZ_MINGW_DIST_PATH=$WZ_MINGW_DIST_PATH" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
     - name: Cache vcpkg dependencies
       uses: actions/cache@v5
       with:
@@ -244,6 +244,9 @@ jobs:
           -D CPACK_ARCHIVE_COMPONENT_INSTALL=1 `
           -D CPACK_COMPONENTS_ALL_IN_ONE_PACKAGE=1
         Move-Item -LiteralPath build\warzone2100.zip -Destination warzone2100-${{matrix.filename}}.zip
+    - name: LS
+      shell: bash
+      run: ls -la; ls -la *
     - name: Upload Artifact
       uses: actions/upload-artifact@v7
       if: success() && github.event_name != 'release' && matrix.publish_artifact
