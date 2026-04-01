@@ -181,7 +181,6 @@ jobs:
           ${{runner.os}}-${{matrix.compiler}}-${{matrix.arch}}-${{hashFiles('**/get-dependencies_win.ps1')}}-${{hashFiles('**/vcpkg.json')}}
           ${{runner.os}}-${{matrix.compiler}}-${{matrix.arch}}-${{hashFiles('**/get-dependencies_win.ps1')}}-
     - name: Build vcpkg + dependencies
-      working-directory: ${{github.workspace}}/build
       run: |
         $Env:PATH = "$Env:WZ_MINGW_ENV_PATH"
         & "$Env:WZ_FULL_POWERSHELL_PATH" .\src\get-dependencies_win.ps1 -VCPKG_BUILD_TYPE release
