@@ -30,7 +30,18 @@ jobs:
     steps:
     - name: Dump Environment
       shell: bash
-      run: env | sort
+      run: |
+        set -eu
+        env | sort
+        echo ===============================================================================
+        IFS=: read -ra path <<< "$PATH"
+        printf 'PATH=%s\n' "${path[@]}"
+        echo ===============================================================================
+        for p in "${path[@]}"; do
+          echo ===============================================================================
+          echo $p
+          ls -l "$p"
+        done
     - name: Remove Strawberry Perl from PATH # Workaround for https://github.com/actions/runner-images/issues/8598:
       shell: pwsh
       run: |
