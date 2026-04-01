@@ -45,13 +45,16 @@ jobs:
         for p in "${path[@]}"; do
           echo ===============================================================================
           echo $p
-          ls -l "$p" || true
+          ls -la "$p" || true
         done
     - name: Remove Strawberry Perl from PATH # Workaround for https://github.com/actions/runner-images/issues/8598:
       shell: pwsh
       run: |
         $Env:PATH = $Env:PATH -replace "C:\\Strawberry\\c\\bin;", ""
         echo "PATH=$Env:PATH" | Out-File -FilePath $Env:GITHUB_ENV -Append
+    - name: Dump Environment (pwsh)
+      shell: pwsh
+      run: echo $Env:PATH
     - name: Git Checkout
       uses: actions/checkout@v6
       with:
