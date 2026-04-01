@@ -61,7 +61,7 @@ jobs:
         echo "VCPKG_DEFAULT_HOST_TRIPLET=x64-mingw-static" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
 
         $WZ_VCPKG_BINARYCACHE_DIR = "$Env:GITHUB_WORKSPACE\vcpkg_cache"
-        echo "WZ_VCPKG_BINARYCACHE_DIR=$VCPKG_BINARYCACHE_DIR" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+        echo "WZ_VCPKG_BINARYCACHE_DIR=$WZ_VCPKG_BINARYCACHE_DIR" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
 
         $VCPKG_BINARY_SOURCES = "clear;files,$WZ_VCPKG_BINARYCACHE_DIR,readwrite"
         echo "VCPKG_BINARY_SOURCES=$VCPKG_BINARY_SOURCES" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
