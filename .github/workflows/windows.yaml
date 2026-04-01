@@ -40,7 +40,7 @@ jobs:
         for p in "${path[@]}"; do
           echo ===============================================================================
           echo $p
-          ls -l "$p"
+          ls -l "$p" || true
         done
     - name: Remove Strawberry Perl from PATH # Workaround for https://github.com/actions/runner-images/issues/8598:
       shell: pwsh
