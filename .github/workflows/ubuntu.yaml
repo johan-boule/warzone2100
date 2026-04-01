@@ -35,22 +35,8 @@ jobs:
       - name: Export Environment
         run: |
           set -eu
-
           echo WZ_DISTRIBUTOR=${GITHUB_REPOSITORY%/*} >> $GITHUB_ENV
-
-          WZ_NAME_SUFFIX=
-          WZ_OUTPUT_NAME_SUFFIX=
-          if [[ $GITHUB_REF_TYPE != tag ]]; then
-            suffix=${GITHUB_HEAD_REF-$GITHUB_REF_NAME}
-            suffix=${suffix////_}
-            suffix=${suffix//-/_}
-            suffix=$(sed 's/[^a-zA-Z0-9\.]/_/g' <<< "$suffix")
-            WZ_NAME_SUFFIX=" ($suffix)"
-            WZ_OUTPUT_NAME_SUFFIX=_$suffix
-          fi
-          echo WZ_NAME_SUFFIX=$WZ_NAME_SUFFIX >> $GITHUB_ENV
-          echo WZ_OUTPUT_NAME_SUFFIX=$WZ_OUTPUT_NAME_SUFFIX >> $GITHUB_ENV
-
+          echo WZ_SUFFIX=$(sed 's,[^a-zA-Z0-9._-],-,g' <<< "${GITHUB_HEAD_REF-$GITHUB_REF_NAME}") >> $GITHUB_ENV
           case ${{matrix.compiler}} in
             (gcc)
               echo CC=/usr/bin/gcc
@@ -64,7 +50,7 @@ jobs:
       - name: CMake Configure
         run: |
           set -eu
-          echo "::add-matcher::$GITHUB_WORKSPACE/src/.github/log-matchers/cmake.json"
+          echo "::add-matcher::${{github.workspace}}/src/.github/log-matchers/cmake.json"
           docker run --rm \
             --env CI \
             --env GITHUB_ACTIONS --env GITHUB_REPOSITORY --env GITHUB_WORKFLOW --env GITHUB_WORKSPACE \
@@ -78,16 +64,17 @@ jobs:
                 -B $GITHUB_WORKSPACE/build \
                 -D CMAKE_BUILD_TYPE=Release \
                 -D WZ_DISTRIBUTOR="$WZ_DISTRIBUTOR" \
-                -D WZ_NAME_SUFFIX="$WZ_NAME_SUFFIX" \
-                -D WZ_OUTPUT_NAME_SUFFIX="$WZ_OUTPUT_NAME_SUFFIX" \
+                -D WZ_NAME_SUFFIX=" ($WZ_SUFFIX)" \
+                -D WZ_OUTPUT_NAME_SUFFIX=-$WZ_SUFFIX \
                 -D WZ_ENABLE_WARNINGS=0 \
                 -D ENABLE_DISCORD=0 \
+                -D DISCORD_RPC_APPID="need to use debugger breakpoint to find out" \
                 -D ENABLE_GNS_NETWORK_BACKEND=0
           echo '::remove-matcher owner=cmake::'
       - name: CMake Build
         run: |
           set -eu
-          echo "::add-matcher::$GITHUB_WORKSPACE/src/.github/log-matchers/${{matrix.compiler}}.json"
+          echo "::add-matcher::${{github.workspace}}/src/.github/log-matchers/${{matrix.compiler}}.json"
           docker run --rm \
             --env CI \
             --env GITHUB_ACTIONS --env GITHUB_REPOSITORY --env GITHUB_WORKFLOW --env GITHUB_WORKSPACE \
@@ -110,22 +97,22 @@ jobs:
               cpack \
                 --config ./CPackConfig.cmake \
                 -G DEB \
+                -D CPACK_DEBIAN_FILE_NAME=warzone2100-$WZ_SUFFIX-${{matrix.filename}}.deb \
+                -D CPACK_DEBIAN_PACKAGE_NAME="warzone2100 ($WZ_SUFFIX)" \
                 -D CPACK_DEBIAN_PACKAGE_MAINTAINER="$WZ_DISTRIBUTOR" \
                 -D CPACK_DEB_COMPONENT_INSTALL=ON \
-                -D CPACK_COMPONENTS_GROUPING=ALL_COMPONENTS_IN_ONE \
-                -D CPACK_DEBIAN_PACKAGE_NAME=warzone2100$WZ_OUTPUT_NAME_SUFFIX \
-                -D CPACK_DEBIAN_FILE_NAME=warzone2100-${{matrix.filename}}.deb
+                -D CPACK_COMPONENTS_GROUPING=ALL_COMPONENTS_IN_ONE
       - name: Upload Artifact
         uses: actions/upload-artifact@v7
         if: success() && github.event_name != 'release' && matrix.publish_artifact
         with:
-          name: warzone2100-${{matrix.filename}}_deb
+          name: warzone2100-${{env.WZ_SUFFIX}}-${{matrix.filename}}
+          path: ${{github.workspace}}/build/warzone2100-${{env.WZ_SUFFIX}}-${{matrix.filename}}.deb
           archive: false # do not zip
-          path: ${{github.workspace}}/build/warzone2100-${{matrix.filename}}.deb
           if-no-files-found: error
       - name: Upload Release
         if: success() && github.event_name == 'release' && matrix.deploy_release
         env:
           GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
           GH_REPO: ${{github.repository}}
-        run: set -eu && gh release upload "$GITHUB_REF_NAME" build/warzone2100-${{matrix.filename}}.deb
+        run: set -eu && gh release upload "$GITHUB_REF_NAME" build/warzone2100-$WZ_SUFFIX-${{matrix.filename}}.deb
