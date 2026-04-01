@@ -26,7 +26,7 @@ jobs:
     name: ${{matrix.name}}
     permissions:
       contents: write # Needed to upload to releases
-    runs-on: windows-2022
+    runs-on: windows-2022 # https://github.com/actions/runner-images/tree/main/images/windows
     steps:
     - name: Remove Strawberry Perl from PATH # Workaround for https://github.com/actions/runner-images/issues/8598:
       run: |
@@ -98,7 +98,7 @@ jobs:
       run: |
         Start-Sleep -Milliseconds 1 # See: https://stackoverflow.com/a/49859001
         $VerbosePreference = "Continue"
-        . src\.ci\powershell\request.ps1
+        . .\src\.ci\powershell\request.ps1
 
         $VULKAN_DL_URL = "https://sdk.lunarg.com/sdk/download/1.4.328.1/windows/vulkansdk-windows-X64-1.4.328.1.exe?Human=true"
         $VULKAN_DL_SHA256 = "a8675df6d538079c2a719a9373994948091db785b48f142e024254e76348d16c"
@@ -116,7 +116,7 @@ jobs:
       run: |
         Start-Sleep -Milliseconds 1 # See: https://stackoverflow.com/a/49859001
         $VerbosePreference = "Continue"
-        . src\.ci\powershell\request.ps1
+        . .\src\.ci\powershell\request.ps1
 
         $NINJA_DL_URL = "https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-win.zip"
         $NINJA_DL_SHA512 = "55d3d891e8fc6c8ad7f92e172125319896761e57c5125944613d9bbfa5b9374387e9fc1468ad5bcb31464f43fb1c455ea251343942595f42955dc67090aa12ee"
@@ -136,7 +136,7 @@ jobs:
       run: |
         Start-Sleep -Milliseconds 1 # See: https://stackoverflow.com/a/49859001
         $VerbosePreference = "Continue"
-        . src\.ci\powershell\request.ps1
+        . .\src\.ci\powershell\request.ps1
 
         $LLVM_MINGW_RELEASE = "20250709";
         $LLVM_MINGW_PKG = "llvm-mingw-$LLVM_MINGW_RELEASE-ucrt-x86_64"
