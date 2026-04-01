@@ -184,7 +184,7 @@ jobs:
       working-directory: ${{github.workspace}}/build
       run: |
         $Env:PATH = "$Env:WZ_MINGW_ENV_PATH"
-        & "$Env:WZ_FULL_POWERSHELL_PATH" src\get-dependencies_win.ps1 -VCPKG_BUILD_TYPE release
+        & "$Env:WZ_FULL_POWERSHELL_PATH" .\src\get-dependencies_win.ps1 -VCPKG_BUILD_TYPE release
     - name: Clean vcpkg temp files
       run: |
         # Remove the vcpkg\buildtrees folder. (Once all dependencies are installed, it isn't needed, and it takes up a lot of space in the cache.)

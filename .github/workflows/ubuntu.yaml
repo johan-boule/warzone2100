@@ -64,7 +64,7 @@ jobs:
       - name: CMake Configure
         run: |
           set -eu
-          echo "::add-matcher::$GITHUB_WORKSPACE/.github/log-matchers/cmake.json"
+          echo "::add-matcher::$GITHUB_WORKSPACE/src/.github/log-matchers/cmake.json"
           docker run --rm \
             --env CI \
             --env GITHUB_ACTIONS --env GITHUB_REPOSITORY --env GITHUB_WORKFLOW --env GITHUB_WORKSPACE \
