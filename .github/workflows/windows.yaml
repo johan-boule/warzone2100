@@ -187,7 +187,7 @@ jobs:
     - name: Clean vcpkg temp files
       run: |
         # Remove the vcpkg\buildtrees folder. (Once all dependencies are installed, it isn't needed, and it takes up a lot of space in the cache.)
-        if (Test-Path build\vcpkg\buildtrees) { Remove-Item build\vcpkg\buildtrees -Force -Recurse -ErrorAction SilentlyContinue; }
+        if (Test-Path vcpkg\buildtrees) { Remove-Item vcpkg\buildtrees -Force -Recurse -ErrorAction SilentlyContinue; }
     - name: CMake Configure
       run: |
         echo "::add-matcher::$Env:GITHUB_WORKSPACE\src\.github\log-matchers\cmake.json"
@@ -198,7 +198,7 @@ jobs:
           -B build `
           -D CMAKE_ASM_MASM_COMPILER="$Env:WZ_ASM_MASM_COMPILER" `
           -D WZ_MINGW_DIST_PATH="$Env:WZ_MINGW_DIST_PATH" `
-          -D CMAKE_TOOLCHAIN_FILE="$Env:GITHUB_WORKSPACE\build\vcpkg\scripts\buildsystems\vcpkg.cmake" `
+          -D CMAKE_TOOLCHAIN_FILE="$Env:GITHUB_WORKSPACE\vcpkg\scripts\buildsystems\vcpkg.cmake" `
           -D VCPKG_CHAINLOAD_TOOLCHAIN_FILE="$Env:GITHUB_WORKSPACE\src\.ci\cmake\toolchains\$WZ_MINGW_PKG_PREFIX.cmake" `
           -D CMAKE_BUILD_TYPE=Release `
           -D WZ_DISTRIBUTOR="$Env:WZ_DISTRIBUTOR" `
