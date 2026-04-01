@@ -215,7 +215,7 @@ jobs:
       run: |
         & "$Env:WZ_CMAKE_PATH\cpack.exe" `
           -G ZIP `
-          --config build `
+          --config build\CPackConfig.cmake `
           -C Release `
           -D CPACK_PACKAGE_FILE_NAME=warzone2100 `
           -D CPACK_INCLUDE_TOPLEVEL_DIRECTORY=0 `
