@@ -732,7 +732,7 @@ STRUCTURE *IdToStruct(UDWORD id, UDWORD player)
 FEATURE *IdToFeature(UDWORD id, UDWORD player)
 {
 	(void)player;	// unused, all features go into player 0
-	return (FEATURE*)getBaseObjFromId(apsFeatureLists[0], id);
+	return (FEATURE*)getBaseObjFromId(apsFeatureList[0], id);
 }
 
 // ////////////////////////////////////////////////////////////////////////////
@@ -2028,7 +2028,7 @@ void setPlayerMuted(uint32_t playerIdx, bool muted)
 		return;
 	}
 	ingame.muteChat[playerIdx] = muted;
-	if (isHumanPlayer(playerIdx) && game.blindMode != BLIND_MODE::NONE)
+	if (isHumanPlayer(playerIdx))
 	{
 		auto trueIdentity = getTruePlayerIdentity(playerIdx);
 		if (!trueIdentity.identity.empty()

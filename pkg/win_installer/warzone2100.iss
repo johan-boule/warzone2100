@@ -275,6 +275,7 @@ WizardSizePercent=110
 AlwaysShowComponentsList=yes
 AlwaysShowDirOnReadyPage=yes
 WizardImageFile={#AddBackslash(SourcePath) + "resources\wzwizardimage.bmp"}
+WizardImageFileDynamicDark={#AddBackslash(SourcePath) + "resources\wzwizardimage.bmp"}
 
 // Install Pages
 // - Show the welcome page - it's where we provide the "Advanced" button
@@ -334,6 +335,7 @@ Name: "en"; MessagesFile: "compiler:Default.isl,{#SourcePath}\i18n\win_installer
 #emit AddTranslation("sl_SI", "compiler:Languages\Slovenian.isl")
 #emit AddTranslation("sv_SE", "compiler:Languages\Swedish.isl")
 #emit AddTranslation("ta_IN", "compiler:Languages\Tamil.isl")
+#emit AddTranslation("th_TH", "compiler:Languages\Thai.isl")
 #emit AddTranslation("tr_TR", "compiler:Languages\Turkish.isl")
 #emit AddTranslation("uk_UA", "compiler:Languages\Ukrainian.isl")
 
