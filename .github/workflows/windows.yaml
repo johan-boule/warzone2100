@@ -1,9 +1,12 @@
 on:
   push:
-  pull_request:
+    branches:
+    - '**'
+    tags:
+    - '!**'
   release:
     types:
-      - published
+    - published
 
 jobs:
   msys2-clangarm64:
