@@ -12,13 +12,6 @@ finish-args:
   - --device=dri
   - --socket=pulseaudio
   - --share=network
-  # Use features=devel to enable ptrace, which is needed for the crash reporter
-  # (breakpad and crashpad - only "inproc" works w/out this, and is much more limited).
-  # This same workaround is used by Firefox, and:
-  # > The application is still confined in a pid namespace, so that won't let us
-  # > escape the flatpak sandbox.
-  # Reference: https://bugzilla.mozilla.org/show_bug.cgi?id=1653852#c23
-  - --allow=devel
 cleanup:
   - /include
   - /lib/cmake
@@ -181,19 +174,17 @@ modules:
       - -DWZ_APPSTREAM_ID=info.retropaganda.warzone2100
       - -DENABLE_DISCORD:BOOL=ON
       - -DWZ_DOWNLOAD_PREBUILT_PACKAGES_ASSET_DIR=/app/prestaged-dl
-      # Crashpad/breakpad works in the Flatpak sandbox *if* --allow=devel is set above. Otherwise, this must be: inproc
-      - -DSENTRY_BACKEND=crashpad
       - -DENABLE_GNS_NETWORK_BACKEND:BOOL=ON
     secret-opts:
       - -DWZ_DISTRIBUTOR:STRING=$WZ_DISTRIBUTOR
       - -DDISCORD_RPC_APPID:STRING=$DISCORD_RPC_APPID
-      - -DSENTRY_IO_DSN:STRING=$SENTRY_IO_DSN
       - -DWZ_OUTPUT_NAME_SUFFIX=$WZ_OUTPUT_NAME_SUFFIX
       - -DWZ_NAME_SUFFIX=$WZ_NAME_SUFFIX
     secret-env:
       - WZ_OUTPUT_NAME_SUFFIX
     sources:
-      @WZ_MAIN_MODULE_SOURCE@
+      - type: dir
+        path: ../../
       - type: file
         url: https://github.com/Warzone2100/wz-sequences/releases/download/v3/high-quality-en-sequences.wz
         sha256: 142ae905be288cca33357a49f42b884c190e828fc0b1b1773ded5dff774f41a3

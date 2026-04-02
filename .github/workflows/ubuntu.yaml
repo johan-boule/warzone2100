@@ -68,8 +68,8 @@ jobs:
                 -D WZ_OUTPUT_NAME_SUFFIX=-$WZ_SUFFIX \
                 -D WZ_ENABLE_WARNINGS=0 \
                 -D ENABLE_DISCORD=0 \
-                -D DISCORD_RPC_APPID="need to use debugger breakpoint to find out" \
-                -D ENABLE_GNS_NETWORK_BACKEND=0
+                -D DISCORD_RPC_APPID='need to use debugger breakpoint to find out' \
+                -D ENABLE_GNS_NETWORK_BACKEND=1
           echo '::remove-matcher owner=cmake::'
       - name: CMake Build
         run: |

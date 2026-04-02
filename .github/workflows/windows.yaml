@@ -219,8 +219,9 @@ jobs:
           -D VCPKG_CHAINLOAD_TOOLCHAIN_FILE="$Env:GITHUB_WORKSPACE\src\.ci\cmake\toolchains\$Env:WZ_MINGW_PKG_PREFIX.cmake" `
           -D WZ_MINGW_DIST_PATH="$Env:WZ_MINGW_DIST_PATH" `
           -D WZ_DISTRIBUTOR="$Env:WZ_DISTRIBUTOR" `
+          -D WZ_ENABLE_WARNINGS=0 `
           -D ENABLE_DISCORD=0 `
-          -D DISCORD_RPC_APPID="need to use debugger breakpoint to find out" `
+          -D DISCORD_RPC_APPID='need to use debugger breakpoint to find out' `
           -D ENABLE_GNS_NETWORK_BACKEND=1
         echo "::remove-matcher owner=cmake::"
     - name: CMake Build
