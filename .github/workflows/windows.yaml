@@ -7,6 +7,29 @@ on:
       - released
 
 jobs:
+  msys2-clangarm64:
+    runs-on: windows-11-arm
+    steps:
+    - uses: msys2/setup-msys2@v2
+      with:
+        msystem: CLANGARM64
+        update: true
+    - name: Dump Environment (bash)
+      shell: msys2 {0}
+      run: |
+        set -eu
+        uname -a
+        mount
+        echo ===============================================================================
+        env | sort
+        echo ===============================================================================
+        IFS=: read -ra path <<< "$PATH"
+        printf 'PATH=%s\n' "${path[@]}"
+        for p in "${path[@]}"; do
+          echo ===============================================================================
+          echo $p
+          ls -la "$p" || true
+        done
   windows-build:
     strategy:
       matrix:
