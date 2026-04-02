@@ -17,6 +17,7 @@ jobs:
         install: >-
           git
           mingw-w64-clang-aarch64-cmake
+          mingw-w64-clang-aarch64-ninja
           mingw-w64-clang-aarch64-clang
     - name: UName
       run: msys2 -c 'uname -a'
