@@ -47,10 +47,10 @@ jobs:
           echo $p
           ls -la "$p" || true
         done
-    - name: Remove Strawberry Perl from PATH # Workaround for https://github.com/actions/runner-images/issues/8598:
+    - name: Remove Strawberry Perl from PATH # workaround for https://github.com/actions/runner-images/issues/5459
       shell: pwsh
       run: |
-        $Env:PATH = $Env:PATH -replace "C:\\Strawberry\\c\\bin;", ""
+        $Env:PATH = ($Env:PATH -split ';' | ?{ $_ -notmatch '\\Strawberry\\c\\bin$' }) -join ';'
         echo "PATH=$Env:PATH" | Out-File -FilePath $Env:GITHUB_ENV -Append
     - name: Dump Environment (pwsh)
       shell: pwsh
@@ -74,12 +74,10 @@ jobs:
           (x86_64)
             echo VCPKG_DEFAULT_TRIPLET=x64-mingw-dynamic
             echo WZ_MINGW_PKG_PREFIX=x86_64-w64-mingw32
-            echo WZ_ASM_MASM_COMPILER='llvm-ml;-m64'
           ;;
           (arm64)
             echo VCPKG_DEFAULT_TRIPLET=arm64-mingw-dynamic
             echo WZ_MINGW_PKG_PREFIX=aarch64-w64-mingw32
-            echo WZ_ASM_MASM_COMPILER=
           ;;
         esac >> $GITHUB_ENV
     - name: Export Environment (pwsh)
@@ -218,7 +216,6 @@ jobs:
           -B build `
           -D CMAKE_BUILD_TYPE=Release `
           -D CMAKE_TOOLCHAIN_FILE="$Env:GITHUB_WORKSPACE\vcpkg\scripts\buildsystems\vcpkg.cmake" `
-          -D CMAKE_ASM_MASM_COMPILER="$Env:WZ_ASM_MASM_COMPILER" `
           -D VCPKG_CHAINLOAD_TOOLCHAIN_FILE="$Env:GITHUB_WORKSPACE\src\.ci\cmake\toolchains\$Env:WZ_MINGW_PKG_PREFIX.cmake" `
           -D WZ_MINGW_DIST_PATH="$Env:WZ_MINGW_DIST_PATH" `
           -D WZ_DISTRIBUTOR="$Env:WZ_DISTRIBUTOR" `
@@ -245,6 +242,7 @@ jobs:
           -D CPACK_COMPONENTS_ALL_IN_ONE_PACKAGE=1
         Move-Item -LiteralPath build\warzone2100.zip -Destination warzone2100-${{matrix.filename}}.zip
     - name: LS
+      if: always()
       shell: bash
       run: ls -la; ls -la *
     - name: Upload Artifact
