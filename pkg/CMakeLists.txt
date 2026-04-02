@@ -175,12 +175,4 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/CPackConfigVersion.cmake.in
 			   @ONLY)
 set(CPACK_PROJECT_CONFIG_FILE ${CMAKE_BINARY_DIR}/CPackConfigVersion.cmake)
 
-######################
-# Handling Autorevision for Package Source
-
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/autorevisionForSourcePackage.cmake.in
-			   ${CMAKE_BINARY_DIR}/autorevisionForSourcePackage.cmake
-			   @ONLY)
-set(CPACK_INSTALL_SCRIPT "${CMAKE_BINARY_DIR}/autorevisionForSourcePackage.cmake")
-
-INCLUDE(CPack)
+include(CPack)

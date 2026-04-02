@@ -201,10 +201,12 @@ jobs:
       shell: pwsh
       run: |
         $Env:PATH = "$Env:WZ_MINGW_ENV_PATH"
-        & "$Env:WZ_POWERSHELL_PATH" .\src\get-dependencies_win.ps1 -VCPKG_BUILD_TYPE release
+        New-Item -ItemType Directory -Force -Path build
+        Set-Location build
+        & "$Env:WZ_POWERSHELL_PATH" ..\src\get-dependencies_win.ps1 -VCPKG_BUILD_TYPE release
     - name: Clean vcpkg temp files
       shell: bash
-      run: rm --recursive --force vcpkg/buildtrees
+      run: rm --recursive --force build/vcpkg/buildtrees
     - name: CMake Configure
       shell: pwsh
       run: |
@@ -215,7 +217,7 @@ jobs:
           -S src `
           -B build `
           -D CMAKE_BUILD_TYPE=Release `
-          -D CMAKE_TOOLCHAIN_FILE="$Env:GITHUB_WORKSPACE\vcpkg\scripts\buildsystems\vcpkg.cmake" `
+          -D CMAKE_TOOLCHAIN_FILE="$Env:GITHUB_WORKSPACE\build\vcpkg\scripts\buildsystems\vcpkg.cmake" `
           -D VCPKG_CHAINLOAD_TOOLCHAIN_FILE="$Env:GITHUB_WORKSPACE\src\.ci\cmake\toolchains\$Env:WZ_MINGW_PKG_PREFIX.cmake" `
           -D WZ_MINGW_DIST_PATH="$Env:WZ_MINGW_DIST_PATH" `
           -D WZ_DISTRIBUTOR="$Env:WZ_DISTRIBUTOR" `
@@ -234,14 +236,14 @@ jobs:
       shell: pwsh
       run: |
         & "$Env:WZ_CMAKE_PATH\cpack.exe" `
-          -G ZIP `
           --config build\CPackConfig.cmake `
+          -G ZIP `
           -C Release `
           -D CPACK_PACKAGE_FILE_NAME=warzone2100 `
           -D CPACK_INCLUDE_TOPLEVEL_DIRECTORY=0 `
           -D CPACK_ARCHIVE_COMPONENT_INSTALL=1 `
           -D CPACK_COMPONENTS_ALL_IN_ONE_PACKAGE=1
-        Move-Item -LiteralPath build\warzone2100.zip -Destination warzone2100-${{matrix.filename}}.zip
+        Move-Item -LiteralPath warzone2100.zip -Destination warzone2100-${{matrix.filename}}.zip
     - name: LS
       if: always()
       shell: bash
