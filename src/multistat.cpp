@@ -45,6 +45,8 @@
 #include <utility>
 #include <memory>
 #include <chrono>
+#include <fstream>
+#include <iostream>
 #include <SQLiteCpp/SQLiteCpp.h>
 
 // ////////////////////////////////////////////////////////////////////////////
@@ -209,6 +211,113 @@ static bool sendMultiStatsInternal(uint32_t playerIndex, optional<uint32_t> reci
 	{
 		// In blind mode, always send zeroed stats
 		pStatsToSend = &zeroStats;
+	}
+
+	if (NetPlay.isHost) {
+		static const char* env = std::getenv("WARZONE2100_RATING_DATA_DIR");
+		if(env) {
+			static const std::filesystem::path dir = env;
+			static const auto json_ids = nlohmann::json::parse(std::ifstream(dir / "player-ids.json"));
+			static const auto json_elo = nlohmann::json::parse(std::ifstream(dir / "elo.json"));
+			auto public_key = base64Encode(pStatsToSend->identity.toBytes(EcKey::Privacy::Public));
+			if (!public_key.empty()) {
+				const auto old_public_key = public_key;
+				const std::string ip = NetPlay.players[playerIndex].IPtextAddress;
+				std::string name = NetPlay.players[playerIndex].name;
+				auto old_name = name;
+				auto it = json_ids["publicKeys"].find(public_key);
+				if (it != json_ids["publicKeys"].end()) {
+					public_key = it->get<std::string>();
+					it = json_ids["mainPublicKeys"].find(public_key);
+					if (it == json_ids["mainPublicKeys"].end())
+						std::cout << "xxxxxxxxxxxxxxxx send missing main public key data " << old_public_key << ' ' << public_key << std::endl;
+					else {
+						public_key = (*it)[0]["publicKey"].get<std::string>();
+						int count = 0, total_count = 0;
+						for(auto entry : (*it)) {
+							total_count += entry["count"].get<int>();
+							if (entry["publicKey"].get<std::string>() == old_public_key)
+								count = entry["count"].get<int>();
+						}
+						if (count * 10 < total_count && !(*it)[0]["name"].is_null()) {
+							std::cout << "xxxxxxxxxxxxxxxx send count rename " << count << ' ' << total_count << ' ' << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
+							name = (*it)[0]["name"].get<std::string>();
+						} else std::cout << "xxxxxxxxxxxxxxxx send count no rename " << count << ' ' << total_count << ' ' << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
+					}
+				} else {
+					it = json_ids["ips"].find(ip);
+					if (it != json_ids["ips"].end()) {
+						std::cout << "xxxxxxxxxxxxxxxx send ip rename " << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
+						public_key = it->get<std::string>();
+						it = json_ids["mainPublicKeys"].find(public_key);
+						if (it == json_ids["mainPublicKeys"].end())
+							std::cout << "xxxxxxxxxxxxxxxx send missing main public key data " << ip << ' ' << public_key << std::endl;
+						else {
+							public_key = (*it)[0]["publicKey"].get<std::string>();
+							name = (*it)[0]["name"].get<std::string>();
+						}
+					} else std::cout << "xxxxxxxxxxxxxxxx send not found " << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
+				}
+				if (public_key != old_public_key) {
+					if (name != old_name) {
+						std::cout << "xxxxxxxxxxxxxxxx send rename and public key " << old_name << " => " << name << ' ' << old_public_key << " => " << public_key << ' ' << ip << std::endl;
+						NETchangePlayerName(playerIndex, name.data());
+					} else std::cout << "xxxxxxxxxxxxxxxx send no rename and public key " << old_name << ' ' << old_public_key << " => " << public_key << ' ' << ip << std::endl;
+				} else std::cout << "xxxxxxxxxxxxxxxx send no change " << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
+				uint32_t played, wins, losses, totalKills;
+				it = json_elo.find(public_key);
+				if (it == json_elo.end()) {
+					played = wins = losses = totalKills = 0;
+					std::cout << "xxxxxxxxxxxxxxxx send unrated " << name << ' ' << public_key << ' ' << ip << std::endl;
+				} else {
+					const auto scale = (*it)["scale"].get<float>();
+					const auto rank = (*it)["rank"].get<unsigned int>();
+					std::cout << "xxxxxxxxxxxxxxxx send rated " << rank << ' ' << scale << ' ' << name << ' ' << public_key << ' ' << ip << std::endl;
+					#if 0 // excerpt from lobbyplayerrow.cpp displayPlayer
+						bool dummy = stat.played < 5;
+						uint8_t star[3] = {0, 0, 0};
+						uint8_t medal = 0;
+						// star 1 total droid kills
+						star[0] = stat.totalKills > 600? 1 : stat.totalKills > 300? 2 : stat.totalKills > 150? 3 : 0;
+						// star 2 games played
+						star[1] = stat.played > 200? 1 : stat.played > 100? 2 : stat.played > 50? 3 : 0;
+						// star 3 games won.
+						star[2] = stat.wins > 80? 1 : stat.wins > 40? 2 : stat.wins > 10? 3 : 0;
+						// medals.
+						medal = stat.wins >= 24 && stat.wins > 8 * stat.losses? 1 : stat.wins >= 12 && stat.wins > 4 * stat.losses? 2 : stat.wins >= 6 && stat.wins > 2 * stat.losses? 3 : 0;
+					#endif
+					if (scale < 0.4) {
+						if (scale < 0.1) totalKills = 0;
+						else if (scale < 0.2) totalKills = 151;
+						else if (scale < 0.3) totalKills = 301;
+						else totalKills = 601;
+						played = 5;
+						wins = 10;
+					} else {
+						totalKills = 601;
+						if (scale < 0.7) {
+							if (scale < 0.5) played = 51;
+							else if (scale < 0.6) played = 101;
+							else played = 201;
+							wins = 10;
+						} else {
+							played = 201;
+							if (scale < 0.8) wins = 11;
+							else if (scale < 0.9) wins = 41;
+							else wins = 81;
+						}
+					}
+					if (rank > 6) losses = wins;
+					else if (rank > 3) losses = wins / 2 - 1;
+					else if (rank > 1) losses = wins / 4 - 1;
+					else losses = wins / 8 - 1;
+				}
+				pStatsToSend->played = played;
+				pStatsToSend->wins = wins;
+				pStatsToSend->losses = losses;
+				pStatsToSend->totalKills = totalKills;
+			}
+		}
 	}
 
 	NETuint32_t(w, pStatsToSend->played);
