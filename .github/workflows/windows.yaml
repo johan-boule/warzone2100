@@ -105,7 +105,7 @@ jobs:
       run: |
         set -eu
         echo WZ_DISTRIBUTOR=${GITHUB_REPOSITORY%/*} >> $GITHUB_ENV
-        echo WZ_SUFFIX=$(sed 's,[^a-zA-Z0-9._-],-,g' <<< "${GITHUB_HEAD_REF-$GITHUB_REF_NAME}") >> $GITHUB_ENV
+        echo WZ_SUFFIX=$(sed 's,[^a-zA-Z0-9._-],-,g' <<< "${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}") >> $GITHUB_ENV
         echo VCPKG_DEFAULT_HOST_TRIPLET=x64-mingw-static >> $GITHUB_ENV
         case ${{matrix.arch}} in
           (x86_64)
@@ -280,17 +280,17 @@ jobs:
           -D CPACK_INCLUDE_TOPLEVEL_DIRECTORY=0 `
           -D CPACK_ARCHIVE_COMPONENT_INSTALL=1 `
           -D CPACK_COMPONENTS_ALL_IN_ONE_PACKAGE=1
-        Move-Item -LiteralPath warzone2100.zip -Destination warzone2100-${{matrix.filename}}.zip
+        Move-Item -LiteralPath warzone2100.zip -Destination warzone2100-$WZ_SUFFIX-${{matrix.filename}}.zip
     - name: LS
       if: always()
       shell: bash
-      run: ls -la; ls -la *
+      run: ls -la . *
     - name: Upload Artifact
       uses: actions/upload-artifact@v7
       if: success() && github.event_name != 'release' && matrix.publish_artifact
       with:
         name: warzone2100-${{matrix.filename}}
-        path: ${{github.workspace}}\warzone2100-${{matrix.filename}}.zip
+        path: ${{github.workspace}}\warzone2100-$WZ_SUFFIX-${{matrix.filename}}.zip
         archive: false # do not zip
         if-no-files-found: error
     - name: Upload Release
@@ -299,4 +299,4 @@ jobs:
         GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
         GH_REPO: ${{github.repository}}
       shell: bash
-      run: set -eu && gh release upload "$GITHUB_REF_NAME" warzone2100-${{matrix.filename}}.zip
+      run: set -eu && gh release upload "$GITHUB_REF_NAME" warzone2100-$WZ_SUFFIX-${{matrix.filename}}.zip

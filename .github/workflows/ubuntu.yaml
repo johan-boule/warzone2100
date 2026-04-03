@@ -38,7 +38,7 @@ jobs:
         run: |
           set -eu
           echo WZ_DISTRIBUTOR=${GITHUB_REPOSITORY%/*} >> $GITHUB_ENV
-          echo WZ_SUFFIX=$(sed 's,[^a-zA-Z0-9._-],-,g' <<< "${GITHUB_HEAD_REF-$GITHUB_REF_NAME}") >> $GITHUB_ENV
+          echo WZ_SUFFIX=$(sed 's,[^a-zA-Z0-9._-],-,g' <<< "${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}") >> $GITHUB_ENV
           case ${{matrix.compiler}} in
             (gcc)
               echo CC=/usr/bin/gcc
