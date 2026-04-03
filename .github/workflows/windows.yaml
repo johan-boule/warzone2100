@@ -280,7 +280,7 @@ jobs:
           -D CPACK_INCLUDE_TOPLEVEL_DIRECTORY=0 `
           -D CPACK_ARCHIVE_COMPONENT_INSTALL=1 `
           -D CPACK_COMPONENTS_ALL_IN_ONE_PACKAGE=1
-        Move-Item -LiteralPath warzone2100.zip -Destination warzone2100-$WZ_SUFFIX-${{matrix.filename}}.zip
+        Move-Item -LiteralPath warzone2100.zip -Destination warzone2100-$Env:WZ_SUFFIX-${{matrix.filename}}.zip
     - name: LS
       if: always()
       shell: bash
