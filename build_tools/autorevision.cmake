@@ -718,6 +718,27 @@ if(DEFINED VAROUT)
 	message( STATUS "VCS_MOST_RECENT_COMMIT_YEAR=${VCS_MOST_RECENT_COMMIT_YEAR}" )
 endif()
 
+# TODO It makes no sense to spew all kind of random statistical information about the Git repository.
+# TODO Particularly, the use of VCS_TAG_TAG_COUNT as the NetCode version is broken logic and perfect design to make everything fail out of the lab.
+set(VCS_TYPE                        "git")
+set(VCS_BASENAME            "warzone2100")
+set(VCS_BRANCH                      "")
+set(VCS_TAG                         "4.6.3")
+set(VCS_TAG_TAG_COUNT       101)
+set(VCS_EXTRA               "4.6.3")
+set(VCS_FULL_HASH           "f5af4976822c7ff7da3920319f2bd15280fa0c91")
+set(VCS_SHORT_HASH          "f5af497")
+set(VCS_WC_MODIFIED         0)
+set(VCS_REPO_IS_SHALLOW     0)
+set(VCS_COMMIT_COUNT        21562)
+set(VCS_MOST_RECENT_TAGGED_VERSION  "4.6.3")
+set(VCS_MOST_RECENT_TAGGED_VERSION_TAG_COUNT        101)
+set(VCS_COMMIT_COUNT_SINCE_MOST_RECENT_TAGGED_VERSION       0)
+set(VCS_COMMIT_COUNT_ON_MASTER_UNTIL_BRANCH 21499)
+set(VCS_BRANCH_COMMIT_COUNT 63)
+set(VCS_MOST_RECENT_COMMIT_DATE     "2026-02-04")
+set(VCS_MOST_RECENT_COMMIT_YEAR     "2026")
+
 # Detect requested output type and use it.
 if(DEFINED OUTPUT_TYPE)
 	if("${OUTPUT_TYPE}" STREQUAL "h")
