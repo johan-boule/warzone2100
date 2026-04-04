@@ -60,16 +60,8 @@
 		"pos": [5760, 968]
 	},
 	"position_16": {
-		"label": "insaneWestSpawnPos",
+		"label": "westSpawnPos",
 		"pos": [256, 2688]
-	},
-	"position_17": {
-		"label": "insaneEastSpawnPos",
-		"pos": [7808, 4608]
-	},
-	"position_18": {
-		"label": "insaneValleySpawnPos",
-		"pos": [256, 3840]
 	},
 
 	"area_0": {

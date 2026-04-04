@@ -22,11 +22,6 @@ function vtolReady(vtolID)
 		return false;
 	}
 
-	if (vtol.action === DACTION_WAITDURINGREARM)
-	{
-		return false;
-	}
-
 	return true;
 }
 

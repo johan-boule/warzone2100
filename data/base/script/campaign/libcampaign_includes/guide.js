@@ -201,18 +201,11 @@ function __camEnableGuideTopics()
 		// Basic units topics
 		addGuideTopic("wz2100::units::building");
 		addGuideTopic("wz2100::units::designing");
-		if ((camDiscoverCampaign() === __CAM_BETA_CAMPAIGN_NUMBER) ||
-			(camDiscoverCampaign() === __CAM_GAMMA_CAMPAIGN_NUMBER))
-		{
-			addGuideTopic("wz2100::units::experience"); // Only those that beat Alpha without gaining a rank will avoid being forced to see this popup.
-		}
 	}
 	// Handle research-driven topics (for things already researched - i.e. on savegame load or starting a later campaign)
 	__camProcessResearchGatedGuideTopics();
 	// Handle built-unit triggered topics
-	if ((camDiscoverCampaign() === __CAM_BETA_CAMPAIGN_NUMBER) ||
-		(camDiscoverCampaign() === __CAM_GAMMA_CAMPAIGN_NUMBER) ||
-		(countDroid(DROID_COMMAND, CAM_HUMAN_PLAYER) > 0))
+	if (countDroid(DROID_COMMAND, CAM_HUMAN_PLAYER) > 0)
 	{
 		addGuideTopic("wz2100::units::commanders::**");
 	}
@@ -227,7 +220,7 @@ function __camEnableGuideTopics()
 			break; // if checking for anything else in the future, remove this
 		}
 	}
-	if (foundDroids_VTOL || (camDiscoverCampaign() === __CAM_GAMMA_CAMPAIGN_NUMBER))
+	if (foundDroids_VTOL)
 	{
 		addGuideTopic("wz2100::units::propulsions::vtols::**");
 	}
@@ -242,10 +235,6 @@ function __camEnableGuideTopicsForTransport(transport)
 		if (droid.droidType === DROID_COMMAND)
 		{
 			addGuideTopic("wz2100::units::commanders::**");
-		}
-		if (droid.isVTOL)
-		{
-			addGuideTopic("wz2100::units::propulsions::vtols::**");
 		}
 	}
 }

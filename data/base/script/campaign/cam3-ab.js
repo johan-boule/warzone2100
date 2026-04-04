@@ -2,7 +2,7 @@ include("script/campaign/libcampaign.js");
 include("script/campaign/templates.js");
 
 const mis_nexusRes = [
-	"R-Sys-Engineering03", "R-Defense-WallUpgrade10", "R-Struc-Materials09",
+	"R-Sys-Engineering03", "R-Defense-WallUpgrade09", "R-Struc-Materials09",
 	"R-Struc-VTOLPad-Upgrade06", "R-Wpn-Bomb-Damage03", "R-Sys-NEXUSrepair",
 	"R-Vehicle-Prop-Hover02", "R-Vehicle-Prop-VTOL02", "R-Cyborg-Legs02",
 	"R-Wpn-Mortar-Acc03", "R-Wpn-MG-Damage10", "R-Wpn-Mortar-ROF04",
@@ -38,7 +38,7 @@ camAreaEvent("vtolRemoveZone", function(droid)
 	resetLabel("vtolRemoveZone", CAM_NEXUS);
 });
 
-function sendEdgeMapDroids(positions)
+function sendEdgeMapDroids()
 {
 	const ADD_EXTRA = (!camClassicMode() && (difficulty >= HARD));
 	const units = {
@@ -51,7 +51,7 @@ function sendEdgeMapDroids(positions)
 		units.units.push(cTempl.nxmangel);
 	}
 	const limits = {minimum: (difficulty >= INSANE) ? 14 : 16, maxRandom: (difficulty >= INSANE) ? 2 : 4};
-	const location = (camDef(positions) ? positions : ["SWPhantomFactory", "NWPhantomFactory"]);
+	const location = ["SWPhantomFactory", "NWPhantomFactory"];
 	camSendGenericSpawn(CAM_REINFORCE_GROUND, CAM_NEXUS, CAM_REINFORCE_CONDITION_NONE, location, units, limits.minimum, limits.maxRandom);
 }
 
@@ -91,26 +91,15 @@ function vtolAttack()
 	}
 }
 
-function insaneMapEdgeSpawn()
-{
-	if (getResearch(cam_resistance_circuits.third).done)
-	{
-		return;
-	}
-	const insanePositions = ["southSpawnPos", "eastPhantomFactory"];
-	sendEdgeMapDroids(insanePositions);
-}
-
 function insaneTransporterAttack()
 {
 	if (getResearch(cam_resistance_circuits.third).done)
 	{
 		return;
 	}
-	const DISTANCE_FROM_POS = 0;
 	const units = {units: [cTempl.nxmangel, cTempl.nxmangel], appended: cTempl.nxmsens};
 	const limits = {minimum: 9, maxRandom: 0};
-	const location = camGenerateRandomMapCoordinate(getObject("startPosition"), CAM_GENERIC_WATER_STAT, DISTANCE_FROM_POS);
+	const location = camMakePos("nexusEastTransportPos");
 	camSendGenericSpawn(CAM_REINFORCE_TRANSPORT, CAM_NEXUS, CAM_REINFORCE_CONDITION_NONE, location, units, limits.minimum, limits.maxRandom);
 }
 
@@ -302,7 +291,7 @@ function eventStartLevel()
 
 	enableResearch(cam_resistance_circuits.first, CAM_HUMAN_PLAYER);
 	winFlag = false;
-	hackFailChance = (difficulty <= EASY) ? 40 : 30;
+	hackFailChance = (difficulty <= EASY) ? 45 : 33;
 
 	queue("vtolAttack", camChangeOnDiff(camMinutesToMilliseconds(2)));
 
@@ -311,12 +300,11 @@ function eventStartLevel()
 	queue("sendEdgeMapDroids", camSecondsToMilliseconds(15));
 
 	setTimer("truckDefense", camSecondsToMilliseconds(2));
-	setTimer("hackPlayer", camSecondsToMilliseconds((difficulty <= MEDIUM) ? 8 : 5));
+	setTimer("hackPlayer", camChangeOnDiff(camSecondsToMilliseconds(8)));
 	setTimer("nexusManufacture", camSecondsToMilliseconds(10));
-	setTimer("sendEdgeMapDroids", camChangeOnDiff(camMinutesToMilliseconds(3.5)));
+	setTimer("sendEdgeMapDroids", camChangeOnDiff(camMinutesToMilliseconds(4)));
 	if (camAllowInsaneSpawns())
 	{
-		setTimer("insaneMapEdgeSpawn", camMinutesToMilliseconds(4));
 		setTimer("insaneTransporterAttack", camMinutesToMilliseconds(5));
 	}
 }
