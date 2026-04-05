@@ -103,6 +103,7 @@
 #include "screens/guidescreen.h"
 #include "titleui/widgets/gamebrowserform.h"
 #include "wzapi.h"
+#include "urlrequest.h"
 
 #include "wzphysfszipioprovider.h"
 #include <wzmaplib/map_package.h>
@@ -1122,6 +1123,8 @@ void systemShutdown()
 
 	NETclose();
 
+	urlRequestShutdown(); // MUST come after NETclose(), as hosts need a chance to inform lobby they are gone
+
 	seqReleaseAll();
 
 	pie_ShutdownRadar();
@@ -1166,7 +1169,6 @@ void systemShutdown()
 	pal_ShutDown();		// currently unused stub
 	frameShutDown();	// close screen / SDL / resources / cursors / trig
 	screenShutDown();
-	shutdownLobbyBrowserFetches();
 	netplayShutDown();	// MUST come after widgShutDown (as widget screens might have connections, etc)
 	gfx_api::context::get().shutdown();
 	cleanSearchPath();	// clean PHYSFS search paths

@@ -45,6 +45,7 @@
 #include "wrappers.h"
 #include "titleui/titleui.h"
 #include "stdinreader.h"
+#include "multijoin_helpers.h"
 
 #if defined(__EMSCRIPTEN__)
 #include <emscripten.h>
@@ -118,7 +119,7 @@ static void setupLoadingScreen()
 
 bool recalculateEffectiveHeadlessValue()
 {
-	if (hostlaunch == HostLaunch::Skirmish || hostlaunch == HostLaunch::Autohost || hostlaunch == HostLaunch::LoadReplay || autogame_enabled() || cliConnectToIpAsSpectator)
+	if (hostlaunch == HostLaunch::Skirmish || hostlaunch == HostLaunch::Autohost || hostlaunch == HostLaunch::LoadReplay || autogame_enabled() || cliConnectAsSpectator)
 	{
 		// only support headless mode if hostlaunch is --skirmish or --autogame
 		return bHeadlessAutoGameModeCLIOption;
@@ -229,7 +230,17 @@ TITLECODE titleLoop()
 			// Don't call `NETinit()` just yet.
 			// It will be automatically called by `joinGame()` upon connection attempt
 			// with the correct connection provider type corresponding to the connection string.
-			joinGame(iptoconnect, cliConnectToIpAsSpectator);
+			joinGameFromIPOrHostnameConnectionStr(iptoconnect, cliConnectAsSpectator);
+		}
+		else if (!cli_lobby_game_to_connect_str().empty())
+		{
+			NetPlay.bComms = true; // use network = true
+			// Ensure the joinGame has a place to return to
+			changeTitleMode(TITLE);
+			// Don't call `NETinit()` just yet.
+			// It will be automatically called upon connection attempt
+			// with the correct connection provider type corresponding to discovered connection info.
+			joinLobbyGame(NETgetLobbyserverAddress(), cli_lobby_game_to_connect_str(), cliConnectAsSpectator);
 		}
 		else
 		{

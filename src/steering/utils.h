@@ -1,7 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 /*
 	This file is part of Warzone 2100.
-	Copyright (C) 1999-2004  Eidos Interactive
-	Copyright (C) 2005-2020  Warzone 2100 Project
+	Copyright (C) 2026  Warzone 2100 Project
 
 	Warzone 2100 is free software; you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
@@ -17,17 +18,28 @@
 	along with Warzone 2100; if not, write to the Free Software
 	Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 */
-/*
- * Net join.
- * join related stuff
+/**
+ * @file utils.h
+ * Utility functions for integer-based steering calculations.
  */
 
-#include "lib/framework/frame.h"
-#include "netplay.h"
+#pragma once
 
-uint32_t NETgetGameUserFlagsUnjoined(const GAMESTRUCT& game, unsigned int flag)
+#include "lib/framework/vector.h"
+#include <stdint.h>
+
+namespace steering
 {
-	ASSERT_OR_RETURN(0, flag < ARRAY_SIZE(game.desc.dwUserFlags), "Out of range flag number: %u", flag);
 
-	return game.desc.dwUserFlags[flag];
+// Fixed-point precision constant (65536 = 1.0)
+// All steering calculations use this as the base unit for fractional values.
+constexpr int32_t PRECISION = 65536;
+
+// Calculate orthogonal vector (90 degrees rotation).
+// Returns the vector rotated 90 degrees clockwise.
+inline WZ_DECL_PURE Vector2i orthogonalCW(const Vector2i& v)
+{
+	return Vector2i(v.y, -v.x);
 }
+
+} // namespace steering

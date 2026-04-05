@@ -743,14 +743,17 @@ void setupNewPlayer(UDWORD player)
 
 // While not the perfect place for this, it has to do when a HOST joins (hosts) game
 // unfortunately, we don't get the message until after the setup is done.
-void ShowMOTD()
+void ShowLobbyStatusMessage(const std::vector<std::string>& msgs)
 {
 	char buf[250] = { '\0' };
 	// when HOST joins the game, show server MOTD message first
 	addConsoleMessage(_("Server message:"), DEFAULT_JUSTIFY, NOTIFY_MESSAGE);
-	if (!NetPlay.MOTD.empty())
+	if (!msgs.empty())
 	{
-		addConsoleMessage(NetPlay.MOTD.c_str(), DEFAULT_JUSTIFY, NOTIFY_MESSAGE);
+		for (const auto& msg : msgs)
+		{
+			addConsoleMessage(msg.c_str(), DEFAULT_JUSTIFY, NOTIFY_MESSAGE);
+		}
 	}
 	else
 	{
