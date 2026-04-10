@@ -108,7 +108,6 @@ jobs:
         uses: actions/upload-artifact@v7
         if: success() && github.event_name != 'release' && matrix.publish_artifact
         with:
-          name: warzone2100-${{env.WZ_SUFFIX}}-${{matrix.filename}}
           path: ${{github.workspace}}/build/warzone2100-${{env.WZ_SUFFIX}}-${{matrix.filename}}.deb
           archive: false # do not zip
           if-no-files-found: error
