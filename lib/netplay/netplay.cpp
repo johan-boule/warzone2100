@@ -206,7 +206,7 @@ static bool server_not_there = false;
 
 static netlobby::GameDetails gameDetails;
 static netlobby::HostJoinOptions hostJoinOptions;
-static LobbyHostDirectJoinOption lobbyDirectJoinOption = LobbyHostDirectJoinOption::Local;
+static LobbyHostDirectJoinOption lobbyDirectJoinOption = LobbyHostDirectJoinOption::All;
 
 struct KnownExternalConnInfo
 {
@@ -3315,8 +3315,6 @@ static std::shared_ptr<netlobby::LobbyServerHostingHandlerProtocol> NETcreateLob
 		{
 			auto errorMsg = astringf("%s\n%s: %s", _("Game not listed in the lobby."), error.value().errCode.c_str(), error.value().errMessage.c_str());
 			ShowLobbyStatusMessage({errorMsg});
-
-			// this is horrible but message can have 0x0a and other junk in it
 			wz_command_interface_output("WZEVENT: lobbyerror (%s): %s\n", error.value().errCode.c_str(), base64Encode(std::vector<unsigned char>(error.value().errMessage.begin(), error.value().errMessage.end())).c_str());
 		}
 		else

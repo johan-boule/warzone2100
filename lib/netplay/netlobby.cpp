@@ -157,7 +157,7 @@ static std::string buildLobbyRequestBaseUrl(const std::string& lobbyAddress)
 static inline bool isTrustedLobbyAddress(const std::string& lobbyAddress)
 {
 	auto parts = parse_url(lobbyAddress);
-	if (parts.hostname == "wzlobby.wz2100.net" && parts.scheme.value_or("https") == "https")
+	if (parts.hostname == "warzone2100.retropaganda.info" && parts.scheme.value_or("https") == "https")
 	{
 		return true;
 	}
@@ -1182,8 +1182,8 @@ static URLDataRequest buildBaseHostingURLDataRequest()
 
 	urlRequest.userAgent = getWZUserAgent();
 
-	urlRequest.setRequestHeader("Origin", "wz2100://wz2100.net");
-	urlRequest.setRequestHeader("Referer", "https://github.com/Warzone2100/warzone2100?wz_internal=mp.host");
+	urlRequest.setRequestHeader("Origin", "wz2100://warzone2100.retropaganda.info");
+	urlRequest.setRequestHeader("Referer", "https://github.com/johan-boule/warzone2100?wz_internal=mp.host");
 	urlRequest.setRequestHeader("Accept", "application/json");
 
 	urlRequest.maxDownloadSizeLimit = 20 * 1024 * 1024; // response should never be > 20 MB
@@ -2056,8 +2056,8 @@ bool EnumerateGames(const std::string& lobbyServerAddress, CompletionHandlerFunc
 
 	request.userAgent = getWZUserAgent();
 
-	request.setRequestHeader("Origin", "wz2100://wz2100.net");
-	request.setRequestHeader("Referer", "https://github.com/Warzone2100/warzone2100?wz_internal=list");
+	request.setRequestHeader("Origin", "wz2100://warzone2100.retropaganda.info");
+	request.setRequestHeader("Referer", "https://github.com/johan-boule/warzone2100?wz_internal=list");
 	request.setRequestHeader("Accept", "application/jsonl");
 
 	request.maxDownloadSizeLimit = 20 * 1024 * 1024; // response should never be > 20 MB
@@ -2222,22 +2222,6 @@ void from_json(const nlohmann::json& j, RequestJoinResponse& v)
 {
 	v.connections = j.at("connections").get<std::vector<ConnectionInfo>>();
 	v.joinToken = j.at("joinToken").get<std::string>();
-}
-
-// MARK: RequestJoinReturnedConnectionInfo
-
-struct RequestJoinReturnedConnectionInfo
-{
-	ConnectionType type;
-	std::string host;
-	uint16_t port = 0;
-};
-
-void from_json(const nlohmann::json& j, RequestJoinReturnedConnectionInfo& v)
-{
-	v.type = j.at("type").get<ConnectionType>();
-	v.host = j.at("host").get<std::string>();
-	v.port = j.at("port").get<uint16_t>();
 }
 
 // MARK: PendingJoinRequestData
@@ -2424,8 +2408,8 @@ bool RequestJoinDetails(const std::string& lobbyServerAddress, const std::string
 
 	baseRequest.userAgent = getWZUserAgent();
 
-	baseRequest.setRequestHeader("Origin", "wz2100://wz2100.net");
-	baseRequest.setRequestHeader("Referer", "https://github.com/Warzone2100/warzone2100?wz_internal=request.join");
+	baseRequest.setRequestHeader("Origin", "wz2100://warzone2100.retropaganda.info");
+	baseRequest.setRequestHeader("Referer", "https://github.com/johan-boule/warzone2100?wz_internal=request.join");
 	baseRequest.setRequestHeader("Accept", "application/json");
 
 	baseRequest.maxDownloadSizeLimit = 2 * 1024 * 1024; // response should never be > 2 MB
@@ -2530,7 +2514,7 @@ bool RequestJoinDetails(const std::string& lobbyServerAddress, const std::string
 
 std::string_view GetDefaultLobbyAddress()
 {
-	return "https://wzlobby.wz2100.net/lobby";
+	return "https://warzone2100.retropaganda.info/lobby";
 }
 
 } // namespace netlobby
