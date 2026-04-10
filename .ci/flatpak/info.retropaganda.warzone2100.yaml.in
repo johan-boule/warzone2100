@@ -175,6 +175,8 @@ modules:
       - -DENABLE_DISCORD:BOOL=ON
       - -DWZ_DOWNLOAD_PREBUILT_PACKAGES_ASSET_DIR=/app/prestaged-dl
       - -DENABLE_GNS_NETWORK_BACKEND:BOOL=ON
+      # Skip separating .debug files, as flatpak-builder handles this differently (and creates its own debug package)
+      - -DWZ_SKIP_ELF_SEPARATE_DEBUG:BOOL=ON
     secret-opts:
       - -DWZ_DISTRIBUTOR:STRING=$WZ_DISTRIBUTOR
       - -DDISCORD_RPC_APPID:STRING=$DISCORD_RPC_APPID

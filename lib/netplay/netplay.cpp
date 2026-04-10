@@ -4144,7 +4144,8 @@ static void NETallowJoining()
 						}
 						else
 						{
-							NETrejectTempSocketClient(i, ERROR_WRONGDATA, true);
+							NETaddSessionBanBadIP(tmp_connectState[i].ip, std::chrono::seconds(4));
+							NETrejectTempSocketClient(i, ERROR_WRONGDATA, false);
 						}
 					}
 					else
@@ -4176,7 +4177,7 @@ static void NETallowJoining()
 							{
 								// failure to check join request, despite having lobby connection - internal logic error
 								ASSERT(false, "Failure to issue check join request");
-								NETrejectTempSocketClient(i, ERROR_WRONGDATA, true);
+								NETrejectTempSocketClient(i, ERROR_WRONGDATA, false);
 							}
 						}
 						else
