@@ -1399,8 +1399,7 @@ void LobbyBrowser::joinLobbyGame(size_t idx, bool asSpectator)
 
 	ExpectedHostProperties expectedHostProps;
 	expectedHostProps.hostPublicKey = base64Decode(currentResults[idx].details.host.publicIdentity);
-
-	startLobbyJoiningAttempt(sPlayer, NETgetLobbyserverAddress(), currentResults[idx].gameId, asSpectator, expectedHostProps, &currentResults[idx].availableConnectionTypes);
+	startLobbyJoiningAttempt(sPlayer, currentResults[idx].confederateLobbyAddress, currentResults[idx].gameId, asSpectator, expectedHostProps, &currentResults[idx].availableConnectionTypes);
 }
 
 void LobbyBrowser::setMotd(const std::string &motd)

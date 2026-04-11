@@ -2086,6 +2086,7 @@ void from_json(const nlohmann::json& j, GameListing& v)
 {
 	auto it = j.find("confederateUrl");
 	if (it != j.end()) v.confederateLobbyAddress = it->get<std::string>();
+	else v.confederateLobbyAddress = NETgetLobbyserverAddress();
 	v.gameId = j.at("id").get<std::string>();
 	from_json(j, v.details);
 	v.availableConnectionTypes = j.at("conn").get<std::vector<ConnectionType>>();
