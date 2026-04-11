@@ -338,7 +338,7 @@ PortMappingAsyncRequestHandle ipv4MappingRequest;
  **
  ************************************************************************************
 **/
-static char const *versionString = version_getVersionString();
+static char const *versionString = version_getVersionString_net();
 
 #include "lib/netplay/netplay_config.h"
 

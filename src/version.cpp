@@ -38,6 +38,7 @@ using nonstd::nullopt;
 
 static const char vcs_branch_cstr[] = VCS_BRANCH;
 static const char vcs_tag[] = VCS_TAG;
+static const char vcs_tag_net[] = VCS_TAG_NET;
 
 optional<TagVer> version_extractVersionNumberFromTag(const std::string& tag)
 {
@@ -185,6 +186,35 @@ const char *version_getVersionString()
 	return version_string;
 }
 
+/** Composes a nicely formatted version string.
+* Determine if we are on a tag (which will NOT show the hash)
+* or a branch (which WILL show the hash)
+* or in a detached state (which WILL show the hash)
+*/
+const char *version_getVersionString_net()
+{
+	static const char *version_string = nullptr;
+
+	if (version_string == nullptr)
+	{
+		if (strlen(vcs_tag_net))
+		{
+			version_string = vcs_tag_net;
+		}
+		else if (strlen(vcs_branch_cstr))
+		{
+			version_string = (VCS_BRANCH " " VCS_SHORT_HASH);
+		}
+		else
+		{
+			// not a branch or a tag, so we are detached most likely.
+			version_string = VCS_EXTRA;
+		}
+	}
+
+	return version_string;
+}
+
 const char *version_getLatestTag()
 {
 	if(strlen(VCS_TAG))
@@ -278,9 +308,9 @@ std::string version_getHTTPUserAgentString()
 {
 	std::string userAgentString = "Warzone2100/";
 	bool includeCompatible = false;
-	if (strlen(vcs_tag))
+	if (strlen(vcs_tag_net))
 	{
-		userAgentString += vcs_tag;
+		userAgentString += vcs_tag_net;
 	}
 	else
 	{
@@ -295,7 +325,11 @@ std::string version_getHTTPUserAgentString()
 	{
 		userAgentString += "compatible; ";
 	}
-	userAgentString += "+https://github.com/johan-boule/warzone2100)";
+	#if 0 // But this is free software!
+		userAgentString += "+https://github.com/johan-boule/warzone2100)";
+	#else
+		userAgentString += "+https://github.com/Warzone2100/warzone2100)";
+	#endif
 
 	return userAgentString;
 }

@@ -29,6 +29,7 @@
 #include <algorithm>
 
 const char *version_getVersionString();
+const char *version_getVersionString_net();
 const char *version_getFormattedVersionString(bool translated = true); // not thread-safe
 std::string version_getVersionedAppDirFolderName();
 std::string version_getVersionedModsFolderPath(std::string subFolders = "");

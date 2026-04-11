@@ -152,22 +152,6 @@ static std::string buildLobbyRequestBaseUrl(const std::string& lobbyAddress)
 	return lobbyAddress;
 }
 
-// Check if the lobbyAddress is trusted / known, with a trusted / known privacy policy (and secure transport)
-// Used in various places to simplify matters for alternative lobbies, and to minimize data sent to unknown or insecure servers (with unknown privacy policies)
-static inline bool isTrustedLobbyAddress(const std::string& lobbyAddress)
-{
-#if 1 // it's open source software!
-	return true;
-#else
-	auto parts = parse_url(lobbyAddress);
-	if (parts.hostname == "warzone2100.retropaganda.info" && parts.scheme.value_or("https") == "https")
-	{
-		return true;
-	}
-	return false;
-#endif
-}
-
 // MARK: - LobbyError
 
 void from_json(const nlohmann::json& j, LobbyError& v)
@@ -1140,7 +1124,6 @@ public:
 	LobbyServerHostingHandlerImpl(const std::string& lobbyServerAddress, EventCallbacks callbacks)
 	: LobbyServerHostingHandlerProtocol(callbacks)
 	, lobbyServerAddress(lobbyServerAddress)
-	, trustedLobbyServerAddress(isTrustedLobbyAddress(lobbyServerAddress))
 	{ }
 	~LobbyServerHostingHandlerImpl();
 public:
@@ -1203,7 +1186,6 @@ private:
 
 private:
 	const std::string lobbyServerAddress;
-	const bool trustedLobbyServerAddress;
 	LobbyListingState state = LobbyListingState::None;
 
 	std::chrono::seconds currPendingPublishCheckinInterval = SERVER_UPDATE_PENDING_PUBLISH_CHECKIN_MIN_INTERVAL;
@@ -1245,8 +1227,13 @@ static URLDataRequest buildBaseHostingURLDataRequest()
 
 	urlRequest.userAgent = getWZUserAgent();
 
-	urlRequest.setRequestHeader("Origin", "wz2100://warzone2100.retropaganda.info");
-	urlRequest.setRequestHeader("Referer", "https://github.com/johan-boule/warzone2100?wz_internal=mp.host");
+	#if 0 // But this is free software!
+		urlRequest.setRequestHeader("Origin", "wz2100://warzone2100.retropaganda.info");
+		urlRequest.setRequestHeader("Referer", "https://github.com/johan-boule/warzone2100?wz_internal=mp.host");
+	#else
+		urlRequest.setRequestHeader("Origin", "wz2100://wz2100.net");
+		urlRequest.setRequestHeader("Referer", "https://github.com/Warzone2100/warzone2100?wz_internal=mp.host");
+	#endif
 	urlRequest.setRequestHeader("Accept", "application/json");
 
 	urlRequest.maxDownloadSizeLimit = 20 * 1024 * 1024; // response should never be > 20 MB
@@ -1458,11 +1445,8 @@ bool LobbyServerHostingHandlerImpl::createGameListing(const EcKey& hostIdentity,
 	ASSERT_OR_RETURN(false, hostCreateGameInfo.is_object(), "Not an object?");
 	hostCreateGameInfo["joinopts"] = joinOptions;
 
-	if (trustedLobbyServerAddress)
-	{
-		auto attestation = nlohmann::ordered_json(RequestAttestation(gameDetails.host.name, hostIdentity, lobbyServerAddress, nullopt));
-		hostCreateGameInfo["attest"] = attestation;
-	}
+	auto attestation = nlohmann::ordered_json(RequestAttestation(gameDetails.host.name, hostIdentity, lobbyServerAddress, nullopt));
+	hostCreateGameInfo["attest"] = attestation;
 
 	request.setPost(hostCreateGameInfo.dump(-1, ' ', false, nlohmann::ordered_json::error_handler_t::replace));
 
@@ -1532,25 +1516,8 @@ LobbyServerHostingHandlerImpl::LobbyConnectionCheckResult LobbyServerHostingHand
 		return ::tl::make_unexpected(LobbyConnectionCheckRequestError::InvalidRequest);
 	}
 
-	std::string responseString;
-
-	if (trustedLobbyServerAddress)
-	{
-		// Construct LobbyConnectCheckResponse
-		auto response = LobbyConnectCheckResponse(hostGameCtx.gameId, playerName, playerIdentity, request);
-
-		responseString = nlohmann::ordered_json(response).dump(-1, ' ', false, nlohmann::ordered_json::error_handler_t::replace);
-	}
-	else
-	{
-		// Send just the gameId
-		nlohmann::ordered_json simpleResponse;
-		simpleResponse["gid"] = getCurrentGameId().value_or(std::string());
-
-		responseString = simpleResponse.dump(-1, ' ', false, nlohmann::ordered_json::error_handler_t::replace);
-	}
-
-	return responseString;
+	auto response = LobbyConnectCheckResponse(hostGameCtx.gameId, playerName, playerIdentity, request);
+	return nlohmann::ordered_json(response).dump(-1, ' ', false, nlohmann::ordered_json::error_handler_t::replace);
 }
 
 // Queues a game listing update
@@ -1585,9 +1552,8 @@ void LobbyServerHostingHandlerImpl::sendListingUpdateImpl()
 			hostCreateGameInfo["joinopts"] = ownedPendingUpdate.value().joinOptions;
 		}
 
-		const bool hostIdentityChanged = (lastGameDetails.host.publicIdentity != ownedPendingUpdate.value().gameDetails.host.publicIdentity);
-		if (hostIdentityChanged && trustedLobbyServerAddress)
-		{
+		const bool hostIdentityChanged = lastGameDetails.host.publicIdentity != ownedPendingUpdate.value().gameDetails.host.publicIdentity;
+		if (hostIdentityChanged) {
 			auto attestation = nlohmann::ordered_json(RequestAttestation(ownedPendingUpdate.value().gameDetails.host.name, ownedPendingUpdate.value().hostIdentity, lobbyServerAddress, nullopt));
 			hostCreateGameInfo["attest"] = attestation;
 		}
@@ -2126,8 +2092,13 @@ bool EnumerateGames(const std::string& lobbyServerAddress, CompletionHandlerFunc
 
 	request.userAgent = getWZUserAgent();
 
-	request.setRequestHeader("Origin", "wz2100://warzone2100.retropaganda.info");
-	request.setRequestHeader("Referer", "https://github.com/johan-boule/warzone2100?wz_internal=list");
+	#if 0 // But this is free software!
+		request.setRequestHeader("Origin", "wz2100://warzone2100.retropaganda.info");
+		request.setRequestHeader("Referer", "https://github.com/johan-boule/warzone2100?wz_internal=list");
+	#else
+		request.setRequestHeader("Origin", "wz2100://wz2100.net");
+		request.setRequestHeader("Referer", "https://github.com/Warzone2100/warzone2100?wz_internal=list");
+	#endif
 	request.setRequestHeader("Accept", "application/jsonl");
 
 	request.maxDownloadSizeLimit = 20 * 1024 * 1024; // response should never be > 20 MB
@@ -2478,8 +2449,13 @@ bool RequestJoinDetails(const std::string& lobbyServerAddress, const std::string
 
 	baseRequest.userAgent = getWZUserAgent();
 
-	baseRequest.setRequestHeader("Origin", "wz2100://warzone2100.retropaganda.info");
-	baseRequest.setRequestHeader("Referer", "https://github.com/johan-boule/warzone2100?wz_internal=request.join");
+	#if 0 // But this is free software!
+		baseRequest.setRequestHeader("Origin", "wz2100://warzone2100.retropaganda.info");
+		baseRequest.setRequestHeader("Referer", "https://github.com/johan-boule/warzone2100?wz_internal=request.join");
+	#else
+		baseRequest.setRequestHeader("Origin", "wz2100://wz2100.net");
+		baseRequest.setRequestHeader("Referer", "https://github.com/Warzone2100/warzone2100?wz_internal=request.join");
+	#endif
 	baseRequest.setRequestHeader("Accept", "application/json");
 
 	baseRequest.maxDownloadSizeLimit = 2 * 1024 * 1024; // response should never be > 2 MB
@@ -2493,12 +2469,11 @@ bool RequestJoinDetails(const std::string& lobbyServerAddress, const std::string
 	// construct request body, and setPost
 	nlohmann::ordered_json requestBody = nlohmann::ordered_json::object();
 	requestBody["asSpec"] = asSpectator;
-	if (isTrustedLobbyAddress(lobbyServerAddress))
-	{
-		auto attestation = nlohmann::ordered_json(RequestAttestation(playerName, playerIdentity, lobbyServerAddress, lobbyGameId));
-		ASSERT_OR_RETURN(false, attestation.is_object(), "Not an object?");
-		requestBody["attest"] = attestation;
-	}
+
+	auto attestation = nlohmann::ordered_json(RequestAttestation(playerName, playerIdentity, lobbyServerAddress, lobbyGameId));
+	ASSERT_OR_RETURN(false, attestation.is_object(), "Not an object?");
+	requestBody["attest"] = attestation;
+
 	if (errorResolution != nullptr)
 	{
 		// Get errorResolution data json and append to sent body
