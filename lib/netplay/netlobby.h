@@ -332,6 +332,7 @@ std::shared_ptr<LobbyServerHostingHandlerProtocol> MakeLobbyHostListingHandler(c
 
 struct GameListing
 {
+	std::string confederateLobbyAddress;
 	std::string gameId;
 	GameDetails details;
 	std::vector<ConnectionType> availableConnectionTypes;

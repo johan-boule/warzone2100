@@ -156,12 +156,16 @@ static std::string buildLobbyRequestBaseUrl(const std::string& lobbyAddress)
 // Used in various places to simplify matters for alternative lobbies, and to minimize data sent to unknown or insecure servers (with unknown privacy policies)
 static inline bool isTrustedLobbyAddress(const std::string& lobbyAddress)
 {
+#if 1 // it's open source software!
+	return true;
+#else
 	auto parts = parse_url(lobbyAddress);
 	if (parts.hostname == "warzone2100.retropaganda.info" && parts.scheme.value_or("https") == "https")
 	{
 		return true;
 	}
 	return false;
+#endif
 }
 
 // MARK: - LobbyError
@@ -2080,6 +2084,8 @@ void from_json(const nlohmann::json& j, EnumGamesHeader& v)
 
 void from_json(const nlohmann::json& j, GameListing& v)
 {
+	auto it = j.find("confederateUrl");
+	if (it != j.end()) v.confederateLobbyAddress = it->get<std::string>();
 	v.gameId = j.at("id").get<std::string>();
 	from_json(j, v.details);
 	v.availableConnectionTypes = j.at("conn").get<std::vector<ConnectionType>>();
