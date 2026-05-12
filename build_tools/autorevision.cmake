@@ -726,9 +726,9 @@ if(true)
 	# TODO It makes no sense to spew all kind of random statistical information about the Git repository.
 	# TODO Particularly, the use of VCS_TAG_TAG_COUNT as the NetCode version is broken logic and perfect design to make everything fail out of the lab.
 	set(VCS_TAG_NET 4.7.0)
-	set(VCS_TAG 4.7.0-jb1)
-	set(VCS_MOST_RECENT_TAGGED_VERSION 4.7.0-jb1)
-	set(VCS_EXTRA 4.7.0-jb1)
+	set(VCS_TAG 4.7.0-jb2)
+	set(VCS_MOST_RECENT_TAGGED_VERSION 4.7.0-jb2)
+	set(VCS_EXTRA 4.7.0-jb2)
 	set(VCS_TAG_TAG_COUNT 104)
 	set(VCS_MOST_RECENT_TAGGED_VERSION_TAG_COUNT 104)
 	set(VCS_FULL_HASH  7d3d8e51a61ceee89e6bf672a41337e1a9cd7392)
