@@ -7754,7 +7754,7 @@ bool WZGameReplayOptionsHandler::saveOptions(nlohmann::json& object) const
 	object["randSeed"] = gameRand_GetSeed();
 
 	// Save versionString
-	object["versionString"] = version_getVersionString();
+	object["versionString"] = version_getVersionString_net();
 
 	// Save DataHash here, so we can provide a warning on load (after all data / the game is loaded) in the future
 	object["dataHash"] = DataHashToJSON();
