@@ -1399,6 +1399,10 @@ void LobbyBrowser::joinLobbyGame(size_t idx, bool asSpectator)
 
 	ExpectedHostProperties expectedHostProps;
 	expectedHostProps.hostPublicKey = base64Decode(currentResults[idx].details.host.publicIdentity);
+	// TODO bohan game id crap makes no sense if lobby provides ip and port
+	//if lobby provides ip and port
+	//startJoiningAttempt(currentResults[idx].availableConnectionTypes....)
+	//else
 	startLobbyJoiningAttempt(sPlayer, currentResults[idx].confederateLobbyAddress, currentResults[idx].gameId, asSpectator, expectedHostProps, &currentResults[idx].availableConnectionTypes);
 }
 

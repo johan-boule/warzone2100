@@ -1623,6 +1623,7 @@ void LobbyServerHostingHandlerImpl::sendListingUpdateImpl()
 }
 
 // Checks a lobby-originated join request
+// TODO bohan since there's already the request-join request, this extra request here is of course totally useless and can be removed.
 bool LobbyServerHostingHandlerImpl::checkJoinRequest(const JoinRequest& joinRequest, CheckJoinRequestResultHandler resultHandler)
 {
 	ASSERT_OR_RETURN(false, resultHandler != nullptr, "No result handler");
