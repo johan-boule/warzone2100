@@ -714,6 +714,29 @@ static void handleCmdInterfaceConnectionClosed()
 	}
 }
 
+static void refreshLobbyAdminStatusForConnectedPlayers()
+{
+	ASSERT_HOST_ONLY(return);
+
+	for (uint32_t playerIdx = 0; playerIdx < MAX_CONNECTED_PLAYERS; ++playerIdx)
+	{
+			if (!NetPlay.players[playerIdx].allocated)
+			{
+					continue;
+			}
+
+			const auto trueIdentity = getTruePlayerIdentity(playerIdx);
+			const bool shouldBeAdmin = trueIdentity.verified
+					&& !trueIdentity.identity.empty()
+					&& identityMatchesAdmin(trueIdentity.identity);
+			if (NetPlay.players[playerIdx].isAdmin != shouldBeAdmin)
+			{
+					NetPlay.players[playerIdx].isAdmin = shouldBeAdmin;
+					NETBroadcastPlayerInfo(playerIdx);
+			}
+	}
+}
+
 int cmdInputThreadFunc(void *)
 {
 	fseek(stdin, 0, SEEK_END);
