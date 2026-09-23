@@ -135,6 +135,7 @@ static void lobbyCommand_PrintHelp(uint32_t receiver)
 	sendRoomSystemMessageToSingleReceiver(LOBBY_COMMAND_PREFIX "base <base level> - Change base level (0, 1, 2)", receiver, true);
 	sendRoomSystemMessageToSingleReceiver(LOBBY_COMMAND_PREFIX "alliance <alliance type> - Change alliance setting (0, 1, 2, 3)", receiver, true);
 	sendRoomSystemMessageToSingleReceiver(LOBBY_COMMAND_PREFIX "scav <scav level> - Change scav setting (0=off, 1=on, 2=ultimate)", receiver, true);
+	sendRoomSystemMessageToSingleReceiver(LOBBY_COMMAND_PREFIX "hostexit - Make the host exit", receiver, true);
 }
 
 static std::unordered_set<size_t> getConnectedAdminPlayerIndexes()

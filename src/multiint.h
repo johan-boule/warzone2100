@@ -158,6 +158,7 @@ std::shared_ptr<WzMultiButton> makeMultiBut(UDWORD id, UDWORD width, UDWORD heig
 
 AtlasImage mpwidgetGetFrontHighlightImage(AtlasImage image);
 bool changeColour(unsigned player, int col, uint32_t responsibleIdx);
+bool changePosition(UBYTE player, UBYTE position, uint32_t responsibleIdx);
 
 extern char sPlayer[128];
 extern bool multiintDisableLobbyRefresh; // gamefind

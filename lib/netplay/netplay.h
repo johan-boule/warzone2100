@@ -543,4 +543,6 @@ void NETacceptIncomingConnections();
 /// </summary>
 void NETadjustConnectedTimeoutForClients();
 
+void NETrecoverLobbyHostingHandler();
+
 #endif

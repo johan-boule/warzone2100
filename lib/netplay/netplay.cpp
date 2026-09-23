@@ -1426,7 +1426,8 @@ int NETclose()
 {
 	unsigned int i;
 
-	NEThaltJoining(false);
+	//NEThaltJoining(false);
+	NEThaltJoining(true);
 
 	debug(LOG_NET, "Terminating sockets.");
 
@@ -5095,4 +5096,9 @@ optional<std::string> NET_getCurrentHostTextAddress()
 		return lastHostAddress.value();
 	}
 	return bsocket->textAddress();
+}
+
+void NETrecoverLobbyHostingHandler() {
+	lobbyHostingHandler->removeGameListing(true);
+	lobbyHostingHandler->createGameListing(getMultiStats(realSelectedPlayer).identity, gameDetails, hostJoinOptions, buildHostingConnectionDescriptions());
 }

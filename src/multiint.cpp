@@ -2726,7 +2726,7 @@ static void informIfAdminChangedOtherPosition(uint32_t targetPlayerIdx, uint32_t
 	debug(LOG_INFO, "Admin %s (%s) changed position of player (%s) to: %d", getPlayerName(responsibleIdx), senderPublicKeyB64.c_str(), getPlayerName(targetPlayerIdx), NetPlay.players[targetPlayerIdx].position);
 }
 
-static bool changePosition(UBYTE player, UBYTE position, uint32_t responsibleIdx)
+bool changePosition(UBYTE player, UBYTE position, uint32_t responsibleIdx)
 {
 	ASSERT_HOST_ONLY(return false);
 	ASSERT_OR_RETURN(false, player < MAX_PLAYERS, "Invalid player idx: %" PRIu8, player);

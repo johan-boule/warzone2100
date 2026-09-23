@@ -1241,6 +1241,31 @@ int cmdInputThreadFunc(void *)
 				wzQuit(0);
 			});
 		}
+		else if(!strncmpl(line, "recover lobby"))
+		{
+			wzAsyncExecOnMainThread([] {
+				NETrecoverLobbyHostingHandler();
+			});
+		}
+		else if(!strncmpl(line, "swap "))
+		{
+			unsigned int s1, s2;
+			int r = sscanf(line, "swap %u %u", &s1, &s2);
+			if (r != 2)
+			{
+				wz_command_interface_output_onmainthread("WZCMD error: Failed to get swap values!\n");
+			}
+			else
+			{
+				wzAsyncExecOnMainThread([=] {
+					for (int i = 0; i < MAX_PLAYERS; ++i) if (NetPlay.players[i].position == s1) {
+						changePosition(i, s2, NetPlay.hostPlayer);
+						wz_command_interface_output_room_status_json();
+						break;
+					}
+				});
+			}
+		}
 	}
 	return 0;
 }
