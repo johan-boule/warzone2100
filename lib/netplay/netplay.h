@@ -543,6 +543,7 @@ void NETacceptIncomingConnections();
 /// </summary>
 void NETadjustConnectedTimeoutForClients();
 
-void NETrecoverLobbyHostingHandler();
+void NETlobbyCreateGameListing();
+void NETlobbyRemoveGameListing();
 
 #endif

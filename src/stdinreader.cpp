@@ -1241,10 +1241,18 @@ int cmdInputThreadFunc(void *)
 				wzQuit(0);
 			});
 		}
-		else if(!strncmpl(line, "recover lobby"))
+		else if(!strncmpl(line, "lobby off"))
 		{
 			wzAsyncExecOnMainThread([] {
-				NETrecoverLobbyHostingHandler();
+				NETlobbyRemoveGameListing();
+				wz_command_interface_output("WZEVENT: lobby off\n");
+			});
+		}
+		else if(!strncmpl(line, "lobby renew"))
+		{
+			wzAsyncExecOnMainThread([] {
+				NETlobbyRemoveGameListing();
+				NETlobbyCreateGameListing();
 			});
 		}
 		else if(!strncmpl(line, "swap "))

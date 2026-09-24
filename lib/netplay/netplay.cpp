@@ -5098,7 +5098,9 @@ optional<std::string> NET_getCurrentHostTextAddress()
 	return bsocket->textAddress();
 }
 
-void NETrecoverLobbyHostingHandler() {
-	lobbyHostingHandler->removeGameListing(true);
+void NETlobbyCreateGameListing() {
 	lobbyHostingHandler->createGameListing(getMultiStats(realSelectedPlayer).identity, gameDetails, hostJoinOptions, buildHostingConnectionDescriptions());
+}
+void NETlobbyRemoveGameListing() {
+	lobbyHostingHandler->removeGameListing(true);
 }
