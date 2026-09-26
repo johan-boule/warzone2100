@@ -130,7 +130,9 @@ static void lobbyCommand_PrintHelp(uint32_t receiver)
 	sendRoomSystemMessageToSingleReceiver(LOBBY_COMMAND_PREFIX "swap <slot-from> <slot-to> - Swap player/slot positions", receiver, true);
 	sendRoomSystemMessageToSingleReceiver(LOBBY_COMMAND_PREFIX "makespec <slot> - Move a player to spectators", receiver, true);
 	sendRoomSystemMessageToSingleReceiver(LOBBY_COMMAND_PREFIX "makeplayer s<slot> - Request to move a spectator to players", receiver, true);
-	sendRoomSystemMessageToSingleReceiver(LOBBY_COMMAND_PREFIX "kick <slot> - Kick a player; (or s<slot> for spectator - ex. s0)", receiver, true);
+	//sendRoomSystemMessageToSingleReceiver(LOBBY_COMMAND_PREFIX "kick <slot> - Kick a player; (or s<slot> for spectator - ex. s0)", receiver, true);
+	//mute
+	//unmute
 	sendRoomSystemMessageToSingleReceiver(LOBBY_COMMAND_PREFIX "team <slot> <team> - Change team for player/slot", receiver, true);
 	sendRoomSystemMessageToSingleReceiver(LOBBY_COMMAND_PREFIX "base <base level> - Change base level (0, 1, 2)", receiver, true);
 	sendRoomSystemMessageToSingleReceiver(LOBBY_COMMAND_PREFIX "alliance <alliance type> - Change alliance setting (0, 1, 2, 3)", receiver, true);
@@ -300,6 +302,7 @@ bool processChatLobbySlashCommands(const NetworkTextMessage& message, HostLobbyO
 		ADMIN_REQUIRED_FOR_COMMAND("hostexit");
 		cmdInterface.quitGame(5);
 	}
+	#if 0
 	else if (strncmp(&message.text[startingCommandPosition], "kick ", 5) == 0 || strncmp(&message.text[startingCommandPosition], "ban ", 4) == 0)
 	{
 		bool isBan = strncmp(&message.text[startingCommandPosition], "ban", 3) == 0;
@@ -352,6 +355,7 @@ bool processChatLobbySlashCommands(const NetworkTextMessage& message, HostLobbyO
 			return false;
 		}
 	}
+	#endif
 	else if (strncmp(&message.text[startingCommandPosition], "swap ", 5) == 0)
 	{
 		ADMIN_REQUIRED_FOR_COMMAND("swap");
@@ -530,6 +534,7 @@ bool processChatLobbySlashCommands(const NetworkTextMessage& message, HostLobbyO
 			return false;
 		}
 	}
+	#if 0
 	else if (strncmp(&message.text[startingCommandPosition], "mute ", 5) == 0 || strncmp(&message.text[startingCommandPosition], "unmute ", 7) == 0)
 	{
 		bool isMute = strncmp(&message.text[startingCommandPosition], "mute", 4) == 0;
@@ -582,6 +587,7 @@ bool processChatLobbySlashCommands(const NetworkTextMessage& message, HostLobbyO
 			return false;
 		}
 	}
+	#endif
 	else
 	{
 		// unrecognized command - not handled
