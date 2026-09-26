@@ -2567,9 +2567,7 @@ bool startJoinRedirectAttempt(char* playerName, std::vector<JoinConnectionDescri
 	{
 		++currentNumRedirectAttempts;
 	}
-	// The intent is that this allows a host match-making lobby (joined by a client) to pair players and redirect them to another hosted instance
-	// We do not want to allow repeated redirects
-	if (currentNumRedirectAttempts > 1)
+	if (currentNumRedirectAttempts > 5)
 	{
 		// POSSIBLE FUTURE TODO: Could prompt before additional redirects (if we wanted to support such a thing)
 		// For now, deny it
