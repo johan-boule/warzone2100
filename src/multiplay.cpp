@@ -422,7 +422,14 @@ void autoLobbyNotReadyKickRoutine(std::chrono::steady_clock::time_point now)
 				std::string playerPublicKeyB64 = base64Encode(identity.toBytes(EcKey::Public));
 				wz_command_interface_output("WZEVENT: notready-kick: %u %s %s\n", i, NetPlay.players[i].IPtextAddress, playerPublicKeyB64.c_str());
 			}
-			kickPlayer(i, "You have been removed from the room.\nYou have spent too much time without checking Ready.\n\nIn the future, please check Ready and leave it checked, to avoid delaying games for other players.", ERROR_CONNECTION, false);
+			if(
+				NETmovePlayerToSpectatorOnlySlot(i, false) ||
+				(NETopenNewSpectatorSlot() && NETmovePlayerToSpectatorOnlySlot(i, false))
+			) {
+				const char* name = NetPlay.players[i].name;
+				sendRoomSystemMessage(astringf("Player %s did not check Ready in time and has been moved to spectators.", name).c_str());
+				resetReadyStatus(false);
+			} else kickPlayer(i, "You have been removed from the room.\nYou have spent too much time without checking Ready.\n\nIn the future, please check Ready and leave it checked, to avoid delaying games for other players.", ERROR_CONNECTION, false);
 		}
 	}
 }
