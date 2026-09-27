@@ -2527,9 +2527,9 @@ namespace INTERNAL_LOCALIZED_LOBBY_NOTICE {
 				}
 				else
 				{
-					// Not intended for this player, but show a single message when 5 seconds remaining
+					// Not intended for this player, but show a single message when x seconds remaining
 					// so other players know a kick is coming
-					if (additionalData == 5 && !isBlindSimpleLobby(game.blindMode))
+					if (additionalData == 15 && !isBlindSimpleLobby(game.blindMode))
 					{
 						return astringf(_("Player will be kicked if they don't check Ready soon: %s"), targetPlayerName);
 					}

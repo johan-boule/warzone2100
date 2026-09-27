@@ -343,8 +343,7 @@ uint64_t calculateSecondsNotReadyForPlayer(size_t i, std::chrono::steady_clock::
 	return totalSecondsNotReady;
 }
 
-#define NOTREADY_CHECK_INTERVAL 1000
-const std::chrono::milliseconds NotReadyCheckInterval(NOTREADY_CHECK_INTERVAL);
+constexpr std::chrono::milliseconds NotReadyCheckInterval(1000);
 
 void autoLobbyNotReadyKickRoutine(std::chrono::steady_clock::time_point now)
 {
@@ -371,14 +370,13 @@ void autoLobbyNotReadyKickRoutine(std::chrono::steady_clock::time_point now)
 		return;
 	}
 
-	if (std::chrono::duration_cast<std::chrono::milliseconds>(now - ingame.lastNotReadyCheck) < NotReadyCheckInterval)
+	if (now - ingame.lastNotReadyCheck < NotReadyCheckInterval)
 	{
 		return;
 	}
-
 	ingame.lastNotReadyCheck = now;
-	std::array<bool, MAX_CONNECTED_PLAYERS> queuedToKickIdx {};
 
+	std::array<bool, MAX_CONNECTED_PLAYERS> queuedToKickIdx {};
 	for (uint32_t i = 0; i < MAX_CONNECTED_PLAYERS; ++i)
 	{
 		if (!isHumanPlayer(i))
@@ -404,7 +402,7 @@ void autoLobbyNotReadyKickRoutine(std::chrono::steady_clock::time_point now)
 			// record that player should be kicked, but wait to kick until after processing all slots
 			queuedToKickIdx[i] = true;
 		}
-		else if (!NetPlay.players[i].ready && totalSecondsNotReady >= (NotReadyAutoKickSeconds - 8)) {
+		else if (!NetPlay.players[i].ready && totalSecondsNotReady * 2 > NotReadyAutoKickSeconds) {
 			sendQuickChat(WzQuickChatMessage::INTERNAL_LOCALIZED_LOBBY_NOTICE, realSelectedPlayer, WzQuickChatTargeting::targetAll(), WzQuickChatDataContexts::INTERNAL_LOCALIZED_LOBBY_NOTICE::constructMessageData(WzQuickChatDataContexts::INTERNAL_LOCALIZED_LOBBY_NOTICE::Context::NotReadyKickWarning, i, static_cast<uint32_t>(NotReadyAutoKickSeconds - totalSecondsNotReady)));
 		}
 	}
@@ -414,7 +412,8 @@ void autoLobbyNotReadyKickRoutine(std::chrono::steady_clock::time_point now)
 	{
 		if (queuedToKickIdx[i])
 		{
-			std::string msg = astringf("Auto-kicking player %" PRIu32 " (\"%s\") because they aren't ready. (Timeout: %u seconds)", i, getPlayerName(i), NotReadyAutoKickSeconds);
+			const std::string /* need a copy because we swap players */ name = getPlayerName(i);
+			std::string msg = astringf("Auto-kicking player %" PRIu32 " (\"%s\") because they aren't ready. (Timeout: %u seconds)", i, name, NotReadyAutoKickSeconds);
 			debug(LOG_INFO, "%s", msg.c_str());
 			sendQuickChat(WzQuickChatMessage::INTERNAL_LOCALIZED_LOBBY_NOTICE, realSelectedPlayer, WzQuickChatTargeting::targetAll(), WzQuickChatDataContexts::INTERNAL_LOCALIZED_LOBBY_NOTICE::constructMessageData(WzQuickChatDataContexts::INTERNAL_LOCALIZED_LOBBY_NOTICE::Context::NotReadyKicked, i, static_cast<uint32_t>(NotReadyAutoKickSeconds)));
 			if (wz_command_interface_enabled()) {
@@ -422,13 +421,16 @@ void autoLobbyNotReadyKickRoutine(std::chrono::steady_clock::time_point now)
 				std::string playerPublicKeyB64 = base64Encode(identity.toBytes(EcKey::Public));
 				wz_command_interface_output("WZEVENT: notready-kick: %u %s %s\n", i, NetPlay.players[i].IPtextAddress, playerPublicKeyB64.c_str());
 			}
+			NetPlay.players[i].ready = true;
+			ingame.lastReadyTimes[i] = now;
+			ingame.lastNotReadyTimes[i].reset();
+			ingame.secondsNotReady[i] = 0;
+			NETBroadcastPlayerInfo(i);
 			if(
 				NETmovePlayerToSpectatorOnlySlot(i, false) ||
 				(NETopenNewSpectatorSlot() && NETmovePlayerToSpectatorOnlySlot(i, false))
 			) {
-				const char* name = NetPlay.players[i].name;
 				sendRoomSystemMessage(astringf("Player %s did not check Ready in time and has been moved to spectators.", name).c_str());
-				resetReadyStatus(false);
 			} else kickPlayer(i, "You have been removed from the room.\nYou have spent too much time without checking Ready.\n\nIn the future, please check Ready and leave it checked, to avoid delaying games for other players.", ERROR_CONNECTION, false);
 		}
 	}
