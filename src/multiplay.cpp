@@ -413,7 +413,7 @@ void autoLobbyNotReadyKickRoutine(std::chrono::steady_clock::time_point now)
 		if (queuedToKickIdx[i])
 		{
 			const std::string /* need a copy because we swap players */ name = getPlayerName(i);
-			std::string msg = astringf("Auto-kicking player %" PRIu32 " (\"%s\") because they aren't ready. (Timeout: %u seconds)", i, name, NotReadyAutoKickSeconds);
+			std::string msg = astringf("Auto-kicking player %" PRIu32 " (\"%s\") because they aren't ready. (Timeout: %u seconds)", i, name.c_str(), NotReadyAutoKickSeconds);
 			debug(LOG_INFO, "%s", msg.c_str());
 			sendQuickChat(WzQuickChatMessage::INTERNAL_LOCALIZED_LOBBY_NOTICE, realSelectedPlayer, WzQuickChatTargeting::targetAll(), WzQuickChatDataContexts::INTERNAL_LOCALIZED_LOBBY_NOTICE::constructMessageData(WzQuickChatDataContexts::INTERNAL_LOCALIZED_LOBBY_NOTICE::Context::NotReadyKicked, i, static_cast<uint32_t>(NotReadyAutoKickSeconds)));
 			if (wz_command_interface_enabled()) {
@@ -430,7 +430,7 @@ void autoLobbyNotReadyKickRoutine(std::chrono::steady_clock::time_point now)
 				NETmovePlayerToSpectatorOnlySlot(i, false) ||
 				(NETopenNewSpectatorSlot() && NETmovePlayerToSpectatorOnlySlot(i, false))
 			) {
-				sendRoomSystemMessage(astringf("Player %s did not check Ready in time and has been moved to spectators.", name).c_str());
+				sendRoomSystemMessage(astringf("Player %s did not check Ready in time and has been moved to spectators.", name.c_str()).c_str());
 			} else kickPlayer(i, "You have been removed from the room.\nYou have spent too much time without checking Ready.\n\nIn the future, please check Ready and leave it checked, to avoid delaying games for other players.", ERROR_CONNECTION, false);
 		}
 	}
