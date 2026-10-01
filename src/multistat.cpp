@@ -254,7 +254,16 @@ static bool sendMultiStatsInternal(uint32_t playerIndex, optional<uint32_t> reci
 							std::cout << "xxxxxxxxxxxxxxxx send missing main public key data " << ip << ' ' << public_key << std::endl;
 						else {
 							public_key = (*it)[0]["publicKey"].get<std::string>();
-							if(!(*it)[0]["name"].is_null()) name = (*it)[0]["name"].get<std::string>();
+							int count = 0, total_count = 0;
+							for(auto entry : (*it)) {
+								total_count += entry["count"].get<int>();
+								if (entry["publicKey"].get<std::string>() == old_public_key)
+									count = entry["count"].get<int>();
+							}
+							if (count * 10 < total_count && !(*it)[0]["name"].is_null()) {
+								std::cout << "xxxxxxxxxxxxxxxx send count rename " << count << ' ' << total_count << ' ' << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
+								if(!(*it)[0]["name"].is_null()) name = (*it)[0]["name"].get<std::string>();
+							} else std::cout << "xxxxxxxxxxxxxxxx send count no rename " << count << ' ' << total_count << ' ' << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
 						}
 					} else std::cout << "xxxxxxxxxxxxxxxx send not found " << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
 				}
