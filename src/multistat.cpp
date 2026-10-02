@@ -225,47 +225,42 @@ static bool sendMultiStatsInternal(uint32_t playerIndex, optional<uint32_t> reci
 				const std::string ip = NetPlay.players[playerIndex].IPtextAddress;
 				std::string name = NetPlay.players[playerIndex].name;
 				auto old_name = name;
-				auto it = json_ids["publicKeys"].find(public_key);
-				if (it != json_ids["publicKeys"].end()) {
-					public_key = it->get<std::string>();
-					it = json_ids["mainPublicKeys"].find(public_key);
-					if (it == json_ids["mainPublicKeys"].end())
-						std::cout << "xxxxxxxxxxxxxxxx send missing main public key data " << old_public_key << ' ' << public_key << std::endl;
-					else {
-						public_key = (*it)[0]["publicKey"].get<std::string>();
-						int count = 0, total_count = 0;
-						for(auto entry : (*it)) {
-							total_count += entry["count"].get<int>();
-							if (entry["publicKey"].get<std::string>() == old_public_key)
-								count = entry["count"].get<int>();
-						}
-						if (count * 10 < total_count && !(*it)[0]["name"].is_null()) {
-							std::cout << "xxxxxxxxxxxxxxxx send count rename " << count << ' ' << total_count << ' ' << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
-							if(!(*it)[0]["name"].is_null()) name = (*it)[0]["name"].get<std::string>();
-						} else std::cout << "xxxxxxxxxxxxxxxx send count no rename " << count << ' ' << total_count << ' ' << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
-					}
-				} else {
-					it = json_ids["ips"].find(ip);
-					if (it != json_ids["ips"].end()) {
-						std::cout << "xxxxxxxxxxxxxxxx send ip rename " << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
+				bool found = false;
+				auto it = json_ids["mainPublicKeys"].find(public_key);
+				if (it != json_ids["mainPublicKeys"].end()) found = true;
+				else {
+					it = json_ids["publicKeys"].find(public_key);
+					if (it != json_ids["publicKeys"].end()) {
+						found = true;
 						public_key = it->get<std::string>();
-						it = json_ids["mainPublicKeys"].find(public_key);
-						if (it == json_ids["mainPublicKeys"].end())
-							std::cout << "xxxxxxxxxxxxxxxx send missing main public key data " << ip << ' ' << public_key << std::endl;
-						else {
-							public_key = (*it)[0]["publicKey"].get<std::string>();
-							int count = 0, total_count = 0;
-							for(auto entry : (*it)) {
-								total_count += entry["count"].get<int>();
-								if (entry["publicKey"].get<std::string>() == old_public_key)
-									count = entry["count"].get<int>();
-							}
-							if (count * 10 < total_count && !(*it)[0]["name"].is_null()) {
-								std::cout << "xxxxxxxxxxxxxxxx send count rename " << count << ' ' << total_count << ' ' << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
-								if(!(*it)[0]["name"].is_null()) name = (*it)[0]["name"].get<std::string>();
-							} else std::cout << "xxxxxxxxxxxxxxxx send count no rename " << count << ' ' << total_count << ' ' << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
+					} else {
+						it = json_ids["ips"].find(ip);
+						if (it != json_ids["ips"].end()) {
+							found = true;
+							public_key = it->get<std::string>();
 						}
-					} else std::cout << "xxxxxxxxxxxxxxxx send not found " << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
+					}
+					if (found) {
+						it = json_ids["mainPublicKeys"].find(public_key);
+						if (it == json_ids["mainPublicKeys"].end()) {
+							found = false;
+							std::cout << "xxxxxxxxxxxxxxxx send missing main public key data " << old_public_key << ' ' << public_key << ' ' << ip << std::endl;
+						}
+					}
+				}
+				if (!found) std::cout << "xxxxxxxxxxxxxxxx send not found " << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
+				else {
+					public_key = (*it)[0]["publicKey"].get<std::string>();
+					int count = 0, total_count = 0;
+					for(auto entry : (*it)) {
+						total_count += entry["count"].get<int>();
+						if (entry["publicKey"].get<std::string>() == old_public_key)
+							count = entry["count"].get<int>();
+					}
+					if (count * 10 < total_count && !(*it)[0]["name"].is_null()) {
+						std::cout << "xxxxxxxxxxxxxxxx send count rename " << count << ' ' << total_count << ' ' << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
+						if(!(*it)[0]["name"].is_null()) name = (*it)[0]["name"].get<std::string>();
+					} else std::cout << "xxxxxxxxxxxxxxxx send count no rename " << count << ' ' << total_count << ' ' << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
 				}
 				if (public_key != old_public_key) {
 					if (name != old_name) {
