@@ -2042,7 +2042,7 @@ bool NETmovePlayerToSpectatorOnlySlot(uint32_t playerIdx, bool hostOverride /*= 
 	return true;
 }
 
-static bool wasAlreadyMovedToSpectatorsByHost(uint32_t playerIdx)
+bool wasAlreadyMovedToSpectatorsByHost(uint32_t playerIdx)
 {
 	return playerManagementRecord.hostMovedPlayerToSpectators(NetPlay.players[playerIdx].IPtextAddress)
 		|| playerManagementRecord.hostMovedPlayerToSpectators(getTruePlayerIdentity(playerIdx).identity.toBytes(EcKey::Privacy::Public));

@@ -1670,6 +1670,9 @@ static void WzCmdInterfaceDumpHumanPlayerVarsImpl(uint32_t player, bool gameHasF
 		// in lobby:
 		auto currentTime = std::chrono::steady_clock::now();
 
+		// output player multiopt prefs
+		j["prefs"] = getMultiOptionPrefValuesJSON(player);
+
 		// output "ready" status
 		j["ready"] = static_cast<int>(p.ready);
 
@@ -1689,6 +1692,8 @@ static void WzCmdInterfaceDumpHumanPlayerVarsImpl(uint32_t player, bool gameHasF
 
 			// output _total_ seconds spent not ready (at this snapshot)
 			j["notreadyfor"] = calculateSecondsNotReadyForPlayer(player, currentTime);
+
+			j["lockedAsSpec"] = wasAlreadyMovedToSpectatorsByHost(player);
 		}
 	}
 	else
@@ -1745,12 +1750,6 @@ static void WzCmdInterfaceDumpHumanPlayerVarsImpl(uint32_t player, bool gameHasF
 	if (player == NetPlay.hostPlayer)
 	{
 		j["host"] = 1;
-	}
-
-	if (!gameHasFiredUp)
-	{
-		// in lobby, output player multiopt prefs
-		j["prefs"] = getMultiOptionPrefValuesJSON(player);
 	}
 }
 

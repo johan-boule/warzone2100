@@ -545,5 +545,6 @@ void NETadjustConnectedTimeoutForClients();
 
 void NETlobbyCreateGameListing();
 void NETlobbyRemoveGameListing();
+bool wasAlreadyMovedToSpectatorsByHost(uint32_t playerIdx);
 
 #endif
