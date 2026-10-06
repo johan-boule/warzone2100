@@ -262,18 +262,13 @@ static bool sendMultiStatsInternal(uint32_t playerIndex, optional<uint32_t> reci
 						if(!(*it)[0]["name"].is_null()) name = (*it)[0]["name"].get<std::string>();
 					} else std::cout << "xxxxxxxxxxxxxxxx send count no rename " << count << ' ' << total_count << ' ' << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
 				}
-				if (public_key != old_public_key) {
-					if (name != old_name) {
-						std::cout << "xxxxxxxxxxxxxxxx send rename and public key " << old_name << " => " << name << ' ' << old_public_key << " => " << public_key << ' ' << ip << std::endl;
-						NETchangePlayerName(playerIndex, name.data());
-					} else std::cout << "xxxxxxxxxxxxxxxx send no rename and public key " << old_name << ' ' << old_public_key << " => " << public_key << ' ' << ip << std::endl;
-				} else std::cout << "xxxxxxxxxxxxxxxx send no change " << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
 				uint32_t played, wins, losses, totalKills;
 				it = json_elo.find(public_key);
 				if (it == json_elo.end()) {
 					played = wins = losses = totalKills = 0;
 					std::cout << "xxxxxxxxxxxxxxxx send unrated " << name << ' ' << public_key << ' ' << ip << std::endl;
 				} else {
+					if (name != old_name) name = (*it)["name"].get<std::string>();
 					const auto scale = (*it)["scale"].get<float>();
 					const auto rank = (*it)["rank"].get<unsigned int>();
 					std::cout << "xxxxxxxxxxxxxxxx send rated " << rank << ' ' << scale << ' ' << name << ' ' << public_key << ' ' << ip << std::endl;
@@ -320,6 +315,12 @@ static bool sendMultiStatsInternal(uint32_t playerIndex, optional<uint32_t> reci
 				pStatsToSend->wins = wins;
 				pStatsToSend->losses = losses;
 				pStatsToSend->totalKills = totalKills;
+				if (public_key != old_public_key) {
+					if (name != old_name) {
+						std::cout << "xxxxxxxxxxxxxxxx send rename and public key " << old_name << " => " << name << ' ' << old_public_key << " => " << public_key << ' ' << ip << std::endl;
+						NETchangePlayerName(playerIndex, name.data());
+					} else std::cout << "xxxxxxxxxxxxxxxx send no rename and public key " << old_name << ' ' << old_public_key << " => " << public_key << ' ' << ip << std::endl;
+				} else std::cout << "xxxxxxxxxxxxxxxx send no change " << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
 			}
 		}
 	}
