@@ -7916,7 +7916,7 @@ bool WZGameReplayOptionsHandler::restoreOptions(const nlohmann::json& object, Em
 
 	// compare version_string and throw a pop-up warning if not equal
 	auto replayVersionStr = object.at("versionString").get<std::string>();
-	auto expectedVersionStr = version_getVersionString();
+	auto expectedVersionStr = version_getVersionString_net();
 	bool nonMatchingVersionString = replayVersionStr != expectedVersionStr;
 	bool nonMatchingNetcodeVersion = !NETisCorrectVersion(replay_netcodeMajor, replay_netcodeMinor);
 	if (nonMatchingVersionString || nonMatchingNetcodeVersion)

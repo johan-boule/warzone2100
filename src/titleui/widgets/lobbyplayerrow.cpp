@@ -46,6 +46,8 @@
 
 #include "lib/ivis_opengl/pieblitfunc.h"
 
+#include <fmt/core.h>
+
 struct DisplayPlayerCache {
 	std::string	fullMainText;	// the “full” main text (used for storing the full player name when displaying a player)
 	WzText		wzMainText;		// the main text
@@ -262,46 +264,35 @@ void displayPlayer(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	{
 		const PLAYERSTATS& stat = getMultiStats(j);
 
-		std::string name = getPlayerName(j);
+		std::string connected_name = getPlayerName(j);
 		if (game.blindMode != BLIND_MODE::NONE)
 		{
 			// Special override: Show our own name if in spectators
 			if (j == selectedPlayer && j > MAX_PLAYER_SLOTS)
 			{
-				name = NetPlay.players[j].name;
+				connected_name = NetPlay.players[j].name;
 			}
 		}
-		const char* pAltName = nullptr;
-		if (NetPlay.players[j].isAdmin)
-		{
-			pAltName = _("Admin");
-		}
+		std::string name = stat.name.empty() ? connected_name : stat.name;
 
 		std::map<std::string, EcKey::Key> serverPlayers;  // TODO Fill this with players known to the server (needs implementing on the server, too). Currently useless.
 
 		PIELIGHT colour;
 		iV_fonts nameFont = font_regular;
 		if (j == selectedPlayer)
-		{
 			colour = WZCOL_TEXT_BRIGHT;
-//			nameFont = font_regular_bold;
-		}
 		else if (ingame.PingTimes[j] >= PING_LIMIT)
-		{
 			colour = WZCOL_FORM_PLAYER_NOPING;
-		}
-		else if (isKnownPlayer(serverPlayers, name, getMultiStats(j).identity) || game.blindMode != BLIND_MODE::NONE)
-		{
+		else if (
+			!stat.name.empty() ||
+			/* crap: */ isKnownPlayer(serverPlayers, connected_name, getMultiStats(j).identity) ||
+			game.blindMode != BLIND_MODE::NONE
+		)
 			colour = WZCOL_FORM_PLAYER_KNOWN_BY_SERVER;
-		}
-		else if (isLocallyKnownPlayer(name, getMultiStats(j).identity))
-		{
+		else if (/* crap: */ isLocallyKnownPlayer(connected_name, getMultiStats(j).identity))
 			colour = WZCOL_FORM_PLAYER_KNOWN;
-		}
 		else
-		{
 			colour = WZCOL_FORM_PLAYER_UNKNOWN;
-		}
 
 		// name
 		if (cache.fullMainText != name)
@@ -319,54 +310,37 @@ void displayPlayer(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		}
 
 		WzString subText;
-
+		if (!stat.name.empty() && stat.name != connected_name) {
+			subText += connected_name.c_str();
+		}
 		if (j == NetPlay.hostPlayer && NetPlay.bComms)
 		{
+			if (!subText.isEmpty()) subText += ", ";
 			subText += _("HOST");
 		}
 		else if ((j < MAX_PLAYERS) && (game.blindMode != BLIND_MODE::NONE) && NetPlay.isHost && (NetPlay.hostPlayer >= MAX_PLAYER_SLOTS))
 		{
+			if (!subText.isEmpty()) subText += ", ";
 			subText += "\"";
 			subText += getPlayerGenericName(j);
 			subText += "\"";
 		}
 
-		if (NetPlay.bComms && j != selectedPlayer)
-		{
-			char buf[250] = {'\0'};
-
-			// show ping time
-			ssprintf(buf, "%s%s: ", subText.isEmpty() ? "" : ", ", _("Ping"));
-			subText += buf;
-			if (ingame.PingTimes[j] < PING_LIMIT)
-			{
-				if (game.blindMode == BLIND_MODE::NONE
-					|| (NetPlay.isHost && (NetPlay.hostPlayer >= MAX_PLAYER_SLOTS))
-					|| (j == NetPlay.hostPlayer))
-				{
-					// show actual ping time
-					ssprintf(buf, "%03d", ingame.PingTimes[j]);
-				}
-				else
-				{
-					// show non-exact ping in blind mode
-					const char* pingQualifierStr = "Ok";
-					if (ingame.PingTimes[j] > 350)
-					{
-						pingQualifierStr = "++";
-					}
-					else if (ingame.PingTimes[j] > 1000)
-					{
-						pingQualifierStr = "+++";
-					}
-					ssprintf(buf, "%s", pingQualifierStr);
-				}
-			}
-			else
-			{
-				ssprintf(buf, "%s", "∞");  // Player has ping of somewhat questionable quality.
-			}
-			subText += buf;
+		if (NetPlay.bComms && j != selectedPlayer) { // show ping time
+			if (!subText.isEmpty()) subText += ", ";
+			subText += _("Ping");
+			subText += ": ";
+			if (ingame.PingTimes[j] < PING_LIMIT) {
+				if (
+					game.blindMode == BLIND_MODE::NONE ||
+					(NetPlay.isHost && NetPlay.hostPlayer >= MAX_PLAYER_SLOTS) ||
+					j == NetPlay.hostPlayer
+				) subText += fmt::format("{:03d}", ingame.PingTimes[j]).c_str(); // show actual ping time
+				// show non-exact ping in blind mode
+				else if (ingame.PingTimes[j] > 350) subText += "++";
+				else if (ingame.PingTimes[j] > 1000) subText += "+++";
+				else subText += "OK";
+			} else subText += "∞"; // Player has ping of somewhat questionable quality.
 		}
 
 		bool dummy = stat.played < 5;
@@ -385,9 +359,14 @@ void displayPlayer(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		// medals.
 		medal = stat.wins >= 24 && stat.wins > 8 * stat.losses? 1 : stat.wins >= 12 && stat.wins > 4 * stat.losses? 2 : stat.wins >= 6 && stat.wins > 2 * stat.losses? 3 : 0;
 
-		if (pAltName != nullptr && cache.fullAltNameText.compare(pAltName) != 0)
+		std::string altName;
+		if (NetPlay.players[j].isAdmin) altName += "Op"; //_("Admin");
+		if (!stat.public_key.empty()) {
+			if (!altName.empty()) altName += ' ';
+			altName += std::to_string(std::lround(stat.elo));
+		}
+		if (altName != cache.fullAltNameText)
 		{
-			std::string altName = pAltName;
 			int maxAltNameWidth = static_cast<int>(static_cast<float>(psWidget->width() - nameX) * 0.65f);
 			iV_fonts fontID = font_small;
 			cache.wzAltNameText.setText(WzString::fromUtf8(altName), fontID);
@@ -403,18 +382,18 @@ void displayPlayer(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 			}
 		}
 
-		if (pAltName && isHighlight)
+		if (isHighlight && !altName.empty())
 		{
 			// display first, behind everything
 			displayAltNameBox(x, y, psWidget, cache, isHighlight);
 		}
 
-		int H = 5;
+		int H = 7;
 		cache.wzMainText.render(x + nameX, y + 22 - H*!subText.isEmpty(), colour);
 		if (!subText.isEmpty())
 		{
-			cache.wzSubText.setText(subText, font_small);
-			cache.wzSubText.render(x + nameX, y + 28, WZCOL_TEXT_MEDIUM);
+			cache.wzSubText.setText(subText, font_regular);
+			cache.wzSubText.render(x + nameX, y + 29, WZCOL_TEXT_MEDIUM);
 		}
 
 		if ((game.blindMode != BLIND_MODE::NONE) && (!NetPlay.isHost || NetPlay.hostPlayer < MAX_PLAYER_SLOTS))
@@ -447,7 +426,7 @@ void displayPlayer(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 			}
 		}
 
-		if (pAltName && !isHighlight)
+		if (!isHighlight && !altName.empty())
 		{
 			// display last, over top of everything
 			displayAltNameBox(x, y, psWidget, cache, isHighlight);
@@ -754,14 +733,39 @@ void WzPlayerRow::updateState()
 		const auto& identity = getOutputPlayerIdentity(playerIdx);
 		if (!identity.empty())
 		{
-			if (!playerInfoTooltip.empty())
-			{
-				playerInfoTooltip += "\n";
+			if (!playerInfoTooltip.empty()) playerInfoTooltip += '\n';
+			//playerInfoTooltip += _("Player ID: ");
+			playerInfoTooltip += "Public key: ";
+			const std::string b64Identity = base64Encode(identity.toBytes(EcKey::Public));
+			playerInfoTooltip += b64Identity.empty() ? _("(none)") : b64Identity;
+			const auto playerStat = getMultiStats(playerIdx);
+			if (!playerStat.public_key.empty()) {
+				playerInfoTooltip += "\nKnown as: ";
+				playerInfoTooltip += playerStat.name;
+				if (playerStat.public_key != b64Identity) {
+					playerInfoTooltip += "\nPublic key: ";
+					playerInfoTooltip += playerStat.public_key;
+				}
+				playerInfoTooltip += "\nAlive for: ";
+				playerInfoTooltip += std::to_string(std::lround(playerStat.spanDays));
+				playerInfoTooltip += " days\nRating: Grade: ";
+				playerInfoTooltip += std::to_string(std::lround(playerStat.scale * 100));
+				playerInfoTooltip += "%, Elo: ";
+				playerInfoTooltip += std::to_string(std::lround(playerStat.elo));
+				playerInfoTooltip += ", Rank: ";
+				playerInfoTooltip += std::to_string(playerStat.rank);
+				playerInfoTooltip += "\nGames won: ";
+				playerInfoTooltip += std::to_string(playerStat.winCount);
+				playerInfoTooltip += ", lost: ";
+				playerInfoTooltip += std::to_string(playerStat.loseCount);
+				playerInfoTooltip += "\nX farm Elo: ";
+				playerInfoTooltip += std::to_string(std::lround(playerStat.xFarmElo));
+				playerInfoTooltip += "\nPower won versus team: ";
+				playerInfoTooltip += std::to_string(std::lround(playerStat.powerWonVersusTeamRatio * 100));
+				playerInfoTooltip += "%\nResearch lab activity: ";
+				playerInfoTooltip += std::to_string(std::lround(playerStat.researchRatio * 100));
+				playerInfoTooltip += "%";
 			}
-			std::string b64Identity = base64Encode(identity.toBytes(EcKey::Public));
-			playerInfoTooltip += _("Player ID: ");
-			playerInfoTooltip += "\n";
-			playerInfoTooltip += b64Identity.empty()? _("(none)") : b64Identity;
 		}
 	}
 	playerInfo->setTip(playerInfoTooltip);

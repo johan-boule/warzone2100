@@ -58,6 +58,12 @@ struct PLAYERSTATS
 	uint64_t recentResearchPerformance = 0;  // how many labs were ticking with objective (researching)
 
 	EcKey identity;
+
+	// real rating
+	std::string public_key, name;
+	unsigned int rank = 0, gameCount = 0, winCount = 0, loseCount = 0, drawCount = 0, invalidGameCount = 0, lastSeenDays = 0, spanDays = 0;
+	float elo = 0, scale = 0, farmElo = 0, xFarmElo = 0, powerWonVersusTeamRatio = 0, researchRatio = 0, quitTimeRatio = 0;
+	bool discounted = false, spoiled = false;
 };
 
 struct RESEARCH;
