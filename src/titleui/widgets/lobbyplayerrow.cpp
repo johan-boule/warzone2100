@@ -273,7 +273,7 @@ void displayPlayer(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 				connected_name = NetPlay.players[j].name;
 			}
 		}
-		std::string name = stat.name.empty() ? connected_name : stat.name;
+		std::string name = stat.rating.name.empty() ? connected_name : stat.rating.name;
 
 		std::map<std::string, EcKey::Key> serverPlayers;  // TODO Fill this with players known to the server (needs implementing on the server, too). Currently useless.
 
@@ -284,7 +284,7 @@ void displayPlayer(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		else if (ingame.PingTimes[j] >= PING_LIMIT)
 			colour = WZCOL_FORM_PLAYER_NOPING;
 		else if (
-			!stat.name.empty() ||
+			!stat.rating.name.empty() ||
 			/* crap: */ isKnownPlayer(serverPlayers, connected_name, getMultiStats(j).identity) ||
 			game.blindMode != BLIND_MODE::NONE
 		)
@@ -310,7 +310,7 @@ void displayPlayer(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		}
 
 		WzString subText;
-		if (!stat.name.empty() && stat.name != connected_name) {
+		if (!stat.rating.name.empty() && stat.rating.name != connected_name) {
 			subText += connected_name.c_str();
 		}
 		if (j == NetPlay.hostPlayer && NetPlay.bComms)
@@ -361,9 +361,9 @@ void displayPlayer(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 
 		std::string altName;
 		if (NetPlay.players[j].isAdmin) altName += "Op"; //_("Admin");
-		if (!stat.public_key.empty()) {
+		if (!stat.rating.publicKey.empty()) {
 			if (!altName.empty()) altName += ' ';
-			altName += std::to_string(std::lround(stat.elo));
+			altName += std::to_string(std::lround(stat.rating.elo));
 		}
 		if (altName != cache.fullAltNameText)
 		{
@@ -739,31 +739,31 @@ void WzPlayerRow::updateState()
 			const std::string b64Identity = base64Encode(identity.toBytes(EcKey::Public));
 			playerInfoTooltip += b64Identity.empty() ? _("(none)") : b64Identity;
 			const auto playerStat = getMultiStats(playerIdx);
-			if (!playerStat.public_key.empty()) {
+			if (!playerStat.rating.publicKey.empty()) {
 				playerInfoTooltip += "\nKnown as: ";
-				playerInfoTooltip += playerStat.name;
-				if (playerStat.public_key != b64Identity) {
+				playerInfoTooltip += playerStat.rating.name;
+				if (playerStat.rating.publicKey != b64Identity) {
 					playerInfoTooltip += "\nPublic key: ";
-					playerInfoTooltip += playerStat.public_key;
+					playerInfoTooltip += playerStat.rating.publicKey;
 				}
 				playerInfoTooltip += "\nAlive for: ";
-				playerInfoTooltip += std::to_string(std::lround(playerStat.spanDays));
+				playerInfoTooltip += std::to_string(std::lround(playerStat.rating.spanDays));
 				playerInfoTooltip += " days\nRating: Grade: ";
-				playerInfoTooltip += std::to_string(std::lround(playerStat.scale * 100));
+				playerInfoTooltip += std::to_string(std::lround(playerStat.rating.scale * 100));
 				playerInfoTooltip += "%, Elo: ";
-				playerInfoTooltip += std::to_string(std::lround(playerStat.elo));
+				playerInfoTooltip += std::to_string(std::lround(playerStat.rating.elo));
 				playerInfoTooltip += ", Rank: ";
-				playerInfoTooltip += std::to_string(playerStat.rank);
+				playerInfoTooltip += std::to_string(playerStat.rating.rank);
 				playerInfoTooltip += "\nGames won: ";
-				playerInfoTooltip += std::to_string(playerStat.winCount);
+				playerInfoTooltip += std::to_string(playerStat.rating.winCount);
 				playerInfoTooltip += ", lost: ";
-				playerInfoTooltip += std::to_string(playerStat.loseCount);
+				playerInfoTooltip += std::to_string(playerStat.rating.loseCount);
 				playerInfoTooltip += "\nX farm Elo: ";
-				playerInfoTooltip += std::to_string(std::lround(playerStat.xFarmElo));
+				playerInfoTooltip += std::to_string(std::lround(playerStat.rating.xFarmElo));
 				playerInfoTooltip += "\nPower won versus team: ";
-				playerInfoTooltip += std::to_string(std::lround(playerStat.powerWonVersusTeamRatio * 100));
+				playerInfoTooltip += std::to_string(std::lround(playerStat.rating.powerWonVersusTeamRatio * 100));
 				playerInfoTooltip += "%\nResearch lab activity: ";
-				playerInfoTooltip += std::to_string(std::lround(playerStat.researchRatio * 100));
+				playerInfoTooltip += std::to_string(std::lround(playerStat.rating.researchRatio * 100));
 				playerInfoTooltip += "%";
 			}
 		}

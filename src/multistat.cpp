@@ -188,102 +188,6 @@ bool swapPlayerMultiStatsLocal(uint32_t playerIndexA, uint32_t playerIndexB)
 	return true;
 }
 
-static void rating_to_stats(const std::string& public_key, PLAYERSTATS& playerStat) {
-	static const auto json_elo = nlohmann::json::parse(std::ifstream(std::filesystem::path(std::getenv("WARZONE2100_RATING_DATA_DIR")) / "elo.json"));
-	const auto it = json_elo.find(public_key);
-	if (it == json_elo.end()) {
-		playerStat.played = 0;
-		playerStat.wins = 0;
-		playerStat.losses = 0;
-		playerStat.totalKills = 0;
-		playerStat.public_key.clear();
-		playerStat.name.clear();
-		playerStat.elo = 0;
-		playerStat.scale = 0;
-		playerStat.rank = 0;
-		playerStat.discounted = true;
-		playerStat.spoiled = false;
-		playerStat.gameCount = 0;
-		playerStat.winCount = 0;
-		playerStat.loseCount = 0;
-		playerStat.drawCount = 0;
-		playerStat.invalidGameCount = 0;
-		playerStat.lastSeenDays = 0;
-		playerStat.spanDays = 0;
-		playerStat.farmElo = 0;
-		playerStat.xFarmElo = 0;
-		playerStat.powerWonVersusTeamRatio = 0;
-		playerStat.researchRatio = 0;
-		playerStat.quitTimeRatio = 0;
-	} else {
-		playerStat.public_key = public_key;
-		playerStat.name = (*it)["name"].get<std::string>();
-		playerStat.elo = (*it)["elo"].get<float>();
-		playerStat.scale = (*it)["scale"].get<float>();
-		playerStat.rank = (*it)["rank"].get<unsigned int>();
-		playerStat.discounted = (*it)["discounted"].get<bool>();;
-		playerStat.spoiled = (*it)["spoiled"].get<bool>();;;
-		playerStat.gameCount = (*it)["gameCount"].get<unsigned int>();
-		playerStat.winCount = (*it)["winCount"].get<unsigned int>();
-		playerStat.loseCount = (*it)["loseCount"].get<unsigned int>();
-		playerStat.drawCount = (*it)["drawCount"].get<unsigned int>();
-		playerStat.invalidGameCount = (*it)["invalidGameCount"].get<unsigned int>();
-		playerStat.lastSeenDays = (*it)["lastSeenDays"].get<float>();
-		playerStat.spanDays = (*it)["spanDays"].get<float>();
-		playerStat.farmElo = (*it)["farmElo"].get<float>();
-		playerStat.xFarmElo = (*it)["xFarmElo"].get<float>();
-		playerStat.powerWonVersusTeamRatio = (*it)["powerWonVersusTeamRatio"].get<float>();
-		playerStat.researchRatio = (*it)["researchRatio"].get<float>();
-		playerStat.quitTimeRatio = (*it)["quitTimeRatio"].get<float>();
-		std::cout << "xxxxxxxxxxxxxxxx rating " << playerStat.elo << ' ' << playerStat.name << std::endl;
-		#if 0 // excerpt from lobbyplayerrow.cpp displayPlayer
-			bool dummy = stat.played < 5;
-			uint8_t star[3] = {0, 0, 0};
-			uint8_t medal = 0;
-			// star 1 total droid kills
-			star[0] = stat.totalKills > 600? 1 : stat.totalKills > 300? 2 : stat.totalKills > 150? 3 : 0;
-			// star 2 games played
-			star[1] = stat.played > 200? 1 : stat.played > 100? 2 : stat.played > 50? 3 : 0;
-			// star 3 games won.
-			star[2] = stat.wins > 80? 1 : stat.wins > 40? 2 : stat.wins > 10? 3 : 0;
-			// medals.
-			medal = stat.wins >= 24 && stat.wins > 8 * stat.losses? 1 : stat.wins >= 12 && stat.wins > 4 * stat.losses? 2 : stat.wins >= 6 && stat.wins > 2 * stat.losses? 3 : 0;
-		#endif
-		if (playerStat.discounted) {
-			playerStat.played = 0;
-			playerStat.wins = 0;
-			playerStat.losses = 0;
-			playerStat.totalKills = 0;
-		} else {
-			if (playerStat.scale < 0.4) {
-				if (playerStat.scale < 0.1) playerStat.totalKills = 0;
-				else if (playerStat.scale < 0.2) playerStat.totalKills = 151;
-				else if (playerStat.scale < 0.3) playerStat.totalKills = 301;
-				else playerStat.totalKills = 601;
-				playerStat.played = 5;
-				playerStat.wins = 10;
-			} else {
-				playerStat.totalKills = 601;
-				if (playerStat.scale < 0.7) {
-					if (playerStat.scale < 0.5) playerStat.played = 51;
-					else if (playerStat.scale < 0.6) playerStat.played = 101;
-					else playerStat.played = 201;
-					playerStat.wins = 10;
-				} else {
-					playerStat.played = 201;
-					if (playerStat.scale < 0.8) playerStat.wins = 11;
-					else if (playerStat.scale < 0.9) playerStat.wins = 41;
-					else playerStat.wins = 81;
-				}
-			}
-			if (playerStat.rank > 6) playerStat.losses = playerStat.wins;
-			else if (playerStat.rank > 3) playerStat.losses = playerStat.wins / 2 - 1;
-			else if (playerStat.rank > 1) playerStat.losses = playerStat.wins / 4 - 1;
-			else playerStat.losses = playerStat.wins / 8 - 1;
-		}
-	}
-}
-
 static bool sendMultiStatsInternal(uint32_t playerIndex, optional<uint32_t> recipientPlayerIndex = nullopt, bool sendHostVerifiedJoinIdentity = false)
 {
 	ASSERT(NetPlay.isHost || playerIndex == realSelectedPlayer, "Huh?");
@@ -302,70 +206,12 @@ static bool sendMultiStatsInternal(uint32_t playerIndex, optional<uint32_t> reci
 	// Send the ID of the player's stats we're updating
 	NETuint32_t(w, playerIndex);
 
-	PLAYERSTATS* pStatsToSend = &playerStats[playerIndex];
+	PLAYERSTATS* pStatsToSend;
 	if (game.blindMode != BLIND_MODE::NONE)
-	{
-		// In blind mode, always send zeroed stats
-		pStatsToSend = &zeroStats;
-	}
-
-	if (NetPlay.isHost) {
-		static const char* env = std::getenv("WARZONE2100_RATING_DATA_DIR");
-		if(env) {
-			static const auto json_ids = nlohmann::json::parse(std::ifstream(std::filesystem::path(env) / "player-ids.json"));
-			auto public_key = base64Encode(pStatsToSend->identity.toBytes(EcKey::Privacy::Public));
-			if (!public_key.empty()) {
-				const auto old_public_key = public_key;
-				const std::string ip = NetPlay.players[playerIndex].IPtextAddress;
-				std::string name = NetPlay.players[playerIndex].name;
-				auto old_name = name;
-				bool found = false;
-				auto it = json_ids["mainPublicKeys"].find(public_key);
-				if (it != json_ids["mainPublicKeys"].end()) found = true;
-				else {
-					it = json_ids["publicKeys"].find(public_key);
-					if (it != json_ids["publicKeys"].end()) {
-						found = true;
-						public_key = it->get<std::string>();
-					} else {
-						it = json_ids["ips"].find(ip);
-						if (it != json_ids["ips"].end()) {
-							found = true;
-							public_key = it->get<std::string>();
-						}
-					}
-					if (found) {
-						it = json_ids["mainPublicKeys"].find(public_key);
-						if (it == json_ids["mainPublicKeys"].end()) {
-							found = false;
-							std::cout << "xxxxxxxxxxxxxxxx missing main public key data " << old_public_key << ' ' << public_key << ' ' << ip << std::endl;
-						}
-					}
-				}
-				if (!found) std::cout << "xxxxxxxxxxxxxxxx not found " << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
-				else {
-					public_key = (*it)[0]["publicKey"].get<std::string>();
-					int count = 0, total_count = 0;
-					for(auto entry : (*it)) {
-						total_count += entry["count"].get<int>();
-						if (entry["publicKey"].get<std::string>() == old_public_key)
-							count = entry["count"].get<int>();
-					}
-					if (count < 50 && count * 10 < total_count && !(*it)[0]["name"].is_null()) {
-						std::cout << "xxxxxxxxxxxxxxxx count " << count << ' ' << total_count << ' ' << old_name << ' ' << old_public_key << ' ' << ip << std::endl;
-						if(!(*it)[0]["name"].is_null()) name = (*it)[0]["name"].get<std::string>();
-					}
-				}
-				rating_to_stats(public_key, *pStatsToSend);
-				if (public_key != old_public_key) {
-					if (!pStatsToSend->name.empty() && name != old_name) name = pStatsToSend->name;
-					if (name != old_name) {
-						std::cout << "xxxxxxxxxxxxxxxx rename " << old_name << " => " << name << ' ' << old_public_key << " => " << public_key << ' ' << ip << std::endl;
-						NETchangePlayerName(playerIndex, name.data());
-					}
-				}
-			}
-		}
+		pStatsToSend = &zeroStats; // In blind mode, always send zeroed stats
+	else {
+		pStatsToSend = &playerStats[playerIndex];
+		if (NetPlay.isHost) wz::rating::apply_rating(playerIndex);
 	}
 
 	NETuint32_t(w, pStatsToSend->played);
@@ -663,16 +509,6 @@ bool recvMultiStats(NETQUEUE queue)
 	NETbytes(r, identity);
 	NETend(r);
 
-	{ static const char* env = std::getenv("WARZONE2100_RATING_DATA_DIR");
-		if(env) {
-			static const auto json_public_keys = nlohmann::json::parse(std::ifstream(std::filesystem::path(env) / "player-public-keys.json"));
-			auto public_key = base64Encode(identity);
-			auto it = json_public_keys.find(public_key);
-			if (it != json_public_keys.end()) public_key = it->get<std::string>();
-			rating_to_stats(public_key, playerStats[playerIndex]);
-		}
-	}
-
 	if (!myResponsibility(playerIndex)) // we don't want to update ourselves, we already know our score (FIXME: rewrite setMultiStats())
 	{
 		if (!isHostVerifiedIdentity) multiStatsSetIdentity(playerIndex, identity, false);
@@ -682,6 +518,8 @@ bool recvMultiStats(NETQUEUE queue)
 				debug(LOG_INFO, "Host sent invalid host-verified join identity for: (player: %u, name: \"%s\")", playerIndex, getPlayerName(playerIndex));
 		}
 	}
+
+	wz::rating::apply_rating(playerIndex);
 
 	return true;
 }
