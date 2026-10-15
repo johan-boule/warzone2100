@@ -63,6 +63,7 @@ namespace wz::rating {
 				}
 			}
 		}
+		if (!public_keys.size() && !elo.size()) return;
 
 		auto stats = getMultiStats(playerIndex);
 		auto public_key = base64Encode(stats.identity.toBytes(EcKey::Privacy::Public));
