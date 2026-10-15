@@ -720,8 +720,6 @@ if(DEFINED VAROUT)
 	message( STATUS "VCS_MOST_RECENT_COMMIT_YEAR=${VCS_MOST_RECENT_COMMIT_YEAR}" )
 endif()
 
-set(VCS_TAG_NET ${VCS_TAG})
-
 if(true)
 	# TODO It makes no sense to spew all kind of random statistical information about the Git repository.
 	# TODO Particularly, the use of VCS_TAG_TAG_COUNT as the NetCode version is broken logic and perfect design to make everything fail out of the lab.
