@@ -336,16 +336,10 @@ bool recvPing(NETQUEUE queue)
 			// Record that they've verified the identity
 			ingame.VerifiedIdentity[sender] = true;
 
-			if (NetPlay.isHost && game.blindMode != BLIND_MODE::NONE)
-			{
+			if (NetPlay.isHost && game.blindMode != BLIND_MODE::NONE && !NetPlay.players[sender].isAdmin) {
 				// check if verified identity is an admin, and handle changes to admin status
-				bool oldIsAdminStatus = NetPlay.players[sender].isAdmin;
 				NetPlay.players[sender].isAdmin = identityMatchesAdmin(senderIdentity);
-				if (oldIsAdminStatus != NetPlay.players[sender].isAdmin)
-				{
-					// then send info about admin status changes to all players
-					NETBroadcastPlayerInfo(sender);
-				}
+				if (NetPlay.players[sender].isAdmin) NETBroadcastPlayerInfo(sender); // send info about admin status changes to all players
 			}
 
 			// Output to stdinterface, if enabled
