@@ -5,11 +5,12 @@
 #include <utility>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <nlohmann/json.hpp>
 
 namespace wz::rating {
 	inline namespace {
-		void from_json(const nlohmann::json& json, rating rating) {
+		void from_json(const nlohmann::json& json, rating& rating) {
 			json.at("name").get_to(rating.name);
 			json.at("elo").get_to(rating.elo);
 			json.at("scale").get_to(rating.scale);
@@ -32,38 +33,20 @@ namespace wz::rating {
 	}
 
 	void apply_rating(std::uint32_t playerIndex) {
+		static const char* const env = std::getenv("WARZONE2100_RATING_DATA_DIR");
+		if (!env) return;
 		static std::unordered_map<std::string, std::string> public_keys;
 		static std::unordered_map<std::string, rating> elo;
 		{ static bool loaded = false;
 			if (!loaded) {
 				loaded = true;
-				const char* const env = std::getenv("WARZONE2100_RATING_DATA_DIR");
-				if (!env) return;
+				debug(LOG_INFO, "rating env %s", env);
 				const std::filesystem::path dir(env);
-
-				{ auto json = nlohmann::json::parse(std::ifstream(dir / "player-public-keys.json"));
-					for (const auto& [key, value] : json.items())
-						public_keys.emplace(
-							std::piecewise_construct,
-							std::forward_as_tuple(key),
-							std::forward_as_tuple(value.get<std::string>())
-						);
-				}
-
-				{ auto json = nlohmann::json::parse(std::ifstream(dir / "elo.json"));
-					for (const auto& [key, value] : json.items()) {
-						const auto [it, inserted] = elo.emplace(
-							std::piecewise_construct,
-							std::forward_as_tuple(key),
-							std::forward_as_tuple()
-						);
-						it->second.publicKey = key;
-						value.get_to(it->second);
-					}
-				}
+				nlohmann::json::parse(std::ifstream(dir / "player-public-keys.json")).get_to(public_keys);
+				nlohmann::json::parse(std::ifstream(dir / "elo.json")).get_to(elo);
+				for (auto& [key, value] : elo) value.publicKey = key;
 			}
 		}
-		if (!public_keys.size() && !elo.size()) return;
 
 		auto stats = getMultiStats(playerIndex);
 		auto public_key = base64Encode(stats.identity.toBytes(EcKey::Privacy::Public));
@@ -76,6 +59,8 @@ namespace wz::rating {
 			if (it == elo.end()) stats.rating = {};
 			else stats.rating = it->second;
 		}
+
+		debug(LOG_INFO, "rating %f %s %s", stats.rating.elo, public_key.c_str(), !stats.rating.name.empty() ? stats.rating.name.c_str() : NetPlay.players[playerIndex].name);
 
 		if (NetPlay.isHost && !stats.rating.name.empty() && stats.rating.name != NetPlay.players[playerIndex].name)
 			NETchangePlayerName(playerIndex, stats.rating.name.data());
