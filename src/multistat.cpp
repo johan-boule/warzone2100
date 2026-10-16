@@ -388,7 +388,7 @@ bool multiStatsSetIdentity(uint32_t playerIndex, const EcKey::Key &identity, boo
 			{
 				// Record that the identity has been verified
 				ingame.VerifiedIdentity[playerIndex] = true;
-				if (NetPlay.isHost)
+				if (NetPlay.isHost && !NetPlay.players[playerIndex].isAdmin)
 				{
 					NetPlay.players[playerIndex].isAdmin = identityMatchesAdmin(playerStats[playerIndex].identity);
 					// Do not broadcast player info here, as it's assumed caller will do it
