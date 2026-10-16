@@ -5,7 +5,6 @@
 #include <utility>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <nlohmann/json.hpp>
 
 namespace wz::rating {
@@ -35,32 +34,39 @@ namespace wz::rating {
 	void apply_rating(std::uint32_t playerIndex) {
 		static const char* const env = std::getenv("WARZONE2100_RATING_DATA_DIR");
 		if (!env) return;
+		static std::unordered_map<std::string, std::string> ips;
 		static std::unordered_map<std::string, std::string> public_keys;
 		static std::unordered_map<std::string, rating> elo;
 		{ static bool loaded = false;
 			if (!loaded) {
 				loaded = true;
-				debug(LOG_INFO, "rating env %s", env);
+				debug(LOG_INFO, "rating env: %s", env);
 				const std::filesystem::path dir(env);
+				const auto ips_path = dir / "player-ips.json";
+				if (NetPlay.isHost && std::filesystem::exists(ips_path))
+					nlohmann::json::parse(std::ifstream(ips_path)).get_to(ips);
 				nlohmann::json::parse(std::ifstream(dir / "player-public-keys.json")).get_to(public_keys);
 				nlohmann::json::parse(std::ifstream(dir / "elo.json")).get_to(elo);
 				for (auto& [key, value] : elo) value.publicKey = key;
 			}
 		}
 
-		auto stats = getMultiStats(playerIndex);
+		auto& stats = getMultiStats(playerIndex);
 		auto public_key = base64Encode(stats.identity.toBytes(EcKey::Privacy::Public));
 
 		{ const auto it = public_keys.find(public_key);
 			if (it != public_keys.end()) public_key = it->second;
+			else if (NetPlay.isHost) {
+				std::string ip = NetPlay.players[playerIndex].IPtextAddress;
+				const auto it2 = ips.find(NetPlay.players[playerIndex].IPtextAddress);
+				if (it2 != ips.end()) public_key = it2->second;
+			}
 		}
 
 		{ const auto it = elo.find(public_key);
 			if (it == elo.end()) stats.rating = {};
 			else stats.rating = it->second;
 		}
-
-		debug(LOG_INFO, "rating %f %s %s", stats.rating.elo, public_key.c_str(), !stats.rating.name.empty() ? stats.rating.name.c_str() : NetPlay.players[playerIndex].name);
 
 		if (NetPlay.isHost && !stats.rating.name.empty() && stats.rating.name != NetPlay.players[playerIndex].name)
 			NETchangePlayerName(playerIndex, stats.rating.name.data());

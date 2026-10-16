@@ -6409,14 +6409,14 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 		static std::chrono::steady_clock::time_point before;
 		static bool got_stats = false;
 		if (stats) {
-			debug(LOG_INFO, "rating received");
+			debug(LOG_NET, "rating received");
 			if (!got_stats) {
 				got_stats = true;
 				before = std::chrono::steady_clock::now();
 			}
 		} else if (got_stats) {
 			if (std::chrono::steady_clock::now() - before > std::chrono::seconds(1)) {
-				debug(LOG_INFO, "rating delayed send");
+				debug(LOG_NET, "rating delayed send");
 				got_stats = false;
 				for (uint32_t playerIndex = 0; playerIndex < MAX_CONNECTED_PLAYERS; ++playerIndex)
 					if (playerIndex != NetPlay.hostPlayer && *NetPlay.players[playerIndex].name)

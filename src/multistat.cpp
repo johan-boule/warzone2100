@@ -62,7 +62,7 @@ static EcKey hostVerifiedJoinIdentities[MAX_CONNECTED_PLAYERS];
 
 // ////////////////////////////////////////////////////////////////////////////
 // Get Player's stats
-PLAYERSTATS const &getMultiStats(UDWORD player)
+PLAYERSTATS& getMultiStats(UDWORD player)
 {
 	return playerStats[player];
 }
@@ -206,19 +206,12 @@ static bool sendMultiStatsInternal(uint32_t playerIndex, optional<uint32_t> reci
 	// Send the ID of the player's stats we're updating
 	NETuint32_t(w, playerIndex);
 
-	PLAYERSTATS* pStatsToSend;
-	if (game.blindMode != BLIND_MODE::NONE)
-		pStatsToSend = &zeroStats; // In blind mode, always send zeroed stats
-	else {
-		pStatsToSend = &playerStats[playerIndex];
-		if (NetPlay.isHost) wz::rating::apply_rating(playerIndex);
-	}
-
-	NETuint32_t(w, pStatsToSend->played);
-	NETuint32_t(w, pStatsToSend->wins);
-	NETuint32_t(w, pStatsToSend->losses);
-	NETuint32_t(w, pStatsToSend->totalKills);
-	NETuint32_t(w, pStatsToSend->totalScore);
+	PLAYERSTATS& statsToSend = game.blindMode == BLIND_MODE::NONE ? playerStats[playerIndex] : zeroStats; // In blind mode, always send zeroed stats
+	NETuint32_t(w, statsToSend.played);
+	NETuint32_t(w, statsToSend.wins);
+	NETuint32_t(w, statsToSend.losses);
+	NETuint32_t(w, statsToSend.totalKills);
+	NETuint32_t(w, statsToSend.totalScore);
 
 	EcKey::Key identityPublicKey;
 	bool isHostVerifiedIdentity = false;
@@ -288,6 +281,7 @@ bool setMultiStats(uint32_t playerIndex, PLAYERSTATS plStats, bool bLocal)
 
 	if (!bLocal && (NetPlay.isHost || playerIndex == realSelectedPlayer))
 	{
+		wz::rating::apply_rating(playerIndex);
 		sendMultiStats(playerIndex);
 
 		if (playerIndex == realSelectedPlayer)
