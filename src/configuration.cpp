@@ -43,6 +43,7 @@
 #include "multiint.h"
 #include "multiplay.h"
 #include "multistat.h"
+#include "rating.h"
 #include "radar.h"
 #include "seqdisp.h"
 #include "texture.h"
@@ -473,6 +474,7 @@ bool loadConfig()
 	radarRotationArrow = iniGetBool("radarRotationArrow", true).value();
 	hostQuitConfirmation = iniGetBool("hostQuitConfirmation", true).value();
 	war_SetPauseOnFocusLoss(iniGetBool("PauseOnFocusLoss", false).value());
+	wz::rating::url(iniGetString("rating_url", std::string(wz::rating::default_url())).value());
 	NETsetLobbyserverAddress(iniGetString("lobbyserver", std::string(netlobby::GetDefaultLobbyAddress())).value());
 	war_setLastIpServerConnect(iniGetString("server_name", "").value());
 //	iV_font(ini.value("fontname", "DejaVu Sans").toString().toUtf8().constData(),
@@ -500,6 +502,9 @@ bool loadConfig()
 			lobbyHostJoinOpts.hostingIPs = static_cast<netlobby::HostJoinOptionValue>(std::clamp<int>(value.value(), static_cast<int>(netlobby::HostJoinOptionValue::BlockAll), static_cast<int>(netlobby::HostJoinOptionValue::Allow)));
 		}
 		NETsetLobbyHostJoinOptions(lobbyHostJoinOpts);
+	}
+	if (auto value = iniGetIntegerOpt("lobbyHostJoinOpts_directConn")) {
+		NETsetLobbyHostDirectJoinOption(static_cast<LobbyHostDirectJoinOption>(std::clamp<int>(value.value(), static_cast<int>(LobbyHostDirectJoinOption::None), static_cast<int>(LobbyHostDirectJoinOption::All))));
 	}
 	setPublicIPv4LookupService(iniGetString("publicIPv4LookupService_Url", WZ_DEFAULT_PUBLIC_IPv4_LOOKUP_SERVICE_URL).value(), iniGetString("publicIPv4LookupService_JSONKey", WZ_DEFAULT_PUBLIC_IPv4_LOOKUP_SERVICE_JSONKEY).value());
 	setPublicIPv6LookupService(iniGetString("publicIPv6LookupService_Url", WZ_DEFAULT_PUBLIC_IPv6_LOOKUP_SERVICE_URL).value(), iniGetString("publicIPv6LookupService_JSONKey", WZ_DEFAULT_PUBLIC_IPv6_LOOKUP_SERVICE_JSONKEY).value());
@@ -858,6 +863,7 @@ bool saveConfig()
 	iniSetBool("radarRotationArrow", radarRotationArrow);
 	iniSetBool("hostQuitConfirmation", hostQuitConfirmation);
 	iniSetBool("PauseOnFocusLoss", war_GetPauseOnFocusLoss());
+	iniSetString("rating_url", std::string(wz::rating::url()));
 	iniSetString("lobbyserver", NETgetLobbyserverAddress());
 	iniSetString("server_name", war_getLastIpServerConnect());
 	if (!netGameserverPortOverride) // do not save the config port setting if there's a command-line override
