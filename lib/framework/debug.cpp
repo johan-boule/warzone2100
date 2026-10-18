@@ -646,7 +646,7 @@ void _debug(int line, code_part part, const char *function, const char *str, ...
 	char outputBuffer[MAX_LEN_LOG_LINE];
 	thread_local std::array<std::vector<char>, 2> inputBuffer = {std::vector<char>(MAX_LEN_LOG_LINE, 0), std::vector<char>(MAX_LEN_LOG_LINE, 0)};
 	thread_local unsigned int repeated = 0; /* times current message repeated */
-	thread_local unsigned int next = 2;     /* next total to print update */
+	thread_local unsigned int next = 1;     /* next total to print update */
 	thread_local unsigned int prev = 0;     /* total on last update */
 
 	va_list ap;
@@ -680,10 +680,9 @@ void _debug(int line, code_part part, const char *function, const char *str, ...
 	if (strncmp(inputBuffer[0].data(), inputBuffer[1].data(), std::min(inputBuffer[0].size(), inputBuffer[1].size())) == 0)
 	{
 		// Received again the same line
-		repeated++;
-		if (repeated == next)
+		if (++repeated == next)
 		{
-			if (repeated > 2)
+			if (repeated >= 2)
 			{
 				ssprintf(outputBuffer, "last message repeated %u times (total %u repeats)", repeated - prev, repeated);
 			}
@@ -696,25 +695,20 @@ void _debug(int line, code_part part, const char *function, const char *str, ...
 			next *= 2;
 		}
 	}
-	else
+	else if (repeated != prev)
 	{
 		// Received another line, cleanup the old
-		if (repeated > 0 && repeated != prev && repeated != 1)
+		if (repeated > 2)
 		{
-			/* just repeat the previous message when only one repeat occurred */
-			if (repeated > 2)
-			{
-				ssprintf(outputBuffer, "last message repeated %u times (total %u repeats)", repeated - prev, repeated);
-			}
-			else
-			{
-				ssprintf(outputBuffer, "last message repeated %u times", repeated - prev);
-			}
-			printToDebugCallbacks(outputBuffer, part);
+			ssprintf(outputBuffer, "last message repeated %u times (total %u repeats)", repeated - prev, repeated);
 		}
-		repeated = 0;
-		next = 2;
-		prev = 0;
+		else
+		{
+			ssprintf(outputBuffer, "last message repeated %u times", repeated - prev);
+		}
+		printToDebugCallbacks(outputBuffer, part);
+		prev = repeated = 0;
+		next = 1;
 	}
 
 	if (!repeated)
