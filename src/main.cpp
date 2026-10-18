@@ -89,6 +89,7 @@
 #include "mission.h"
 #include "modding.h"
 #include "multiplay.h"
+#include "rating.h"
 #include "notifications.h"
 #include "qtscript.h"
 #include "research.h"
@@ -837,7 +838,7 @@ static bool startGameLoop()
 		// This is because the main loop gets frozen while the window resizing / edge dragging occurs
 		// which effectively pauses the game, and pausing is otherwise disabled in multiplayer games.
 		// FIXME: Figure out a workaround?
-		wzSetWindowIsResizable(false);
+		if (false /* no, the user does what he wants with his computer */) wzSetWindowIsResizable(false);
 	}
 
 	// set a flag for the trigger/event system to indicate initialisation is complete
@@ -1638,6 +1639,8 @@ int realmain(int argc, char *argv[])
 
 	/*** Initialize directory structure ***/
 
+	PHYSFS_mkdir("cache");
+
 	PHYSFS_mkdir("autohost");	// autohost games launched with --autohost=game
 
 	PHYSFS_mkdir("challenges");	// custom challenges
@@ -1931,6 +1934,8 @@ int realmain(int argc, char *argv[])
 #if defined(__EMSCRIPTEN__)
 	initWZEmscriptenHelpers_PostInit();
 #endif
+
+	wz::rating::load_async();
 
 	debug(LOG_MAIN, "Entering main loop");
 	wzMainEventLoop(mainShutdown);
