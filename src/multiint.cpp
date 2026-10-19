@@ -6420,9 +6420,9 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 			if (std::chrono::steady_clock::now() - before > std::chrono::seconds(1)) {
 				debug(LOG_NET, "rating delayed send");
 				got_stats = false;
-				for (uint32_t playerIndex = 0; playerIndex < MAX_CONNECTED_PLAYERS; ++playerIndex)
-					if (playerIndex != NetPlay.hostPlayer && *NetPlay.players[playerIndex].name)
-						sendMultiStats(playerIndex);
+				for (uint32_t i = 0; i < MAX_CONNECTED_PLAYERS; ++i)
+					if (i != NetPlay.hostPlayer && NetPlay.players[i].allocated)
+						sendMultiStats(i);
 			}
 		}
 	}
