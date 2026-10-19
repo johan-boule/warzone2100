@@ -62,7 +62,9 @@ struct PLAYERSTATS
 
 	EcKey identity;
 
-	wz::rating::rating rating;
+	struct : wz::rating::rating {
+		std::string public_key;
+	} rating;
 };
 
 struct RESEARCH;

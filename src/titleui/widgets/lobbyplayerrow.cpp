@@ -361,7 +361,7 @@ void displayPlayer(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 
 		std::string altName;
 		if (NetPlay.players[j].isAdmin) altName += "Op"; //_("Admin");
-		if (!stat.rating.publicKey.empty()) {
+		if (!stat.rating.public_key.empty()) {
 			if (!altName.empty()) altName += ' ';
 			altName += std::to_string(std::lround(stat.rating.elo));
 		}
@@ -739,15 +739,15 @@ void WzPlayerRow::updateState()
 			const std::string b64Identity = base64Encode(identity.toBytes(EcKey::Public));
 			playerInfoTooltip += b64Identity.empty() ? _("(none)") : b64Identity;
 			const auto playerStat = getMultiStats(playerIdx);
-			if (!playerStat.rating.publicKey.empty()) {
+			if (!playerStat.rating.public_key.empty()) {
 				playerInfoTooltip += "\nKnown as: ";
 				playerInfoTooltip += playerStat.rating.name;
-				if (playerStat.rating.publicKey != b64Identity) {
+				if (playerStat.rating.public_key != b64Identity) {
 					playerInfoTooltip += "\nPublic key: ";
-					playerInfoTooltip += playerStat.rating.publicKey;
+					playerInfoTooltip += playerStat.rating.public_key;
 				}
 				playerInfoTooltip += "\nAlive for: ";
-				playerInfoTooltip += std::to_string(std::lround(playerStat.rating.spanDays));
+				playerInfoTooltip += std::to_string(std::lround(playerStat.rating.span_days));
 				playerInfoTooltip += " days\nRating: Grade: ";
 				playerInfoTooltip += std::to_string(std::lround(playerStat.rating.scale * 100));
 				playerInfoTooltip += "%, Elo: ";
@@ -755,15 +755,15 @@ void WzPlayerRow::updateState()
 				playerInfoTooltip += ", Rank: ";
 				playerInfoTooltip += std::to_string(playerStat.rating.rank);
 				playerInfoTooltip += "\nGames won: ";
-				playerInfoTooltip += std::to_string(playerStat.rating.winCount);
+				playerInfoTooltip += std::to_string(playerStat.rating.win_count);
 				playerInfoTooltip += ", lost: ";
-				playerInfoTooltip += std::to_string(playerStat.rating.loseCount);
+				playerInfoTooltip += std::to_string(playerStat.rating.lose_count);
 				playerInfoTooltip += "\nX farm Elo: ";
-				playerInfoTooltip += std::to_string(std::lround(playerStat.rating.xFarmElo));
+				playerInfoTooltip += std::to_string(std::lround(playerStat.rating.x_farm_elo));
 				playerInfoTooltip += "\nPower won versus team: ";
-				playerInfoTooltip += std::to_string(std::lround(playerStat.rating.powerWonVersusTeamRatio * 100));
+				playerInfoTooltip += std::to_string(std::lround(playerStat.rating.power_won_versus_team_ratio * 100));
 				playerInfoTooltip += "%\nResearch lab activity: ";
-				playerInfoTooltip += std::to_string(std::lround(playerStat.rating.researchRatio * 100));
+				playerInfoTooltip += std::to_string(std::lround(playerStat.rating.research_ratio * 100));
 				playerInfoTooltip += "%";
 			}
 		}

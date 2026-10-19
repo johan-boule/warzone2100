@@ -1,11 +1,18 @@
 #include "rating.h"
 #include "multistat.h"
+#include "urlrequest.h"
+#include "lib/framework/wzapp.h"
 #include <cstdlib>
 #include <unordered_map>
 #include <utility>
-#include <filesystem>
 #include <fstream>
+#include <chrono>
+#include <mutex>
+#include <optional>
+#include <functional>
+#include <fmt/format.h>
 #include <nlohmann/json.hpp>
+#include <physfs.h>
 
 namespace wz::rating {
 	inline namespace {
@@ -16,56 +23,133 @@ namespace wz::rating {
 			json.at("rank").get_to(rating.rank);
 			json.at("discounted").get_to(rating.discounted);
 			json.at("spoiled").get_to(rating.spoiled);
-			json.at("gameCount").get_to(rating.gameCount);
-			json.at("winCount").get_to(rating.winCount);
-			json.at("loseCount").get_to(rating.loseCount);
-			json.at("drawCount").get_to(rating.drawCount);
-			json.at("invalidGameCount").get_to(rating.invalidGameCount);
-			json.at("lastSeenDays").get_to(rating.lastSeenDays);
-			json.at("spanDays").get_to(rating.spanDays);
-			json.at("farmElo").get_to(rating.farmElo);
-			json.at("xFarmElo").get_to(rating.xFarmElo);
-			json.at("powerWonVersusTeamRatio").get_to(rating.powerWonVersusTeamRatio);
-			json.at("researchRatio").get_to(rating.researchRatio);
-			json.at("quitTimeRatio").get_to(rating.quitTimeRatio);
+			json.at("gameCount").get_to(rating.game_count);
+			json.at("winCount").get_to(rating.win_count);
+			json.at("loseCount").get_to(rating.lose_count);
+			json.at("drawCount").get_to(rating.draw_count);
+			json.at("invalidGameCount").get_to(rating.invalid_game_count);
+			json.at("lastSeenDays").get_to(rating.last_seen_days);
+			json.at("spanDays").get_to(rating.span_days);
+			json.at("farmElo").get_to(rating.farm_elo);
+			json.at("xFarmElo").get_to(rating.x_farm_elo);
+			json.at("powerWonVersusTeamRatio").get_to(rating.power_won_versus_team_ratio);
+			json.at("researchRatio").get_to(rating.research_ratio);
+			json.at("quitTimeRatio").get_to(rating.quit_time_ratio);
+		}
+
+		constexpr std::string_view default_url_ = "https://warzone2100.retropaganda.info";
+		std::string url_(default_url_);
+
+		std::mutex mutex;
+		std::unordered_map<std::string, std::string> ips, public_keys;
+		std::unordered_map<std::string, rating> elo;
+
+		void download_async(const std::filesystem::path& dir, std::string_view resource, std::function<void (nlohmann::json&&)> callback) {
+			URLDataRequest request;
+			request.url = url_; request.url += '/'; request.url += resource;
+			request.autoRetryStrategy = URLRequestAutoRetryStrategy::RetryAfter(std::chrono::seconds(5));
+			request.onFailure = [=](const std::string& url, URLRequestFailureType type, std::shared_ptr<HTTPResponseDetails> transferDetails) {
+				const auto message = fmt::format("rating download failed: {} {} {} {}",
+					url.c_str(),
+					to_string(type),
+					transferDetails->getInternalResultDescription().c_str(),
+					transferDetails->httpStatusCode()
+				);
+				wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, message.c_str()); });
+			};
+			request.onResponse = [=](const std::string& url, const HTTPResponseDetails& responseDetails, const std::shared_ptr<MemoryStruct>& data) -> URLRequestHandlingBehavior {
+				if (responseDetails.httpStatusCode() != 200) {
+					const auto message = fmt::format("rating download failed: {} {}", url.c_str(), responseDetails.httpStatusCode());
+					wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, message.c_str()); });
+					return URLRequestHandlingBehavior::Done();
+				}
+				try { std::ofstream(dir / resource).write(data->memory, data->size); }
+				catch (const std::exception& e) {
+					const auto message = fmt::format("rating writing failed: {} {}", url.c_str(), e.what());
+					wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, message.c_str()); });
+					return URLRequestHandlingBehavior::Done();
+				}
+				if(std::string timestamp; responseDetails.getHeader("last-modified", timestamp)) {
+					// TODO
+				}
+				std::optional<nlohmann::json> json;
+				try { json = nlohmann::json::parse(data->memory, data->memory + data->size); }
+				catch (const std::exception& e) {
+					const auto message = fmt::format("rating parsing failed: {} {}", url.c_str(), e.what());
+					wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, message.c_str()); });
+					return URLRequestHandlingBehavior::Done();
+				}
+				try { callback(std::move(json.value())); }
+				catch (const std::exception& e) {
+					const auto message = fmt::format("rating loading failed: {} {}", url.c_str(), e.what());
+					wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, message.c_str()); });
+				}
+				const auto message = fmt::format("rating loaded: {}", url.c_str());
+				wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_INFO, message.c_str()); });
+				return URLRequestHandlingBehavior::Done();
+			};
+			urlRequestData(request);
+		}
+
+		template<typename T>
+		void download_async_to(const std::filesystem::path& dir, std::string_view resource, T& output) {
+			download_async(dir, resource, [&](nlohmann::json&& json) {
+				T temp;
+				json.get_to(temp);
+				{ std::lock_guard l(mutex);
+					output = std::move(temp);
+				}
+			});
+		}
+	}
+
+	std::string_view default_url() { return default_url_; }
+	std::string_view url() { return url_; }
+	void url(std::string_view url__) { url_ = url__; }
+
+	void load_async() {
+		std::filesystem::path dir = PHYSFS_getWriteDir(); dir /= "cache";
+		if (const auto ips_path = dir / "player-ips.json"; std::filesystem::exists(ips_path)) {
+			if (NetPlay.isHost) {
+				try { nlohmann::json::parse(std::ifstream(ips_path)).get_to(ips); }
+				catch (const std::exception& e) { debug(LOG_ERROR, "rating loading failed: %s %s", ips_path.filename().c_str(), e.what()); }
+			}
+
+			try { nlohmann::json::parse(std::ifstream(dir / "player-public-keys.json")).get_to(public_keys); }
+			catch (const std::exception& e) { debug(LOG_ERROR, "rating loading failed: %s %s", "player-public-keys.json", e.what()); }
+
+			try { nlohmann::json::parse(std::ifstream(dir / "elo.json")).get_to(public_keys); }
+			catch (const std::exception& e) { debug(LOG_ERROR, "rating loading failed: %s %s", "elo.json", e.what()); }
+		} else if (!url_.empty()) {
+			debug(LOG_INFO, "rating url: %s", url_.c_str());
+			download_async_to(dir, "player-public-keys.json", public_keys);
+			download_async_to(dir, "elo.json", elo);
 		}
 	}
 
 	void apply_rating(std::uint32_t playerIndex) {
-		static const char* const env = std::getenv("WARZONE2100_RATING_DATA_DIR");
-		if (!env) return;
-		static std::unordered_map<std::string, std::string> ips;
-		static std::unordered_map<std::string, std::string> public_keys;
-		static std::unordered_map<std::string, rating> elo;
-		{ static bool loaded = false;
-			if (!loaded) {
-				loaded = true;
-				debug(LOG_INFO, "rating env: %s", env);
-				const std::filesystem::path dir(env);
-				const auto ips_path = dir / "player-ips.json";
-				if (NetPlay.isHost && std::filesystem::exists(ips_path))
-					nlohmann::json::parse(std::ifstream(ips_path)).get_to(ips);
-				nlohmann::json::parse(std::ifstream(dir / "player-public-keys.json")).get_to(public_keys);
-				nlohmann::json::parse(std::ifstream(dir / "elo.json")).get_to(elo);
-				for (auto& [key, value] : elo) value.publicKey = key;
-			}
-		}
-
 		auto& stats = getMultiStats(playerIndex);
-		auto public_key = base64Encode(stats.identity.toBytes(EcKey::Privacy::Public));
 
-		{ const auto it = public_keys.find(public_key);
-			if (it != public_keys.end()) public_key = it->second;
-			else if (NetPlay.isHost) {
-				std::string ip = NetPlay.players[playerIndex].IPtextAddress;
-				const auto it2 = ips.find(NetPlay.players[playerIndex].IPtextAddress);
-				if (it2 != ips.end()) public_key = it2->second;
+		{ std::lock_guard l(mutex);
+			if(elo.empty()) return;
+
+			auto public_key = base64Encode(stats.identity.toBytes(EcKey::Privacy::Public));
+
+			{ const auto it = public_keys.find(public_key);
+				if (it != public_keys.end()) public_key = it->second;
+				else if (NetPlay.isHost) {
+					const auto it2 = ips.find(NetPlay.players[playerIndex].IPtextAddress);
+					if (it2 != ips.end()) public_key = it2->second;
+				}
 			}
-		}
 
-		{ const auto it = elo.find(public_key);
-			if (it == elo.end()) stats.rating = {};
-			else stats.rating = it->second;
+			{ const auto it = elo.find(public_key);
+				if (it == elo.end()) stats.rating = {};
+				else {
+					stats.rating.public_key = it->first;
+					static_cast<rating&>(stats.rating) = it->second;
+				}
+			}
 		}
 
 		if (NetPlay.isHost && !stats.rating.name.empty() && stats.rating.name != NetPlay.players[playerIndex].name)
