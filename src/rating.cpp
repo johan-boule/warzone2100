@@ -55,18 +55,18 @@ namespace wz::rating {
 					transferDetails->getInternalResultDescription().c_str(),
 					transferDetails->httpStatusCode()
 				);
-				wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, message.c_str()); });
+				wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, "%s", message.c_str()); });
 			};
 			request.onResponse = [=](const std::string& url, const HTTPResponseDetails& responseDetails, const std::shared_ptr<MemoryStruct>& data) -> URLRequestHandlingBehavior {
 				if (responseDetails.httpStatusCode() != 200) {
 					const auto message = fmt::format("rating download failed: {} {}", url.c_str(), responseDetails.httpStatusCode());
-					wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, message.c_str()); });
+					wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, "%s", message.c_str()); });
 					return URLRequestHandlingBehavior::Done();
 				}
 				try { std::ofstream(dir / resource).write(data->memory, data->size); }
 				catch (const std::exception& e) {
 					const auto message = fmt::format("rating writing failed: {} {}", url.c_str(), e.what());
-					wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, message.c_str()); });
+					wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, "%s", message.c_str()); });
 					return URLRequestHandlingBehavior::Done();
 				}
 				if(std::string timestamp; responseDetails.getHeader("last-modified", timestamp)) {
@@ -76,16 +76,16 @@ namespace wz::rating {
 				try { json = nlohmann::json::parse(data->memory, data->memory + data->size); }
 				catch (const std::exception& e) {
 					const auto message = fmt::format("rating parsing failed: {} {}", url.c_str(), e.what());
-					wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, message.c_str()); });
+					wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, "%s", message.c_str()); });
 					return URLRequestHandlingBehavior::Done();
 				}
 				try { callback(std::move(json.value())); }
 				catch (const std::exception& e) {
 					const auto message = fmt::format("rating loading failed: {} {}", url.c_str(), e.what());
-					wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, message.c_str()); });
+					wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, "%s", message.c_str()); });
 				}
 				const auto message = fmt::format("rating loaded: {}", url.c_str());
-				wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_INFO, message.c_str()); });
+				wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_INFO, "%s", message.c_str()); });
 				return URLRequestHandlingBehavior::Done();
 			};
 			urlRequestData(request);
