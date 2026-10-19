@@ -63,12 +63,13 @@ namespace wz::rating {
 					wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, "%s", message.c_str()); });
 					return URLRequestHandlingBehavior::Done();
 				}
-				try { std::ofstream(dir / resource).write(data->memory, data->size); }
-				catch (const std::exception& e) {
-					const auto message = fmt::format("rating writing failed: {} {}", url.c_str(), e.what());
-					wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, "%s", message.c_str()); });
-					return URLRequestHandlingBehavior::Done();
-				}
+				if (data->size)
+					try { std::ofstream(dir / resource).write(data->memory, data->size); }
+					catch (const std::exception& e) {
+						const auto message = fmt::format("rating writing failed: {} {}", url.c_str(), e.what());
+						wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, "%s", message.c_str()); });
+						return URLRequestHandlingBehavior::Done();
+					}
 				if(std::string timestamp; responseDetails.getHeader("last-modified", timestamp)) {
 					// TODO
 				}
