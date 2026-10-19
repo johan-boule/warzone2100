@@ -44,9 +44,14 @@ namespace wz::rating {
 		std::unordered_map<std::string, std::string> ips, public_keys;
 		std::unordered_map<std::string, rating> elo;
 
-		void download_async(const std::filesystem::path& dir, std::string_view resource, std::function<void (nlohmann::json&&)> callback) {
+		void download_async(const std::filesystem::path& dest_dir, const std::filesystem::path& sub_path, std::function<void (nlohmann::json&&)> callback) {
+			const auto path = dest_dir / sub_path;
+			auto last_modified_path = path; last_modified_path += ".last-modified";
+			std::string last_modified;
+			std::getline(std::ifstream(last_modified_path), last_modified);
 			URLDataRequest request;
-			request.url = url_; request.url += '/'; request.url += resource;
+			request.url = url_; request.url += '/'; request.url += sub_path.generic_string();
+			if (!last_modified.empty()) request.setRequestHeader("if-modified-since", last_modified);
 			request.autoRetryStrategy = URLRequestAutoRetryStrategy::RetryAfter(std::chrono::seconds(5));
 			request.onFailure = [=](const std::string& url, URLRequestFailureType type, std::shared_ptr<HTTPResponseDetails> transferDetails) {
 				const auto message = fmt::format("rating download failed: {} {} {} {}",
@@ -63,19 +68,11 @@ namespace wz::rating {
 					wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, "%s", message.c_str()); });
 					return URLRequestHandlingBehavior::Done();
 				}
-				if (data->size)
-					try { std::ofstream(dir / resource).write(data->memory, data->size); }
-					catch (const std::exception& e) {
-						const auto message = fmt::format("rating writing failed: {} {}", url.c_str(), e.what());
-						wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, "%s", message.c_str()); });
-						return URLRequestHandlingBehavior::Done();
-					}
-				if(std::string timestamp; responseDetails.getHeader("last-modified", timestamp)) {
-					// TODO
-				}
 				std::optional<nlohmann::json> json;
-				try { json = nlohmann::json::parse(data->memory, data->memory + data->size); }
-				catch (const std::exception& e) {
+				try {
+						if (data->size) json = nlohmann::json::parse(data->memory, data->memory + data->size);
+						else json = nlohmann::json::parse(std::ifstream(path));
+				} catch (const std::exception& e) {
 					const auto message = fmt::format("rating parsing failed: {} {}", url.c_str(), e.what());
 					wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, "%s", message.c_str()); });
 					return URLRequestHandlingBehavior::Done();
@@ -85,7 +82,12 @@ namespace wz::rating {
 					const auto message = fmt::format("rating loading failed: {} {}", url.c_str(), e.what());
 					wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, "%s", message.c_str()); });
 				}
-				const auto message = fmt::format("rating loaded: {}", url.c_str());
+				if (data->size) {
+					std::ofstream(path).write(data->memory, data->size);
+					if (std::string last_modified; responseDetails.getHeader("last-modified", last_modified))
+						std::ofstream(last_modified_path).write(last_modified.data(), last_modified.size());
+				}
+				const auto message = fmt::format("rating async retrieval completed: {}", url.c_str());
 				wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_INFO, "%s", message.c_str()); });
 				return URLRequestHandlingBehavior::Done();
 			};
@@ -93,8 +95,8 @@ namespace wz::rating {
 		}
 
 		template<typename T>
-		void download_async_to(const std::filesystem::path& dir, std::string_view resource, T& output) {
-			download_async(dir, resource, [&](nlohmann::json&& json) {
+		void download_async_to(const std::filesystem::path& dest_dir, const std::filesystem::path& sub_path, T& output) {
+			download_async(dest_dir, sub_path, [&](nlohmann::json&& json) {
 				T temp;
 				json.get_to(temp);
 				{ std::lock_guard l(mutex);
