@@ -725,14 +725,14 @@ static void refreshLobbyAdminStatusForConnectedPlayers()
 					continue;
 			}
 
-			const auto trueIdentity = getTruePlayerIdentity(playerIdx);
-			const bool shouldBeAdmin = trueIdentity.verified
-					&& !trueIdentity.identity.empty()
-					&& identityMatchesAdmin(trueIdentity.identity);
-			if (NetPlay.players[playerIdx].isAdmin != shouldBeAdmin)
-			{
-					NetPlay.players[playerIdx].isAdmin = shouldBeAdmin;
+			if (!NetPlay.players[playerIdx].isAdmin) {
+				if(
+					const auto trueIdentity = getTruePlayerIdentity(playerIdx);
+					trueIdentity.verified && !trueIdentity.identity.empty() && identityMatchesAdmin(trueIdentity.identity)
+				) {
+					NetPlay.players[playerIdx].isAdmin = true;
 					NETBroadcastPlayerInfo(playerIdx);
+				}
 			}
 	}
 }
