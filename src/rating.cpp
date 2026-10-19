@@ -112,7 +112,7 @@ namespace wz::rating {
 		if (const auto ips_path = dir / "player-ips.json"; std::filesystem::exists(ips_path)) {
 			if (NetPlay.isHost) {
 				try { nlohmann::json::parse(std::ifstream(ips_path)).get_to(ips); }
-				catch (const std::exception& e) { debug(LOG_ERROR, "rating loading failed: %s %s", ips_path.filename().c_str(), e.what()); }
+				catch (const std::exception& e) { debug(LOG_ERROR, "rating loading failed: %s %s", ips_path.filename().generic_string().c_str(), e.what()); }
 			}
 
 			try { nlohmann::json::parse(std::ifstream(dir / "player-public-keys.json")).get_to(public_keys); }
