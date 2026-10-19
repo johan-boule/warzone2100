@@ -118,7 +118,7 @@ namespace wz::rating {
 			try { nlohmann::json::parse(std::ifstream(dir / "player-public-keys.json")).get_to(public_keys); }
 			catch (const std::exception& e) { debug(LOG_ERROR, "rating loading failed: %s %s", "player-public-keys.json", e.what()); }
 
-			try { nlohmann::json::parse(std::ifstream(dir / "elo.json")).get_to(public_keys); }
+			try { nlohmann::json::parse(std::ifstream(dir / "elo.json")).get_to(elo); }
 			catch (const std::exception& e) { debug(LOG_ERROR, "rating loading failed: %s %s", "elo.json", e.what()); }
 		} else if (!url_.empty()) {
 			debug(LOG_INFO, "rating url: %s", url_.c_str());
