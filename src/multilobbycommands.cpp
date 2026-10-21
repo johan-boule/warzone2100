@@ -307,7 +307,7 @@ bool processChatLobbySlashCommands(const NetworkTextMessage& message, HostLobbyO
 		}
 		cmdInterface.quitGame(5);
 	}
-	#if 0
+	#ifdef WZ_ENABLE_AGRESSIVE_CHAT_COMMANDS
 	else if (strncmp(&message.text[startingCommandPosition], "kick ", 5) == 0 || strncmp(&message.text[startingCommandPosition], "ban ", 4) == 0)
 	{
 		bool isBan = strncmp(&message.text[startingCommandPosition], "ban", 3) == 0;
@@ -484,6 +484,7 @@ bool processChatLobbySlashCommands(const NetworkTextMessage& message, HostLobbyO
 
 		sendRoomSystemMessage((std::string("Scavangers set to ")+std::to_string(scavsValue)).c_str());
 	}
+	#ifdef WZ_ENABLE_AGRESSIVE_CHAT_COMMANDS
 	else if (strncmp(&message.text[startingCommandPosition], "makespec ", 9) == 0)
 	{
 		ADMIN_REQUIRED_FOR_COMMAND("makespec");
@@ -514,6 +515,7 @@ bool processChatLobbySlashCommands(const NetworkTextMessage& message, HostLobbyO
 			return false;
 		}
 	}
+	#endif
 	else if (strncmp(&message.text[startingCommandPosition], "makeplayer ", 11) == 0)
 	{
 		ADMIN_REQUIRED_FOR_COMMAND("makeplayer");
