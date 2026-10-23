@@ -128,11 +128,17 @@ static void lobbyCommand_PrintHelp(uint32_t receiver)
 	// admin-only commands
 	sendRoomSystemMessageToSingleReceiver("Admin-only commands: (All slots count from 0)", receiver, true);
 	sendRoomSystemMessageToSingleReceiver(LOBBY_COMMAND_PREFIX "swap <slot-from> <slot-to> - Swap player/slot positions", receiver, true);
+	#ifdef WZ_ENABLE_AGRESSIVE_CHAT_COMMANDS
 	sendRoomSystemMessageToSingleReceiver(LOBBY_COMMAND_PREFIX "makespec <slot> - Move a player to spectators", receiver, true);
+	#endif
 	sendRoomSystemMessageToSingleReceiver(LOBBY_COMMAND_PREFIX "makeplayer s<slot> - Request to move a spectator to players", receiver, true);
 	//sendRoomSystemMessageToSingleReceiver(LOBBY_COMMAND_PREFIX "kick <slot> - Kick a player; (or s<slot> for spectator - ex. s0)", receiver, true);
+	#ifdef WZ_ENABLE_AGRESSIVE_CHAT_COMMANDS
 	//mute
 	//unmute
+	//kick
+	//ban
+	#endif
 	sendRoomSystemMessageToSingleReceiver(LOBBY_COMMAND_PREFIX "team <slot> <team> - Change team for player/slot", receiver, true);
 	sendRoomSystemMessageToSingleReceiver(LOBBY_COMMAND_PREFIX "base <base level> - Change base level (0, 1, 2)", receiver, true);
 	sendRoomSystemMessageToSingleReceiver(LOBBY_COMMAND_PREFIX "alliance <alliance type> - Change alliance setting (0, 1, 2, 3)", receiver, true);
