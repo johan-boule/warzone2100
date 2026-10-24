@@ -63,10 +63,14 @@ namespace wz::rating {
 				wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, "%s", message.c_str()); });
 			};
 			request.onResponse = [=](const std::string& url, const HTTPResponseDetails& responseDetails, const std::shared_ptr<MemoryStruct>& data) -> URLRequestHandlingBehavior {
-				if (responseDetails.httpStatusCode() != 200) {
-					const auto message = fmt::format("rating download failed: {} {}", url.c_str(), responseDetails.httpStatusCode());
-					wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, "%s", message.c_str()); });
-					return URLRequestHandlingBehavior::Done();
+				switch (responseDetails.httpStatusCode()) {
+					case 200: // OK: body will have new json
+					case 304: // Not Modified: body will be empty
+						break;
+					default:
+						const auto message = fmt::format("rating download failed: {} {}", url.c_str(), responseDetails.httpStatusCode());
+						wzAsyncExecOnMainThread([message = std::move(message)]{ debug(LOG_ERROR, "%s", message.c_str()); });
+						return URLRequestHandlingBehavior::Done();
 				}
 				std::optional<nlohmann::json> json;
 				try {
