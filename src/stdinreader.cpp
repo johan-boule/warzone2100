@@ -1264,7 +1264,7 @@ int cmdInputThreadFunc(void *)
 		{
 			wzAsyncExecOnMainThread([] {
 				NETlobbyRemoveGameListing();
-				wz_command_interface_output("WZEVENT: lobby off\n");
+				wz_command_interface_output("WZCMD: info: lobby off\n");
 			});
 		}
 		else if(!strncmpl(line, "lobby renew"))
