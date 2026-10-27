@@ -23,6 +23,7 @@ namespace wz::rating {
 			json.at("rank").get_to(rating.rank);
 			json.at("discounted").get_to(rating.discounted);
 			json.at("spoiled").get_to(rating.spoiled);
+			json.at("optedOut").get_to(rating.opted_out);
 			json.at("gameCount").get_to(rating.game_count);
 			json.at("winCount").get_to(rating.win_count);
 			json.at("loseCount").get_to(rating.lose_count);
@@ -159,7 +160,7 @@ namespace wz::rating {
 			}
 		}
 
-		if (NetPlay.isHost && !stats.rating.name.empty() && stats.rating.name != NetPlay.players[playerIndex].name)
+		if (NetPlay.isHost && !stats.rating.opted_out && !stats.rating.name.empty() && stats.rating.name != NetPlay.players[playerIndex].name)
 			NETchangePlayerName(playerIndex, stats.rating.name.data());
 
 		#if 0 // excerpt from lobbyplayerrow.cpp displayPlayer
