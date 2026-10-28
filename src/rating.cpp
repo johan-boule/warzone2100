@@ -152,7 +152,7 @@ namespace wz::rating {
 			}
 
 			{ const auto it = elo.find(public_key);
-				if (it == elo.end()) stats.rating = {};
+				if (it == elo.end() || it->second.opted_out) stats.rating = {};
 				else {
 					stats.rating.public_key = it->first;
 					static_cast<rating&>(stats.rating) = it->second;
