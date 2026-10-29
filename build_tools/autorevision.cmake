@@ -724,7 +724,7 @@ if(true)
 	# TODO It makes no sense to spew all kind of random statistical information about the Git repository.
 	# TODO Particularly, the use of VCS_TAG_TAG_COUNT as the NetCode version is broken logic and perfect design to make everything fail out of the lab.
 	set(warzone2100_version_abi 4.7.0)
-	set(warzone2100_version_impl ${warzone2100_version_abi}-jb19)
+	set(warzone2100_version_impl ${warzone2100_version_abi}-jb20)
 	set(VCS_TAG_NET ${warzone2100_version_abi})
 	set(VCS_TAG ${warzone2100_version_impl})
 	set(VCS_MOST_RECENT_TAGGED_VERSION ${warzone2100_version_impl})
