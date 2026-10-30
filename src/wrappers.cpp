@@ -1,7 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 /*
 	This file is part of Warzone 2100.
 	Copyright (C) 1999-2004  Eidos Interactive
-	Copyright (C) 2005-2020  Warzone 2100 Project
+	Copyright (C) 2005-2026  Warzone 2100 Project (https://github.com/Warzone2100)
 
 	Warzone 2100 is free software; you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
@@ -24,12 +26,16 @@
  */
 
 #include "lib/framework/frame.h"
-#include "lib/framework/frameresource.h"
+#include "lib/framework/gamepad_input.h"
+#include "lib/framework/resource_loading_controller.h"
 // FIXME Direct iVis implementation include!
 #include "lib/ivis_opengl/pieblitfunc.h"
+#include "lib/ivis_opengl/piepalette.h"
 #include "lib/ivis_opengl/piemode.h"
 #include "lib/ivis_opengl/piestate.h"
+#include "lib/ivis_opengl/gfx_api.h"
 #include "lib/ivis_opengl/screen.h"
+#include "lib/ivis_opengl/textdraw.h"
 #include "lib/netplay/connection_provider_registry.h"
 #include "lib/netplay/netplay.h"	// multiplayer
 #include "lib/sound/audio.h"
@@ -37,15 +43,21 @@
 
 #include "clparse.h"
 #include "frontend.h"
+#include "configuration.h"
+#include "loadsave.h"
 #include "mission.h"
 #include "multiint.h"
 #include "multilimit.h"
 #include "multistat.h"
+#include "screens/spectatorgameoverscreen.h"
 #include "warzoneconfig.h"
+#include "gamestate_replay_seek.h"
 #include "wrappers.h"
 #include "titleui/titleui.h"
 #include "stdinreader.h"
 #include "multijoin_helpers.h"
+
+#include <vector>
 
 #if defined(__EMSCRIPTEN__)
 #include <emscripten.h>
@@ -67,54 +79,135 @@ static HostLaunch hostlaunch = HostLaunch::Normal;  // used to detect if we are 
 static bool bHeadlessAutoGameModeCLIOption = false;
 static bool bActualHeadlessAutoGameMode = false;
 static bool bHostLaunchStartNotReady = false;
+static bool loadingScreenSessionActive = false;
 
-static uint32_t lastTick = 0;
-static int barLeftX, barLeftY, barRightX, barRightY, boxWidth, boxHeight, starsNum, starHeight;
-static STAR *stars = nullptr;
+struct LoadingBarLayout
+{
+	int barLeftX = 0;
+	int barLeftY = 0;
+	int barRightX = 0;
+	int barRightY = 0;
+	int boxWidth = 0;
+	int boxHeight = 0;
+	int starsNum = 0;
+	int starHeight = 0;
+	int width = 0;
+	int height = 0;
+};
 
-static STAR newStar()
+static LoadingBarLayout loadingBar;
+static std::vector<STAR> loadingStars;
+
+static std::string loadingDomainLabelPath;
+static WzString loadingDomainLabelFullText;
+static WidthLimitedWzText loadingDomainLabelText;
+
+static STAR newStar(const LoadingBarLayout& layout)
 {
 	STAR s;
-	s.xPos = rand() % barRightX;
+	s.xPos = rand() % layout.barRightX;
 	s.speed = static_cast<int>((rand() % 30 + 6) * pie_GetVideoBufferWidth() / 640.0);
 	s.colour = pal_SetBrightness(150 + rand() % 100);
 	return s;
 }
 
-static void setupLoadingScreen()
+static LoadingBarLayout loadingBarMetricsFor(int width, int height)
 {
-	unsigned int i;
-	int w = pie_GetVideoBufferWidth();
-	int h = pie_GetVideoBufferHeight();
-	int offset;
+	LoadingBarLayout layout;
+	const int offset = static_cast<int>(height / 40.0);
 
-	boxHeight = static_cast<int>(h / 40.0);
-	offset = boxHeight;
-	boxWidth = w - 2 * offset;
+	layout.boxHeight = offset;
+	layout.boxWidth = width - 2 * offset;
+	layout.barRightX = width - offset;
+	layout.barRightY = height - offset;
+	layout.barLeftX = layout.barRightX - layout.boxWidth;
+	layout.barLeftY = layout.barRightY - layout.boxHeight;
+	layout.starsNum = std::max(0, layout.boxWidth / std::max(layout.boxHeight, 1));
+	layout.starHeight = static_cast<int>(2.0 * height / 640.0);
+	layout.width = width;
+	layout.height = height;
+	return layout;
+}
 
-	barRightX = w - offset;
-	barRightY = h - offset;
-
-	barLeftX = barRightX - boxWidth;
-	barLeftY = barRightY - boxHeight;
-
-	starsNum = boxWidth / std::max<int>(boxHeight, 1);
-	starHeight = static_cast<int>(2.0 * h / 640.0);
-
-	if (!stars)
+static void ensureLoadingBarLayout()
+{
+	const int width = pie_GetVideoBufferWidth();
+	const int height = pie_GetVideoBufferHeight();
+	if (width == loadingBar.width && height == loadingBar.height
+		&& static_cast<int>(loadingStars.size()) == loadingBar.starsNum)
 	{
-		stars = (STAR *)malloc(sizeof(STAR) * starsNum);
-		if (!stars)
+		return;
+	}
+
+	loadingBar = loadingBarMetricsFor(width, height);
+	if (loadingBar.starsNum <= 0 || loadingBar.barRightX <= 0)
+	{
+		loadingStars.clear();
+		return;
+	}
+
+	loadingStars.resize(static_cast<size_t>(loadingBar.starsNum));
+	for (STAR& star : loadingStars)
+	{
+		star = newStar(loadingBar);
+	}
+}
+
+static void drawLoadingDomainLabel()
+{
+	const std::string_view path = ResourceLoadingController::instance().loadingDomainPath();
+	if (path.empty() || loadingBar.boxWidth <= 0)
+	{
+		return;
+	}
+
+	constexpr iV_fonts font = font_medium;
+	constexpr int gapPx = 4;
+
+	if (path != loadingDomainLabelPath)
+	{
+		loadingDomainLabelPath.assign(path);
+		// TRANSLATORS: Label above the loading bar.
+		// %s is the nested loading steps, as in "Game / Level data / Map".
+		loadingDomainLabelFullText = WzString::format(_("Loading %s"), loadingDomainLabelPath.c_str());
+	}
+	// No-op unless the text, font or width changed.
+	const size_t barWidth = static_cast<size_t>(loadingBar.boxWidth);
+	loadingDomainLabelText.setTruncatableText(loadingDomainLabelFullText, font, barWidth);
+
+	const int lineSize = iV_GetTextLineSize(font);
+	const int aboveBase = iV_GetTextAboveBase(font);
+	const float baseline = static_cast<float>(loadingBar.barLeftY - gapPx - lineSize - aboveBase);
+	loadingDomainLabelText.render(static_cast<float>(loadingBar.barLeftX), baseline, WZCOL_TEXT_BRIGHT);
+}
+
+static void renderLoadingScreenPass()
+{
+	ensureLoadingBarLayout();
+
+	const PIELIGHT loadingbar_background = WZCOL_LOADING_BAR_BACKGROUND;
+
+	pie_UniTransBoxFill(loadingBar.barLeftX - 2, loadingBar.barLeftY - 2, loadingBar.barRightX + 2, loadingBar.barRightY + 2, loadingbar_background);
+
+	for (size_t i = 1; i < loadingStars.size(); ++i)
+	{
+		loadingStars[i].xPos = loadingStars[i].xPos + loadingStars[i].speed;
+		if (loadingBar.barLeftX + loadingStars[i].xPos >= loadingBar.barRightX)
 		{
-			starsNum = 0;
-			return;
+			loadingStars[i] = newStar(loadingBar);
+			loadingStars[i].xPos = 1;
+		}
+		{
+			const int topX = loadingBar.barLeftX + loadingStars[i].xPos;
+			const int topY = loadingBar.barLeftY + static_cast<int>(i) * (loadingBar.boxHeight - loadingBar.starHeight) / static_cast<int>(loadingStars.size());
+			const int botX = MIN(topX + loadingStars[i].speed, loadingBar.barRightX);
+			const int botY = topY + loadingBar.starHeight;
+
+			pie_UniTransBoxFill(topX, topY, botX, botY, loadingStars[i].colour);
 		}
 	}
 
-	for (i = 0; i < starsNum; ++i)
-	{
-		stars[i] = newStar();
-	}
+	drawLoadingDomainLabel();
 }
 
 bool recalculateEffectiveHeadlessValue()
@@ -188,17 +281,16 @@ TITLECODE titleLoop()
 	TITLECODE RetCode = TITLECODE_CONTINUE;
 
 	pie_SetFogStatus(false);
-	if (!headlessGameMode() && screen_RestartBackDrop())
+	if (!headlessGameMode())
 	{
-		// changed value - draw the backdrop
-		// otherwise, pie_ScreenFrameRenderBegin handles drawing it
-		screen_Display();
+		screen_RestartBackDrop();
 	}
-	wzShowMouse(true);
+	wzShowMouse(!isGamepadActiveInput());
 
 	// When we first init the game, firstcall is true.
 	if (firstcall)
 	{
+		bool replayLaunchedFromCommandLine = false;
 		firstcall = false;
 		// First check to see if --host was given as a command line option, if not,
 		// then check --join and if neither, run the normal game menu.
@@ -242,6 +334,21 @@ TITLECODE titleLoop()
 			// with the correct connection provider type corresponding to discovered connection info.
 			joinLobbyGame(NETgetLobbyserverAddress(), cli_lobby_game_to_connect_str(), cliConnectAsSpectator);
 		}
+		else if (std::string replayFile; gamestate::takeReplayRestart(replayFile, replayLaunchedFromCommandLine))
+		{
+			// A replay seek that couldn't restore any snapshot quit the game to play the replay again from the start
+			// (gamestate_replay_seek.h): load it as the menu does (frontend.cpp, FRONTEND_REPLAY and loadOK)
+			if (replayLaunchedFromCommandLine)
+			{
+				setHostLaunch(HostLaunch::LoadReplay);
+			}
+			SPinit(LEVEL_TYPE::SKIRMISH);
+			bMultiPlayer = true;
+			game.maxPlayers = DEFAULTSKIRMISHMAPMAXPLAYERS;
+			sstrcpy(sRequestResult, replayFile.c_str());
+			sstrcpy(saveGameName, replayFile.c_str());
+			changeTitleMode(LOADSAVEGAME);
+		}
 		else
 		{
 			changeTitleMode(TITLE);			// normal game, run main title screen.
@@ -261,6 +368,7 @@ TITLECODE titleLoop()
 	{
 		return RetCode; // don't flip
 	}
+
 	NETflush();  // Send any pending network data.
 
 	audio_Update();
@@ -278,47 +386,14 @@ TITLECODE titleLoop()
 ////////////////////////////////////////////////////////////////////////////////
 // Loading Screen.
 
-//loadbar update
-void loadingScreenCallback()
+bool isLoadingScreenActive()
 {
-	const PIELIGHT loadingbar_background = WZCOL_LOADING_BAR_BACKGROUND;
-	const uint32_t currTick = wzGetTicks();
-	unsigned int i;
+	return loadingScreenSessionActive;
+}
 
-	if (currTick - lastTick < 50)
-	{
-		return;
-	}
-
-	lastTick = currTick;
-
-	/* Draw the black rectangle at the bottom, with a two pixel border */
-	pie_UniTransBoxFill(barLeftX - 2, barLeftY - 2, barRightX + 2, barRightY + 2, loadingbar_background);
-
-	for (i = 1; i < starsNum; ++i)
-	{
-		stars[i].xPos = stars[i].xPos + stars[i].speed;
-		if (barLeftX + stars[i].xPos >= barRightX)
-		{
-			stars[i] = newStar();
-			stars[i].xPos = 1;
-		}
-		{
-			const int topX = barLeftX + stars[i].xPos;
-			const int topY = barLeftY + i * (boxHeight - starHeight) / starsNum;
-			const int botX = MIN(topX + stars[i].speed, barRightX);
-			const int botY = topY + starHeight;
-
-			pie_UniTransBoxFill(topX, topY, botX, botY, stars[i].colour);
-		}
-	}
-
-	pie_ScreenFrameRenderEnd();
-	pie_ScreenFrameRenderBegin();
-
-	audio_Update();
-
-	wzPumpEventsWhileLoading();
+void wrappers_recordLoadingScreen(const gfx_api::RenderPassContext&)
+{
+	renderLoadingScreenPass();
 }
 
 #if defined(__EMSCRIPTEN__)
@@ -335,18 +410,14 @@ void wzemscripten_display_web_loading_indicator(int x)
 }
 #endif
 
-// fill buffers with the static screen
+// Bar geometry is derived on the first loading-pass record.
 void initLoadingScreen(bool drawbdrop)
 {
-	pie_ScreenFrameRenderBegin(); // start a frame *if one isn't yet started*
-	setupLoadingScreen();
 	wzShowMouse(false);
 	pie_SetFogStatus(false);
+	loadingScreenSessionActive = true;
 
-#if !defined(__EMSCRIPTEN__)
-	// setup the callback....
-	resSetLoadCallback(loadingScreenCallback);
-#else
+#if defined(__EMSCRIPTEN__)
 	wzemscripten_display_web_loading_indicator(1);
 #endif
 
@@ -367,14 +438,16 @@ void initLoadingScreen(bool drawbdrop)
 // shut down the loading screen
 void closeLoadingScreen()
 {
-	if (stars)
-	{
-		free(stars);
-		stars = nullptr;
-	}
-#if !defined(__EMSCRIPTEN__)
-	resSetLoadCallback(nullptr);
-#else
+	loadingScreenSessionActive = false;
+
+	loadingStars.clear();
+	loadingStars.shrink_to_fit();
+	loadingBar = {};
+	// Release the cached texture before graphics shutdown.
+	loadingDomainLabelPath.clear();
+	loadingDomainLabelFullText = WzString();
+	loadingDomainLabelText = WidthLimitedWzText();
+#if defined(__EMSCRIPTEN__)
 	wzemscripten_display_web_loading_indicator(0);
 #endif
 }
@@ -434,12 +507,13 @@ bool displayGameOver(bool bDidit, bool showBackDrop)
 			updateMultiStatsLoses();
 		}
 	}
-	if (bMultiPlayer && isFirstCallForThisGame)
+	// Replay viewers have no profile stats to save
+	if (bMultiPlayer && isFirstCallForThisGame && !NETisReplay() && selectedPlayer < MAX_CONNECTED_PLAYERS)
 	{
 		updateMultiStatsGames(); // update games played.
 
 		PLAYERSTATS st = getMultiStats(selectedPlayer);
-		saveMultiStats(getPlayerName(selectedPlayer), getPlayerName(selectedPlayer), &st);
+		saveMultiStats(sPlayer, sPlayer, &st);
 	}
 
 	//clear out any mission widgets - timers etc that may be on the screen
@@ -447,10 +521,8 @@ bool displayGameOver(bool bDidit, bool showBackDrop)
 
 	if (bMultiPlayer && NetPlay.players[selectedPlayer].isSpectator)
 	{
-		// Special message for spectators to inform them that the game is fully over
-		addConsoleMessage(_("GAME OVER"), CENTRE_JUSTIFY, SYSTEM_MESSAGE, false, MAX_CONSOLE_MESSAGE_DURATION);
-		addConsoleMessage(_("The battle is over - you can leave the room."), CENTRE_JUSTIFY, SYSTEM_MESSAGE, false, MAX_CONSOLE_MESSAGE_DURATION);
-		// TODO: Display this in a form with a "Quit to Main Menu" button?, or adapt intAddMissionResult to have a separate display for spectators?
+		// Special screen for spectators to inform them that the game is fully over
+		showSpectatorGameOverScreen();
 	}
 	else
 	{

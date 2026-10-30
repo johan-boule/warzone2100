@@ -56,10 +56,11 @@ struct PROJECTILE : public SIMPLE_OBJECT
 
 	Vector3i        src = Vector3i(0, 0, 0); ///< Where projectile started
 	Vector3i        dst = Vector3i(0, 0, 0); ///< The target coordinates
-	SDWORD          vXY, vZ;                ///< axis velocities
+	SDWORD          vXY = 0, vZ = 0;        ///< axis velocities (only set, and only read, for indirect weapons)
 	Spacetime       prevSpacetime;          ///< Location of projectile in previous tick.
 	UDWORD          expectedDamageCaused;   ///< Expected damage that this projectile will cause to the target.
 	int             partVisible;            ///< how much of target was visible on shooting (important for homing)
+	bool            penetratingProjectile;  ///< If the projectile is the post-impact spawned one
 };
 
 typedef std::vector<PROJECTILE *>::const_iterator ProjectileIterator;

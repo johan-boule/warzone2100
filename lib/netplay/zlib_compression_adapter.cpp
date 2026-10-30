@@ -33,7 +33,7 @@ ZlibCompressionAdapter::ZlibCompressionAdapter()
 ZlibCompressionAdapter::~ZlibCompressionAdapter()
 {
 	deflateEnd(&deflateStream_);
-	deflateEnd(&inflateStream_);
+	inflateEnd(&inflateStream_);
 }
 
 net::result<void> ZlibCompressionAdapter::initialize()
@@ -150,20 +150,17 @@ net::result<void> ZlibCompressionAdapter::decompress(void* dst, size_t size)
 	char const* err = nullptr;
 	switch (ret)
 	{
-	case Z_NEED_DICT:  err = "Z_NEED_DICT";  break;
-	case Z_DATA_ERROR: err = "Z_DATA_ERROR"; break;
-	case Z_MEM_ERROR:  err = "Z_MEM_ERROR";  break;
+	case Z_NEED_DICT:    err = "Z_NEED_DICT";   break;
+	case Z_DATA_ERROR:   err = "Z_DATA_ERROR";  break;
+	case Z_MEM_ERROR:    err = "Z_MEM_ERROR";   break;
+	// Z_STREAM_ERROR indicates an inconsistent stream state (not malformed input)
+	// it shouldn't happen, but treat it as an error regardless
+	case Z_STREAM_ERROR: err = "Z_STREAM_ERROR"; break;
+	case Z_STREAM_END:   err = "Z_STREAM_END";  break;
 	}
-	if (ret == Z_STREAM_ERROR)
+	if (err != nullptr)
 	{
-		if (err)
-		{
-			debug(LOG_ERROR, "Couldn't decompress data from socket. zlib error %s", err);
-		}
-		else
-		{
-			debug(LOG_ERROR, "Couldn't decompress data from socket. Unknown zlib error");
-		}
+		debug(LOG_ERROR, "Couldn't decompress data from socket. zlib error %s", err);
 		return tl::make_unexpected(make_zlib_error_code(ret));
 	}
 	return {};

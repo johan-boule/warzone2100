@@ -82,7 +82,6 @@
 #include "titleui/gamebrowser.h"
 #include "urlhelpers.h"
 #include "game.h"
-#include "map.h" //for builtInMap and useTerrainOverrides
 #include "notifications.h"
 #include "activity.h"
 #include "hci/groups.h"
@@ -261,9 +260,12 @@ bool runTitleMenu()
 		break;
 	}
 
-	widgDisplayScreen(psWScreen); // show the widgets currently running
-
 	return true;
+}
+
+void displayTitleMenu()
+{
+	widgDisplayScreen(psWScreen); // show the widgets currently running
 }
 
 
@@ -317,9 +319,12 @@ bool runTutorialMenu()
 		changeTitleMode(TITLE);
 	}
 
-	widgDisplayScreen(psWScreen);						// show the widgets currently running
-
 	return true;
+}
+
+void displayTutorialMenu()
+{
+	widgDisplayScreen(psWScreen);						// show the widgets currently running
 }
 
 
@@ -328,6 +333,7 @@ bool runTutorialMenu()
 void startSinglePlayerMenu()
 {
 	challengeActive = false;
+	challengeFileName = "";
 	addBackdrop();
 	addTopForm(false);
 	addBottomForm();
@@ -379,8 +385,6 @@ void SPinit(LEVEL_TYPE gameType)
 	}
 	setPlayerColour(0, playercolor);
 	game.hash.setZero();	// must reset this to zero
-	builtInMap = true;
-	useTerrainOverrides = true;
 }
 
 bool runSinglePlayerMenu()
@@ -458,6 +462,11 @@ bool runSinglePlayerMenu()
 		}
 	}
 
+	return true;
+}
+
+void displaySinglePlayerMenu()
+{
 	if (!bLoadSaveUp && !challengesUp)						// if save/load screen is up
 	{
 		widgDisplayScreen(psWScreen);						// show the widgets currently running
@@ -470,8 +479,6 @@ bool runSinglePlayerMenu()
 	{
 		displayChallenges();
 	}
-
-	return true;
 }
 
 
@@ -555,6 +562,11 @@ bool runMultiPlayerMenu()
 		}
 	}
 
+	return true;
+}
+
+void displayMultiPlayerMenu()
+{
 	if (!bLoadSaveUp)
 	{
 		widgDisplayScreen(psWScreen);		// show the widgets currently running
@@ -563,8 +575,6 @@ bool runMultiPlayerMenu()
 	{
 		displayLoadSave();
 	}
-
-	return true;
 }
 
 std::vector<unsigned int> availableDisplayScalesSorted()

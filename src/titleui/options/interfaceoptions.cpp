@@ -232,6 +232,25 @@ std::shared_ptr<OptionsForm> makeInterfaceOptionsForm(bool inGame, const std::fu
 		result->addOption(optionInfo, valueChanger, true);
 	}
 	{
+		auto optionInfo = OptionInfo("interface.game.showUnitRangeRings", N_("Show Unit Range Rings"), "");
+		auto valueChanger = OptionsDropdown<bool>::make(
+			[]() {
+				OptionChoices<bool> result;
+				result.choices = {
+					{ _("Off"), "", false },
+					{ _("On"), "", true },
+				};
+				result.setCurrentIdxForValue(rangeOnScreen);
+				return result;
+			},
+			[](const auto& newValue) -> bool {
+				setRangeOnScreen(newValue);
+				return true;
+			}, true
+		);
+		result->addOption(optionInfo, valueChanger, true);
+	}
+	{
 		auto optionInfo = OptionInfo("interface.game.groupsMenu", N_("Groups Menu"), "");
 		auto valueChanger = OptionsDropdown<bool>::make(
 			[]() {
@@ -327,6 +346,27 @@ std::shared_ptr<OptionsForm> makeInterfaceOptionsForm(bool inGame, const std::fu
 			[]() { return war_GetRadarZoom(); },
 			[](int32_t newValue) {
 				war_SetRadarZoom(newValue);
+			}, false
+		);
+		result->addOption(optionInfo, valueChanger, true);
+	}
+
+	result->addSection(OptionsSection(N_("Multiplayer"), ""), true);
+	{
+		auto optionInfo = OptionInfo("interface.multiplayer.chat", N_("Text Chat"), N_("Whether to enable free chat in online multiplayer games. Does not affect local skirmish / challenge / campaign games."));
+		auto valueChanger = OptionsDropdown<MP_CHAT_MODE>::make(
+			[]() {
+				OptionChoices<MP_CHAT_MODE> result;
+				result.choices = {
+					{ _("Quick Chat Only"), _("Hide incoming free chat from other players, and only allow sending Quick Chat."), MP_CHAT_MODE::QUICK_CHAT_ONLY },
+					{ _("On"), _("Allow both free chat and Quick Chat."), MP_CHAT_MODE::ON },
+				};
+				result.setCurrentIdxForValue(war_getMPChatMode());
+				return result;
+			},
+			[](const auto& newValue) -> bool {
+				war_setMPChatMode(newValue);
+				return true;
 			}, false
 		);
 		result->addOption(optionInfo, valueChanger, true);

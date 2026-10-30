@@ -139,6 +139,62 @@ NETQUEUE NETgameQueue(unsigned player)
 	return ret;
 }
 
+std::vector<std::vector<uint8_t>> NETgameQueueCapturePending(unsigned player)
+{
+	ASSERT_OR_RETURN({}, player < MAX_GAMEQUEUE_SLOTS, "Invalid game queue slot %u", player);
+	NetQueue *queue = gameQueues[player];
+	if (queue == nullptr)
+	{
+		return {};
+	}
+	return queue->snapshotUnreadMessages();
+}
+
+void NETgameQueueReset(unsigned player)
+{
+	ASSERT_OR_RETURN(, player < MAX_GAMEQUEUE_SLOTS, "Invalid game queue slot %u", player);
+	NetQueue *old = gameQueues[player];
+	if (old == nullptr)
+	{
+		return;
+	}
+	NetQueue *fresh = new NetQueue;
+	if (!old->getsMessagesForNet())
+	{
+		fresh->setWillNeverGetMessagesForNet();
+	}
+	if (!old->getsMessages())
+	{
+		fresh->setWillNeverGetMessages();
+	}
+	delete old;
+	gameQueues[player] = fresh;
+}
+
+size_t NETgameQueueRestorePending(unsigned player, const std::vector<std::vector<uint8_t>> &rawMessages)
+{
+	ASSERT_OR_RETURN(0, player < MAX_GAMEQUEUE_SLOTS, "Invalid game queue slot %u", player);
+	NetQueue *queue = gameQueues[player];
+	if (queue == nullptr)
+	{
+		return 0;  // queues not yet allocated (caller should treat as "could not restore")
+	}
+	size_t restored = 0;
+	for (const std::vector<uint8_t> &raw : rawMessages)
+	{
+		optional<NetMessage> msg = NetMessage::tryFromRawData(raw.data(), raw.size());
+		// Each saved entry is a single game message
+		if (!msg.has_value() || msg->rawData().size() != raw.size() || !(msg->type() > GAME_MIN_TYPE && msg->type() < GAME_MAX_TYPE))
+		{
+			debug(LOG_ERROR, "Discarding malformed pending game-queue message for slot %u", player);
+			continue;
+		}
+		queue->pushMessage(std::move(msg.value()));
+		++restored;
+	}
+	return restored;
+}
+
 bool NETgameIsBehindPlayersByAtLeast(size_t numGameTimeUpdates /*= 2*/)
 {
 	// if we should be waited on, then there's no reason we should be behind other players
@@ -357,12 +413,23 @@ optional<MessageWriter> NETbeginEncodeSecured(NETQUEUE queue, uint8_t type)
 // Notes:
 //	- *DO NOT CALL NETend() if this returns false!!*
 //	- Only for NET_* messages
-optional<MessageReader> NETbeginDecodeSecured(NETQUEUE queue, uint8_t type)
+optional<MessageReader> NETbeginDecodeSecured(NETQUEUE queue, uint8_t type, bool* pNotSecured)
 {
 	ASSERT_OR_RETURN(nullopt, type < NET_MAX_TYPE, "Message type %u is >= NET_MAX_TYPE", static_cast<unsigned>(type));
-	ASSERT_OR_RETURN(nullopt, queue.index != realSelectedPlayer, "Secured messages are for other players, not ourselves.");
-	ASSERT_OR_RETURN(nullopt, queue.index < MAX_PLAYERS || queue.index == NetPlay.hostPlayer, "Invalid sender (queue.index == %u)", static_cast<unsigned>(queue.index));
-	ASSERT_OR_RETURN(nullopt, receiveQueue(queue)->currentMessageWasDecrypted(), "Message was not sent secured (type: %s)", messageTypeToString(type));
+	if (queue.index == realSelectedPlayer
+		|| (queue.index >= MAX_PLAYERS && queue.index != NetPlay.hostPlayer))
+	{
+		return nullopt;
+	}
+	if (!receiveQueue(queue)->currentMessageWasDecrypted())
+	{
+		debug(LOG_NET, "Ignoring %s from %u that was not sent secured", messageTypeToString(type), static_cast<unsigned>(queue.index));
+		if (pNotSecured)
+		{
+			*pNotSecured = true;
+		}
+		return nullopt;
+	}
 
 	return NETbeginDecode(queue, type);
 }
@@ -370,10 +437,14 @@ optional<MessageReader> NETbeginDecodeSecured(NETQUEUE queue, uint8_t type)
 // Decrypts a secured net message in a queue *and replaces it with the decrypted message*
 // If message is successfully decrypted:
 //	- Returns true, updates the current message in queue to be the decrypted message, updates `type`
-bool NETdecryptSecuredNetMessage(NETQUEUE queue, uint8_t& type)
+// Otherwise returns false and sets `failureReason`
+bool NETdecryptSecuredNetMessage(NETQUEUE queue, uint8_t& type, const char*& failureReason)
 {
-	ASSERT_OR_RETURN(false, queue.index < MAX_PLAYERS || queue.index == NetPlay.hostPlayer, "Invalid sender (queue.index == %u", static_cast<unsigned>(queue.index));
-	ASSERT_OR_RETURN(false, netSessionKeys[queue.index] != nullptr, "Lacking session key for player: %u", static_cast<unsigned>(queue.index));
+	if ((queue.index >= MAX_PLAYERS && queue.index != NetPlay.hostPlayer) || queue.index >= netSessionKeys.size() || netSessionKeys[queue.index] == nullptr)
+	{
+		failureReason = "no session key";
+		return false;
+	}
 	ASSERT_OR_RETURN(false, type == NET_SECURED_NET_MESSAGE, "Not a secured message?");
 
 	auto pReceiveQueue = receiveQueue(queue);
@@ -384,20 +455,21 @@ bool NETdecryptSecuredNetMessage(NETQUEUE queue, uint8_t& type)
 	std::vector<uint8_t> decryptedMessageRawData;
 	if (!netSessionKeys[queue.index]->decryptMessageFromOther(encryptedMessage.payload(), encryptedMessage.payloadSize(), decryptedMessageRawData))
 	{
-		debug(LOG_INFO, "Invalid encrypted message from player: %u", static_cast<unsigned>(queue.index));
+		failureReason = "decryption failed";
 		return false;
 	}
 
 	auto decryptedMessage = NetMessage::tryFromRawData(decryptedMessageRawData.data(), decryptedMessageRawData.size());
 	if (!decryptedMessage)
 	{
-		debug(LOG_INFO, "Failed to parse decrypted data from player: %u", static_cast<unsigned>(queue.index));
+		failureReason = "invalid decrypted message";
 		return false;
 	}
 
 	if (!(decryptedMessage->type() > NET_MIN_TYPE && decryptedMessage->type() < NET_MAX_TYPE))
 	{
 		debug(LOG_NET, "Not a secured NET_* message? (type: %s) - ignoring", messageTypeToString(decryptedMessage->type()));
+		failureReason = "not a NET_* message";
 		return false;
 	}
 
@@ -405,6 +477,7 @@ bool NETdecryptSecuredNetMessage(NETQUEUE queue, uint8_t& type)
 	{
 		// Ignore message types that aren't expected to be secured
 		debug(LOG_NET, "Not a message type that's expected to be secured: (type: %s) - ignoring", messageTypeToString(decryptedMessage->type()));
+		failureReason = "message type not expected to be secured";
 		return false;
 	}
 
@@ -413,6 +486,28 @@ bool NETdecryptSecuredNetMessage(NETQUEUE queue, uint8_t& type)
 	type = decryptedMessage->type(); // must update type!
 	pReceiveQueue->replaceCurrentWithDecrypted(std::move(*decryptedMessage));
 	return true;
+}
+
+bool NETcount(MessageReader& r, uint32_t& count, uint32_t maxCount, size_t minElemBytes, const std::function<void (uint32_t invalidCount)>& onInvalid)
+{
+	NETuint32_t(r, count);
+	if (!r.valid() || count > maxCount || (minElemBytes > 0 && count > r.remaining() / minElemBytes))
+	{
+		uint32_t invalidCount = count;
+		count = 0;
+		r.markInvalid();
+		if (onInvalid)
+		{
+			onInvalid(invalidCount);
+		}
+		return false;
+	}
+	return true;
+}
+
+bool NETcount(MessageReader& r, uint32_t& count, uint32_t maxCount, size_t minElemBytes)
+{
+	return NETcount(r, count, maxCount, minElemBytes, nullptr);
 }
 
 bool NETend(MessageReader& r)
@@ -426,6 +521,14 @@ bool NETend(MessageReader& r)
 }
 
 static std::vector<uint8_t> tmpMessageRawDataBuffer;
+
+bool NETcount(MessageWriter& w, uint32_t count, uint32_t maxCount, size_t minElemBytes)
+{
+	(void)minElemBytes;
+	ASSERT(count <= maxCount, "Count %" PRIu32 " exceeds maximum %" PRIu32, count, maxCount);
+	NETuint32_t(w, count);
+	return count <= maxCount;
+}
 
 bool NETend(MessageWriter& w)
 {
@@ -459,7 +562,7 @@ bool NETend(MessageWriter& w)
 		tmpMessageRawDataBuffer.clear();
 		msg.rawDataAppendToVector(tmpMessageRawDataBuffer);
 
-		auto encryptedData = netSessionKeys[w.queueInfo.index]->encryptMessageForOther(&tmpMessageRawDataBuffer[0], tmpMessageRawDataBuffer.size());
+		auto encryptedData = netSessionKeys[w.queueInfo.index]->encryptMessageForOther(tmpMessageRawDataBuffer.data(), tmpMessageRawDataBuffer.size());
 		NetMessageBuilder encryptedNetMessage(NET_SECURED_NET_MESSAGE, encryptedData.size());
 		encryptedNetMessage.append(encryptedData.data(), encryptedData.size());
 		msg = encryptedNetMessage.build();
@@ -544,25 +647,45 @@ void NETflushGameQueues()
 			continue;  // Can't send for this player.
 		}
 
-		uint32_t num = queue->numMessagesForNet();
+		uint32_t remaining = queue->numMessagesForNet();
 
-		if (num <= 0)
+		if (remaining <= 0)
 		{
 			continue;  // Nothing to send for this player.
 		}
 
 		ASSERT(!bIsReplay, "Where are we sending this if it's a replay?");
 
-		// Decoded in NETprocessSystemMessage in netplay.cpp.
-		auto w = NETbeginEncode(NETbroadcastQueue(), NET_SHARE_GAME_QUEUE);
-		NETuint8_t(w, player);
-		NETuint32_t(w, num);
-		for (uint32_t n = 0; n < num; ++n)
+		// Split into several messages if needed, so that each fits in MaxMsgSize (encoded lengths take at most 5 bytes)
+		std::vector<NetMessage> batch;
+		while (remaining > 0)
 		{
-			NETnetMessage(w, queue->getMessageForNet());
-			queue->popMessageForNet();
+			batch.clear();
+			size_t payloadSize = 1 + 5;
+			while (batch.size() < remaining)
+			{
+				const NetMessage &message = queue->getMessageForNet();
+				const size_t messageSize = 5 + message.rawData().size();
+				if (!batch.empty() && payloadSize + messageSize > MaxMsgSize)
+				{
+					break;
+				}
+				payloadSize += messageSize;
+				batch.push_back(message);
+				queue->popMessageForNet();
+			}
+			remaining -= static_cast<uint32_t>(batch.size());
+
+			// Decoded in NETprocessSystemMessage in netplay.cpp.
+			auto w = NETbeginEncode(NETbroadcastQueue(), NET_SHARE_GAME_QUEUE);
+			NETuint8_t(w, player);
+			NETuint32_t(w, static_cast<uint32_t>(batch.size()));
+			for (const NetMessage &message : batch)
+			{
+				NETnetMessage(w, message);
+			}
+			NETend(w);
 		}
-		NETend(w);
 	}
 }
 
@@ -592,9 +715,44 @@ void NETbytesOutputToVector(const std::vector<uint8_t> &data, std::vector<uint8_
 
 ReplayOptionsHandler::~ReplayOptionsHandler() { }
 
+// The messages NETloadReplay put into each game queue, in read order:
+// the raw message bytes back to back, and where each message starts.
+// (Kept read-only for the whole playback, see NETreplayReadPositions.)
+struct LoadedReplayQueue
+{
+	std::vector<uint8_t> bytes;
+	std::vector<uint32_t> offsets;
+
+	void add(const NetMessage &message)
+	{
+		offsets.push_back(static_cast<uint32_t>(bytes.size()));
+		message.rawDataAppendToVector(bytes);
+	}
+	size_t count() const { return offsets.size(); }
+	optional<NetMessage> message(size_t i) const
+	{
+		const size_t end = (i + 1 < offsets.size()) ? offsets[i + 1] : bytes.size();
+		return NetMessage::tryFromRawData(bytes.data() + offsets[i], end - offsets[i]);
+	}
+};
+static std::array<LoadedReplayQueue, MAX_GAMEQUEUE_SLOTS> loadedReplayQueues;
+static std::string loadedReplayFilename;
+static uint32_t loadedReplayEndGameTime = 0;
+
+static void clearLoadedReplayQueues()
+{
+	for (auto &q : loadedReplayQueues)
+	{
+		q = LoadedReplayQueue();
+	}
+	loadedReplayFilename.clear();
+	loadedReplayEndGameTime = 0;
+}
+
 // TODO Call this function somewhere.
 bool NETloadReplay(std::string const &filename, ReplayOptionsHandler& optionsHandler)
 {
+	clearLoadedReplayQueues();
 	uint32_t replayFormatVer = 0;
 	if (!NETreplayLoadStart(filename, optionsHandler, replayFormatVer))
 	{
@@ -605,7 +763,7 @@ bool NETloadReplay(std::string const &filename, ReplayOptionsHandler& optionsHan
 	bool gotReplayEnded = false;
 	while (NETreplayLoadNetMessage(newMessage, player))
 	{
-		if ((player >= MAX_PLAYERS && player != NetPlay.hostPlayer) || gameQueues[player] == nullptr)
+		if (player >= MAX_GAMEQUEUE_SLOTS || (player >= MAX_PLAYERS && player != NetPlay.hostPlayer) || gameQueues[player] == nullptr)
 		{
 			debug((newMessage->type() != GAME_GAME_TIME) ? LOG_ERROR : LOG_INFO, "Skipping message to player %d in replay.", player);
 			continue;
@@ -615,6 +773,7 @@ bool NETloadReplay(std::string const &filename, ReplayOptionsHandler& optionsHan
 			gotReplayEnded = true;
 			break;
 		}
+		loadedReplayQueues[player].add(*newMessage);
 		gameQueues[player]->pushMessage(std::move(*newMessage));
 	}
 	if (!gotReplayEnded && replayFormatVer >= 2)
@@ -624,8 +783,17 @@ bool NETloadReplay(std::string const &filename, ReplayOptionsHandler& optionsHan
 		NETshutdownReplay();
 		return false;
 	}
+	if (gotReplayEnded && !NETreplayLoadEndInfo(loadedReplayEndGameTime))
+	{
+		debug(LOG_WARNING, "The replay has no readable end-of-game info: its length is unknown");
+		loadedReplayEndGameTime = 0;
+	}
+	loadedReplayFilename = filename;
+	debug(LOG_INFO, "Replay loaded: %s, which ends at gameTime %u", filename.c_str(), loadedReplayEndGameTime);
 	// Add special REPLAY_ENDED message to the end of the host's gameQueue
-	gameQueues[NetPlay.hostPlayer]->pushMessage(NetMessageBuilder(REPLAY_ENDED, 0).build());
+	NetMessage replayEnded = NetMessageBuilder(REPLAY_ENDED, 0).build();
+	loadedReplayQueues[NetPlay.hostPlayer].add(replayEnded);
+	gameQueues[NetPlay.hostPlayer]->pushMessage(std::move(replayEnded));
 	NETreplayLoadStop();
 	bIsReplay = true;
 	return true;
@@ -646,6 +814,106 @@ void NETshutdownReplay()
 	}
 
 	bIsReplay = false;
+	clearLoadedReplayQueues();
+}
+
+std::vector<uint32_t> NETreplayReadPositions()
+{
+	if (!bIsReplay)
+	{
+		return {};
+	}
+	std::vector<uint32_t> positions(MAX_GAMEQUEUE_SLOTS, 0);
+	for (unsigned p = 0; p < MAX_GAMEQUEUE_SLOTS; ++p)
+	{
+		const size_t unread = gameQueues[p] ? gameQueues[p]->numUnreadMessages() : 0;
+		ASSERT(unread <= loadedReplayQueues[p].count(), "Game queue %u has more unread messages (%zu) than the replay loaded (%zu)", p, unread, loadedReplayQueues[p].count());
+		positions[p] = static_cast<uint32_t>(loadedReplayQueues[p].count() - std::min(unread, loadedReplayQueues[p].count()));
+	}
+	return positions;
+}
+
+bool NETreplayCheckReadPositions(const std::vector<uint32_t> &positions, std::string *error)
+{
+	auto fail = [&](const std::string &why) {
+		if (error != nullptr)
+		{
+			*error = why;
+		}
+		return false;
+	};
+	if (!bIsReplay)
+	{
+		return fail("not playing a replay");
+	}
+	if (positions.size() != MAX_GAMEQUEUE_SLOTS)
+	{
+		return fail("replay read positions for " + std::to_string(positions.size()) + " game queues, not " + std::to_string(MAX_GAMEQUEUE_SLOTS));
+	}
+	for (unsigned p = 0; p < MAX_GAMEQUEUE_SLOTS; ++p)
+	{
+		if (positions[p] > loadedReplayQueues[p].count())
+		{
+			return fail("replay read position " + std::to_string(positions[p]) + " of game queue " + std::to_string(p) + " is past its "
+			            + std::to_string(loadedReplayQueues[p].count()) + " message(s)");
+		}
+		if (loadedReplayQueues[p].count() > 0 && gameQueues[p] == nullptr)
+		{
+			return fail("game queue " + std::to_string(p) + " doesn't exist");
+		}
+	}
+	return true;
+}
+
+bool NETreplayRestoreReadPositions(const std::vector<uint32_t> &positions)
+{
+	std::string error;
+	if (!NETreplayCheckReadPositions(positions, &error))
+	{
+		debug(LOG_ERROR, "Can't restore the replay read positions: %s", error.c_str());
+		return false;
+	}
+	for (unsigned p = 0; p < MAX_GAMEQUEUE_SLOTS; ++p)
+	{
+		if (gameQueues[p] == nullptr || loadedReplayQueues[p].count() == 0)
+		{
+			continue;  // a queue the replay doesn't feed (the viewer's own) is the caller's
+		}
+		NETgameQueueReset(p);
+		const LoadedReplayQueue &loaded = loadedReplayQueues[p];
+		for (size_t i = positions[p]; i < loaded.count(); ++i)
+		{
+			optional<NetMessage> message = loaded.message(i);
+			ASSERT_OR_RETURN(false, message.has_value(), "Kept replay message %zu of game queue %u can't be read back", i, p);
+			gameQueues[p]->pushMessage(std::move(message.value()));
+		}
+	}
+	return true;
+}
+
+const std::string &NETreplayFilename()
+{
+	return loadedReplayFilename;
+}
+
+uint32_t NETreplayEndGameTime()
+{
+	return loadedReplayEndGameTime;
+}
+
+size_t NETreplayLoadedCount(unsigned player)
+{
+	return player < MAX_GAMEQUEUE_SLOTS ? loadedReplayQueues[player].count() : 0;
+}
+
+size_t NETreplayLoadedSize()
+{
+	size_t size = 0;
+	for (const auto &q : loadedReplayQueues)
+	{
+		size += q.bytes.size() + q.offsets.size() * sizeof(uint32_t);
+	}
+	return size;
 }
 
 // New overloads implementation
@@ -748,10 +1016,15 @@ void NETstring(MessageReader &r, char *str, uint16_t maxlen)
 {
     uint16_t len;
     NETuint16_t(r, len);
-    len = std::min(len, maxlen);
+
+    uint16_t maxReadLen = (maxlen > 0) ? static_cast<uint16_t>(maxlen - 1) : 0;
+    len = std::min(len, maxReadLen);
 
     r.bytes((uint8_t *)str, len);
-    str[len] = '\0';
+    if (maxlen > 0)
+    {
+        str[len] = '\0';
+    }
 }
 
 void NETstring(MessageReader& r, std::string& s, uint32_t maxLen /* = 65536 */)
@@ -791,11 +1064,51 @@ void NETVector2i(MessageReader& r, Vector2i& vec)
 	NETint32_t(r, vec.y);
 }
 
-void NETnetMessage(MessageReader& r, NetMessage** msg)
+bool NETnetMessage(MessageReader& r, NetMessage** msg)
 {
+	ASSERT_OR_RETURN(false, msg != nullptr, "NETnetMessage called with a null output pointer");
+	*msg = nullptr;
+
 	NetMsgDataVector rawData{MsgDataAllocator(defaultMemoryPool())};
 	NETbytes(r, rawData, std::numeric_limits<uint32_t>::max());
-	*msg = new NetMessage(NetMessageBuilder(std::move(rawData)).build());
+	const size_t rawLen = rawData.size();
+
+	auto parsedMessage = NetMessage::tryFromRawData(std::move(rawData));
+	if (!parsedMessage)
+	{
+		debug(LOG_ERROR, "NETnetMessage: invalid nested message (%zu bytes)", rawLen);
+		r.markInvalid();
+		return false;
+	}
+
+	*msg = new NetMessage(std::move(*parsedMessage));
+	return true;
+}
+
+bool NETshareGameQueueContains(const NetMessage& shareGameQueueMessage, uint8_t gameMessageType)
+{
+	MessageReader r(shareGameQueueMessage);
+	uint8_t player = 0;
+	uint32_t num = 0;
+	NETuint8_t(r, player);
+	NETuint32_t(r, num);
+	for (uint32_t n = 0; n < num && r.remaining() > 0; ++n)
+	{
+		uint32_t len = 0;
+		NETuint32_t(r, len);
+		if (len == 0 || len > r.remaining())
+		{
+			return false;
+		}
+		uint8_t type = 0;
+		r.byte(type);
+		if (type == gameMessageType)
+		{
+			return true;
+		}
+		r.index += len - 1;
+	}
+	return false;
 }
 
 // MessageWriter overloads for encoding

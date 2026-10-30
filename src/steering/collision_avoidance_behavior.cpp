@@ -37,6 +37,10 @@
 #include "src/fpath.h"
 #include "src/move.h"
 #include "src/objects.h"
+#include "src/game_world.h"
+#include "src/perfcounters.h"
+#include "src/corridor_gate.h"
+#include "src/pathfinding_backend.h"
 
 #include <algorithm>
 
@@ -45,6 +49,7 @@ namespace steering
 
 SteeringForce CollisionAvoidanceBehavior::calculate(const SteeringContext& ctx)
 {
+	WZ_PERF_SCOPE(T_steeringScan);
 	int32_t numObstacles = 0;
 	int32_t distTotal = 0;
 	Vector2i totalDir(0, 0);
@@ -58,13 +63,14 @@ SteeringForce CollisionAvoidanceBehavior::calculate(const SteeringContext& ctx)
 	// Vector to target (for blending)
 	Vector2i toTarget = ctx.targetPos - ctx.currentPos;
 
-	// Scan nearby objects for obstacles
-	static GridList gridList;  // static to avoid allocations
-	gridList = gridStartIterate(ctx.currentPos.x, ctx.currentPos.y, OBSTACLE_SCAN_RADIUS);
-	for (GridIterator gi = gridList.begin(); gi != gridList.end(); ++gi)
-	{
-		BASE_OBJECT* obj = *gi;
+	// Parked obstacles read as stationary, except to a droid the corridor lanes are steering.
+	Vector2i laneTarget;
+	const bool parkedStationary = pathfindingParkedObstacleEnabled()
+	                              && !(pathfindingCorridorLanesEnabled() && corridorLaneTarget(gameWorld, ctx.droid, laneTarget));
 
+	// Scan nearby objects for obstacles
+	for (BASE_OBJECT* obj : gridStartIterate(ctx.currentPos.x, ctx.currentPos.y, OBSTACLE_SCAN_RADIUS))
+	{
 		// Skip invalid obstacles
 		if (!isValidObstacle(obj, ctx.droid))
 		{
@@ -83,7 +89,7 @@ SteeringForce CollisionAvoidanceBehavior::calculate(const SteeringContext& ctx)
 		int32_t combinedRadius = ctx.radius + obstacleRadius;
 
 		// Estimate obstacle velocity
-		Vector2i obstacleVel = estimateObstacleVelocity(obstacle);
+		Vector2i obstacleVel = estimateObstacleVelocity(obstacle, parkedStationary);
 		// Find the guessed obstacle speed and direction, clamped to half our speed.
 		int32_t obstacleSpeedGuess = std::min(iHypot(obstacleVel), ctx.maxSpeed / 2);
 		uint16_t obstDirectionGuess = iAtan2(obstacleVel);
@@ -99,7 +105,7 @@ SteeringForce CollisionAvoidanceBehavior::calculate(const SteeringContext& ctx)
 		Vector2i deltaDiff = iSinCosR(obstDirectionGuess, predictionFactor);
 
 		// Don't assume obstacle can go through blocking tiles
-		if (!fpathBlockingTile(map_coord(obstacle->pos.x + deltaDiff.x),
+		if (!fpathBlockingTile(gameWorld.map, map_coord(obstacle->pos.x + deltaDiff.x),
 		                       map_coord(obstacle->pos.y + deltaDiff.y),
 		                       obstaclePropStats->propulsionType))
 		{
@@ -169,8 +175,17 @@ bool CollisionAvoidanceBehavior::isEnabled(const SteeringContext& ctx) const
 	return !ctx.droid->isTransporter();
 }
 
-Vector2i CollisionAvoidanceBehavior::estimateObstacleVelocity(DROID* obstacle)
+Vector2i CollisionAvoidanceBehavior::estimateObstacleVelocity(const DROID* obstacle, bool parkedStationary)
 {
+	// sMove.target is not cleared when a droid stops, so the guesses below would have a parked droid
+	// driving off along its old line.
+	if (parkedStationary
+	    && (obstacle->sMove.Status == MOVEINACTIVE || obstacle->sMove.Status == MOVETURN
+	        || obstacle->sMove.Status == MOVEHOVER))
+	{
+		return Vector2i(0, 0);
+	}
+
 	// Velocity guess 1: Guess the velocity the droid is actually moving at.
 	Vector2i velocityGuess1 = iSinCosR(obstacle->sMove.moveDir, obstacle->sMove.speed);
 
@@ -186,12 +201,6 @@ Vector2i CollisionAvoidanceBehavior::estimateObstacleVelocity(DROID* obstacle)
 	int32_t intendedSpeed = maxSpeed * std::min(targetDist, OBSTACLE_SCAN_RADIUS) / OBSTACLE_SCAN_RADIUS;
 	Vector2i velocityGuess2 = iSinCosR(iAtan2(targetDiff), intendedSpeed);
 
-	// If blocked, assume no intended movement
-	if (moveBlocked(obstacle))
-	{
-		velocityGuess2 = Vector2i(0, 0);
-	}
-
 	// Average the two guesses
 	return (velocityGuess1 + velocityGuess2) / 2;
 }
@@ -206,7 +215,7 @@ bool CollisionAvoidanceBehavior::isValidObstacle(const BASE_OBJECT* obj, const D
 
 	// Only consider droids
 	const DROID* obstacle = castDroid(const_cast<BASE_OBJECT*>(obj));
-	if (!obstacle)
+	if (!obstacle || obstacle->died)
 	{
 		return false;
 	}

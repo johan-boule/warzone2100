@@ -83,6 +83,7 @@ struct DROID_TEMPLATE : public BASE_STATS
 	bool            prefab;                     ///< Not player designed, not saved, never delete or change
 	bool            stored;                     ///< Stored template
 	bool            enabled;                    ///< Has been enabled
+	bool            hidden;                     ///< Deleted by the player, kept only for production and save references
 };
 
 static inline DROID_TEMPLATE *castDroidTemplate(BASE_STATS *stats)
@@ -201,6 +202,9 @@ struct DROID : public BASE_OBJECT
 	/* anim data */
 	SDWORD          iAudioID;
 	int32_t			heightAboveMap;					///< Current calculated height above the terrain (set for VTOL-propulsion units)
+	/// Lift propulsion only: the height band (visLiftHeightBand) its tile coverage was computed from,
+	/// to know when to recompute it. Not saved (a load recomputes the coverage, which sets it).
+	int32_t			visOriginBand = INT32_MIN;
 	/* repair data */
 	uint16_t		underRepair;					///< Number of other droids / structures currently repairing this unit (does not include self-repair tech)
 };

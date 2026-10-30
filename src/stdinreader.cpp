@@ -31,6 +31,7 @@
 #include "main.h"
 #include "multivote.h"
 #include "hci/teamstrategy.h"
+#include "hci/quickchat.h"
 
 #include <string>
 #include <atomic>
@@ -604,11 +605,8 @@ static bool kickActivePlayerWithIdentity(const std::string& playerIdentityStrCop
 			wz_command_interface_output("WZCMD error: Can't kick host!\n");
 			return;
 		}
-		const char *pPlayerName = getPlayerName(i, true);
-		std::string playerNameStr = (pPlayerName) ? pPlayerName : (std::string("[p") + std::to_string(i) + "]");
 		kickPlayer(i, kickReasonStrCopy.c_str(), ERROR_KICKED, banPlayer);
-		auto KickMessage = astringf("Player %s was kicked by the administrator.", playerNameStr.c_str());
-		sendRoomSystemMessage(KickMessage.c_str());
+		sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::AdminKickedPlayer, 0, i);
 	});
 }
 
@@ -630,14 +628,14 @@ static optional<KickRedirectInfo> parseCmdInterfaceRedirectStringToRedirectInfo(
 
 	try {
 		auto portNumber = std::stoul(redirectComponents[1], nullptr, 10);
-		ASSERT_OR_RETURN(nullopt, newPort < std::numeric_limits<uint16_t>::max(), "Invalid port: %ul", newPort);
+		ASSERT_OR_RETURN(nullopt, portNumber <= std::numeric_limits<uint16_t>::max(), "Invalid port: %lu", portNumber);
 		newPort = static_cast<uint16_t>(portNumber);
 	}
 	catch (const std::exception& e) {
 		ASSERT_OR_RETURN(nullopt, false, "Invalid port specified: \"%s\"", redirectComponents[1].c_str());
 	}
 
-	ASSERT_OR_RETURN(nullopt, newPort > 1024, "Invalid port (%ul) - cannot redirect to privileged port <= 1024", static_cast<unsigned int>(newPort));
+	ASSERT_OR_RETURN(nullopt, newPort > 1024, "Invalid port (%u) - cannot redirect to privileged port <= 1024", static_cast<unsigned int>(newPort));
 
 	try {
 		auto specValue = std::stoul(redirectComponents[2], nullptr, 10);
@@ -728,7 +726,7 @@ static void refreshLobbyAdminStatusForConnectedPlayers()
 			if (!NetPlay.players[playerIdx].isAdmin) {
 				if(
 					const auto trueIdentity = getTruePlayerIdentity(playerIdx);
-					trueIdentity.verified && !trueIdentity.identity.empty() && identityMatchesAdmin(trueIdentity.identity)
+					trueIdentity.verified && !trueIdentity.identity.empty() && identityMatchesAdmin(trueIdentity.identity) && isVerifiedJoinIdentity(playerIdx, trueIdentity.identity)
 				) {
 					NetPlay.players[playerIdx].isAdmin = true;
 					NETBroadcastPlayerInfo(playerIdx);
@@ -1044,8 +1042,7 @@ int cmdInputThreadFunc(void *)
 						if (!strcmp(player.IPtextAddress, banIPStrCopy.c_str()))
 						{
 							kickPlayer(i, banReasonStrCopy.c_str(), ERROR_INVALID, true);
-							auto KickMessage = astringf("Player %s was banned by the administrator.", player.name);
-							sendRoomSystemMessage(KickMessage.c_str());
+							sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::AdminBannedPlayer, 0, i);
 							foundActivePlayer = true;
 						}
 					}
@@ -1142,7 +1139,14 @@ int cmdInputThreadFunc(void *)
 					approve = AsyncJoinApprovalAction::Approve;
 					if (r >= 3)
 					{
-						explicitPlayerIdx = uintVal;
+						if (uintVal <= std::numeric_limits<uint8_t>::max())
+						{
+							explicitPlayerIdx = static_cast<uint8_t>(uintVal);
+						}
+						else
+						{
+							approve = nullopt;
+						}
 					}
 				}
 				else if (strcmp(action, "reject") == 0)
@@ -1205,7 +1209,7 @@ int cmdInputThreadFunc(void *)
 				}
 				else
 				{
-					wz_command_interface_output_onmainthread("WZCMD error: Invalid action or rejectionReason passed to join approve/reject command\n");
+					wz_command_interface_output_onmainthread("WZCMD error: Invalid action, player index or rejectionReason passed to join approve/reject command\n");
 				}
 			}
 		}

@@ -283,6 +283,7 @@ jobs:
         echo "WZ_VISUAL_STUDIO_INSTALL_VERSION=${WZ_VISUAL_STUDIO_INSTALL_VERSION}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
         echo "VCPKG_VISUAL_STUDIO_PATH=${VCPKG_VISUAL_STUDIO_PATH}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         echo "WZ_DISTRIBUTOR=${WZ_DISTRIBUTOR}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        echo "WZ_BUILDMANIFEST_PUBLISHER=${WZ_BUILDMANIFEST_PUBLISHER}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         echo "VCPKG_BINARYCACHE_DIR=${VCPKG_BINARYCACHE_DIR}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
         echo "VCPKG_BINARY_SOURCES=${VCPKG_BINARY_SOURCES}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         echo "VCPKG_BINARY_SOURCES=${VCPKG_BINARY_SOURCES}" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
@@ -296,8 +297,8 @@ jobs:
 
         Write-Host "Current value of env:VULKAN_SDK:${env:VULKAN_SDK}"
 
-        $VULKAN_DL_URL = "https://sdk.lunarg.com/sdk/download/1.4.328.1/windows/vulkansdk-windows-X64-1.4.328.1.exe?Human=true"
-        $VULKAN_DL_SHA256 = "a8675df6d538079c2a719a9373994948091db785b48f142e024254e76348d16c"
+        $VULKAN_DL_URL = "https://sdk.lunarg.com/sdk/download/1.4.357.0/windows/vulkansdk-windows-X64-1.4.357.0.exe?Human=true"
+        $VULKAN_DL_SHA256 = "81f474711e9042f4cd22b31b2f7a8870db2e428b21586fb43dd80150be97310d"
 
         $VK_DL_BASEDIR = "${{ github.workspace }}\dl"
         $VK_DL_PATH = "${VK_DL_BASEDIR}\vulkan.exe"
@@ -498,7 +499,7 @@ jobs:
 
         # Use CMake to configure with the appropriate Visual Studio (MSBUILD) generator, toolchain, and target platform
         echo "::add-matcher::${{ github.workspace }}\src\.ci\githubactions\pattern_matchers\cmake.json"
-        cmake -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}\build\vcpkg\scripts\buildsystems\vcpkg.cmake" -DCPACK_PACKAGE_FILE_NAME:STRING="warzone2100_portable" -DWZ_DISTRIBUTOR:STRING="${env:WZ_DISTRIBUTOR}" -DCMAKE_GENERATOR_INSTANCE="${env:WZ_VISUAL_STUDIO_INSTALL_PATH}" -DENABLE_DISCORD:BOOL=ON -DDISCORD_RPC_APPID:STRING="${env:DISCORD_RPC_APPID}" -DWZ_BUILD_SENTRY:BOOL="${WZ_BUILD_SENTRY_VALUE}" ${ADDITIONAL_CMAKE_PARAMS} -G "${env:WZ_VC_GENERATOR}" -A "${env:WZ_VC_TARGET_PLATFORMNAME}" "${env:WZ_REPO_PATH}"
+        cmake -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}\build\vcpkg\scripts\buildsystems\vcpkg.cmake" -DCPACK_PACKAGE_FILE_NAME:STRING="warzone2100_portable" -DWZ_DISTRIBUTOR:STRING="${env:WZ_DISTRIBUTOR}" -DCMAKE_GENERATOR_INSTANCE="${env:WZ_VISUAL_STUDIO_INSTALL_PATH}" -DENABLE_DISCORD:BOOL=ON -DDISCORD_RPC_APPID:STRING="${env:DISCORD_RPC_APPID}" -DWZ_BUILD_SENTRY:BOOL="${WZ_BUILD_SENTRY_VALUE}" ${ADDITIONAL_CMAKE_PARAMS} -DWZ_BUILDMANIFEST:BOOL=ON -DWZ_BUILDMANIFEST_PUBLISHER:STRING="${env:WZ_BUILDMANIFEST_PUBLISHER}" -DWZ_BUILDMANIFEST_PLATFORM:STRING="windows-${env:WZ_TARGET_ARCH}" -G "${env:WZ_VC_GENERATOR}" -A "${env:WZ_VC_TARGET_PLATFORMNAME}" "${env:WZ_REPO_PATH}"
         echo "::remove-matcher owner=cmake::"
     - name: CMake Configure (MINGW)
       if: success() && (steps.settings.outputs.WZ_USING_MINGW == 'true')
@@ -528,7 +529,7 @@ jobs:
         }
         echo "::add-matcher::${{ github.workspace }}\src\.ci\githubactions\pattern_matchers\cmake.json"
         $env:PATH = "${env:WZ_MINGW_ENV_PATH}";
-        & "${env:WZ_FULL_CMAKE_PATH}\cmake.exe" -DCMAKE_ASM_MASM_COMPILER="${env:WZ_ASM_MASM_COMPILER}" -DWZ_MINGW_DIST_PATH="${env:WZ_MINGW_DIST_PATH}" -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}\build\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="${env:WZ_MINGW_CHAINLOAD_TOOLCHAIN_FILE}" -DCMAKE_BUILD_TYPE=Release -DWZ_DISTRIBUTOR:STRING="${env:WZ_DISTRIBUTOR}" -DENABLE_DISCORD:BOOL=ON -DDISCORD_RPC_APPID:STRING="${env:DISCORD_RPC_APPID}" -DWZ_BUILD_SENTRY:BOOL=${WZ_BUILD_SENTRY_VALUE} ${SENTRY_DSN_PARAM} ${SENTRY_BACKEND_PARAM} -DENABLE_GNS_NETWORK_BACKEND:BOOL=ON -G "Ninja" "${{ steps.settings.outputs.WZ_REPO_PATH }}"
+        & "${env:WZ_FULL_CMAKE_PATH}\cmake.exe" -DCMAKE_ASM_MASM_COMPILER="${env:WZ_ASM_MASM_COMPILER}" -DWZ_MINGW_DIST_PATH="${env:WZ_MINGW_DIST_PATH}" -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}\build\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="${env:WZ_MINGW_CHAINLOAD_TOOLCHAIN_FILE}" -DCMAKE_BUILD_TYPE=Release -DWZ_DISTRIBUTOR:STRING="${env:WZ_DISTRIBUTOR}" -DENABLE_DISCORD:BOOL=ON -DDISCORD_RPC_APPID:STRING="${env:DISCORD_RPC_APPID}" -DWZ_BUILD_SENTRY:BOOL=${WZ_BUILD_SENTRY_VALUE} ${SENTRY_DSN_PARAM} ${SENTRY_BACKEND_PARAM} -DENABLE_GNS_NETWORK_BACKEND:BOOL=ON -DWZ_BUILDMANIFEST:BOOL=ON -DWZ_BUILDMANIFEST_PUBLISHER:STRING="${env:WZ_BUILDMANIFEST_PUBLISHER}" -DWZ_BUILDMANIFEST_PLATFORM:STRING="windows-${env:WZ_TARGET_ARCH}" -G "Ninja" "${{ steps.settings.outputs.WZ_REPO_PATH }}"
         echo "::remove-matcher owner=cmake::"
     - name: Upload vcpkg logs (on failure)
       uses: actions/upload-artifact@v7
@@ -662,6 +663,159 @@ jobs:
         path: '${{ github.workspace }}\sentry_output\sentry_source_bundles'
         retention-days: 1
         if-no-files-found: 'warn'
+  normalize-archives:
+    name: 'Normalize Archive (${{ matrix.architecture }})'
+    permissions:
+      contents: read
+      # Rebuilding an archive changes its digest, so it needs a new attestation
+      id-token: write
+      attestations: write
+    needs: windows-build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Every deploy_release architecture except x64 (which is used as the base for all data files)
+        architecture: ['x86', 'arm64']
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          path: 'src'
+      - name: Download x64 Archive
+        uses: actions/download-artifact@v8
+        with:
+          name: 'warzone2100_win_x64_archive'
+          path: ./dl-x64
+      - name: Download Architecture Archive
+        uses: actions/download-artifact@v8
+        with:
+          name: 'warzone2100_win_${{ matrix.architecture }}_archive'
+          path: ./dl-arch
+      - name: Rebuild Archive Using x64 Data Files
+        env:
+          WZ_ARCHIVE_NAME: 'warzone2100_win_${{ matrix.architecture }}_archive.zip'
+        run: |
+          # Every archive ships the same files outside bin/, so the installer and any other repackaging of them agree
+          x64_zip="./dl-x64/warzone2100_win_x64_archive.zip"
+          arch_zip="./dl-arch/${WZ_ARCHIVE_NAME}"
+          python3 "${GITHUB_WORKSPACE}/src/pkg/win_combined_archive/check_shared_files.py" "${x64_zip}" "${arch_zip}"
+          work="$(mktemp -d)"
+          unzip -q "${x64_zip}" 'data/*' -d "${work}/x64"
+          unzip -q "${arch_zip}" 'bin/*' -d "${work}/arch"
+          manifest="$(find "${work}/arch/bin" -maxdepth 1 -name '*.buildmanifest' | head -n 1)"
+          if [ -n "${manifest}" ]; then
+            cmake -DWZBM_SOURCE_MANIFEST="${manifest}" -DWZBM_EXE="${manifest%.buildmanifest}.exe" -DWZBM_DATA_DIR="${work}/x64/data" -DWZBM_OUTPUT="${manifest}" -P "${GITHUB_WORKSPACE}/src/pkg/buildmanifest_rebase.cmake"
+          fi
+          mkdir -p "${GITHUB_WORKSPACE}/normalized"
+          out="${GITHUB_WORKSPACE}/normalized/${WZ_ARCHIVE_NAME}"
+          cp "${x64_zip}" "${out}"
+          zip -q -d "${out}" 'bin/*'
+          (cd "${work}/arch" && zip -q -r -X "${out}" bin)
+          rm -rf "${work}"
+          ls -l "${GITHUB_WORKSPACE}/normalized"
+      - name: 'Upload Artifact - (Archive)'
+        uses: actions/upload-artifact@v7
+        with:
+          name: 'warzone2100_win_${{ matrix.architecture }}_archive'
+          path: '${{ github.workspace }}/normalized'
+          overwrite: true
+          if-no-files-found: 'error'
+      - name: 'Generate artifact attestation - (Archive)'
+        # Run on push to master branch (development build), or tag release automation build
+        if: success() && ((github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Draft Tag Release'))
+        uses: actions/attest-build-provenance@v3
+        continue-on-error: true
+        with:
+          subject-path: '${{ github.workspace }}/normalized/*'
+  sign-build-manifest:
+    name: 'Sign Build Manifests'
+    permissions:
+      contents: read
+      # Signing rewrites the archives, so they need an attestation for their new digest
+      id-token: write
+      attestations: write
+    needs: normalize-archives
+    runs-on: ubuntu-latest
+    # For this job to work, the following must be set in the 'sign_buildmanifest' environment:
+    # WZ_BUILDMANIFEST_KEY (secret), WZ_BUILDMANIFEST_KEY_ID (variable)
+    environment: sign_buildmanifest
+    # Run on tag release automation build
+    if: success() && (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Draft Tag Release') && (github.repository == 'Warzone2100/warzone2100')
+    outputs:
+      signedfiles: ${{ steps.output-result.outputs.signedfiles }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          path: 'src'
+      - name: Build wzbuildmanifest tool
+        if: success() && vars.WZ_BUILDMANIFEST_KEY_ID != ''
+        run: |
+          # Built from source here rather than taken from the build jobs,
+          # so that the signing key is never handed to a binary those jobs produced
+          sudo apt-get update
+          sudo apt-get install -y libsodium-dev ninja-build
+          cmake -S "${GITHUB_WORKSPACE}/src/tools/buildmanifest" -B "${GITHUB_WORKSPACE}/buildmanifest" -DCMAKE_BUILD_TYPE=Release -G"Ninja"
+          cmake --build "${GITHUB_WORKSPACE}/buildmanifest"
+          echo "WZ_BUILDMANIFEST_TOOL=${GITHUB_WORKSPACE}/buildmanifest/wzbuildmanifest" >> $GITHUB_ENV
+      - name: Download Architecture Archives
+        if: success() && vars.WZ_BUILDMANIFEST_KEY_ID != ''
+        uses: actions/download-artifact@v8
+        with:
+          pattern: 'warzone2100_win_*_archive'
+          path: ./dl-archives
+          merge-multiple: true
+      - name: Sign Manifests
+        id: sign
+        if: success() && vars.WZ_BUILDMANIFEST_KEY_ID != ''
+        env:
+          WZ_BUILDMANIFEST_KEY: ${{ secrets.WZ_BUILDMANIFEST_KEY }}
+          WZ_BUILDMANIFEST_KEY_ID: ${{ vars.WZ_BUILDMANIFEST_KEY_ID }}
+        run: |
+          if [ -z "${WZ_BUILDMANIFEST_KEY}" ]; then
+            echo "::error ::WZ_BUILDMANIFEST_KEY_ID is set but the WZ_BUILDMANIFEST_KEY secret is not"
+            exit 1
+          fi
+          mkdir -p "${GITHUB_WORKSPACE}/signed-archives"
+          for zip in ./dl-archives/*.zip; do
+            name="$(basename "${zip}")"
+            echo "::group::${name}"
+            extract_dir="$(mktemp -d)"
+            unzip -q "${zip}" -d "${extract_dir}"
+            cmake -DWZBM_TOOL="${WZ_BUILDMANIFEST_TOOL}" -DWZBM_PACKAGE_DIR="${extract_dir}" -DWZBM_KEY_ID="${WZ_BUILDMANIFEST_KEY_ID}" -P "${GITHUB_WORKSPACE}/src/pkg/buildmanifest_sign_package.cmake"
+            # Replace just the manifest entry
+            manifest="$(cd "${extract_dir}" && find . -name '*.buildmanifest' -printf '%P\n')"
+            cp "${zip}" "${GITHUB_WORKSPACE}/signed-archives/${name}"
+            (cd "${extract_dir}" && zip -q "${GITHUB_WORKSPACE}/signed-archives/${name}" "${manifest}")
+            rm -rf "${extract_dir}"
+            echo "::endgroup::"
+          done
+          ls -l "${GITHUB_WORKSPACE}/signed-archives"
+      - name: 'Generate artifact attestations - (Manifest-Signed Archives)'
+        if: (steps.sign.outcome == 'success')
+        uses: actions/attest-build-provenance@v3
+        continue-on-error: true
+        with:
+          subject-path: '${{ github.workspace }}/signed-archives/*'
+      - name: 'Upload Artifact - Manifest-Signed Archives'
+        if: (steps.sign.outcome == 'success')
+        uses: actions/upload-artifact@v7
+        with:
+          name: 'wz_manifest_signed_archives'
+          path: '${{ github.workspace }}/signed-archives/*'
+          if-no-files-found: 'error'
+      - name: Output Result
+        id: output-result
+        env:
+          SIGN_STEP_OUTCOME: ${{ steps.sign.outcome }}
+        run: |
+          signedfiles="false"
+          if [ "${SIGN_STEP_OUTCOME}" == "success" ]; then
+            signedfiles="true"
+          fi
+          echo "signedfiles=${signedfiles}"
+          echo "signedfiles=${signedfiles}" >> $GITHUB_OUTPUT
+
   combined-installer-build:
     name: 'Build Installer'
     permissions:
@@ -670,7 +824,10 @@ jobs:
       id-token: write
       attestations: write
     runs-on: windows-latest
-    needs: windows-build
+    needs: [normalize-archives, sign-build-manifest]
+    # sign-build-manifest only runs for release builds, so tolerate it being skipped -
+    # but do not build an installer from archives whose signing failed
+    if: ${{ !cancelled() && needs.normalize-archives.result == 'success' && (needs.sign-build-manifest.result == 'success' || needs.sign-build-manifest.result == 'skipped') }}
     outputs:
       combined-installer-artifact-id: ${{ steps.upload-combined-installer-artifact.outputs.artifact-id }}
     steps:
@@ -776,6 +933,24 @@ jobs:
           pattern: 'warzone2100_win_*_archive'
           path: .\built-archives
           merge-multiple: true
+      - name: Download Manifest-Signed Archives
+        if: success() && (needs.sign-build-manifest.outputs.signedfiles == 'true')
+        uses: actions/download-artifact@v8
+        with:
+          name: 'wz_manifest_signed_archives'
+          path: .\signed-archives
+          merge-multiple: true
+      - name: Replace Archives with Manifest-Signed Archives
+        if: success() && (needs.sign-build-manifest.outputs.signedfiles == 'true')
+        run: |
+          Get-ChildItem -Path ".\signed-archives" -Filter *.zip | ForEach-Object {
+            $dest = ".\built-archives\$($_.Name)"
+            if (!(Test-Path "$dest")) {
+              Write-Host "::warning ::Missing original (unsigned) archive - $($_.Name) ?"
+            }
+            Write-Host "Replacing with manifest-signed: $($_.Name)"
+            Copy-Item -Path "$($_.FullName)" -Destination "$dest" -Force -ErrorAction Stop
+          }
       - name: Log Archive Details
         working-directory: '${{ github.workspace }}\built-archives'
         run: |
@@ -946,7 +1121,7 @@ jobs:
     runs-on: ubuntu-latest
     # Run on tag release automation build
     if: success() && (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Draft Tag Release') && (github.repository == 'Warzone2100/warzone2100')
-    needs: [windows-build, combined-installer-build, sign-release-installers]
+    needs: [windows-build, normalize-archives, combined-installer-build, sign-release-installers, sign-build-manifest]
     env:
       WZ_GITHUB_REF: ${{needs.windows-build.outputs.WZ_GITHUB_REF}}
     steps:
@@ -969,8 +1144,15 @@ jobs:
           name: 'warzone2100_installers_signed'
           path: ./upload-assets-signed
           merge-multiple: true
+      - name: Download Manifest-Signed Archives
+        if: success() && (needs.sign-build-manifest.outputs.signedfiles == 'true')
+        uses: actions/download-artifact@v8
+        with:
+          name: 'wz_manifest_signed_archives'
+          path: ./upload-assets-signed
+          merge-multiple: true
       - name: Replace Unsigned with Signed Release Artifacts
-        if: success() && env.WZ_CI_SIGN_RELEASE_BUILDS == 'true' && (needs.sign-release-installers.outputs.signedfiles == 'true')
+        if: success() && ((env.WZ_CI_SIGN_RELEASE_BUILDS == 'true' && needs.sign-release-installers.outputs.signedfiles == 'true') || (needs.sign-build-manifest.outputs.signedfiles == 'true'))
         run: |
           for file in ./upload-assets-signed/*; do
             filename="${file##*/}"
@@ -1006,7 +1188,7 @@ jobs:
     runs-on: ubuntu-latest
     # Run on push to master branch (development build), or tag release automation build
     if: (github.repository == 'Warzone2100/warzone2100') && ((github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Draft Tag Release'))
-    needs: windows-build
+    needs: [windows-build, normalize-archives]
     environment: upload_symbols
     # For this job to work, the following secrets must be set in the 'upload_symbols' environment:
     # SENTRY_AUTH_TOKEN

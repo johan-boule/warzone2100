@@ -1,6 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 /*
 	This file is part of Warzone 2100.
-	Copyright (C) 2017-2019  Warzone 2100 Project
+	Copyright (C) 2017-2026  Warzone 2100 Project (https://github.com/Warzone2100)
 
 	Warzone 2100 is free software; you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
@@ -20,8 +22,11 @@
 #include "gfx_api_vk.h"
 #include "gfx_api_gl.h"
 #include "gfx_api_null.h"
+#include "render_graph/pass_resolve.h"
+#include "render_graph/compile.h"
 #include "gfx_api_image_compress_priv.h"
 #include "gfx_api_image_basis_priv.h"
+#include "gfx_api_mipmap_priv.h"
 #include "lib/framework/physfs_ext.h"
 #include <unordered_map>
 #include <algorithm>
@@ -30,6 +35,7 @@ static gfx_api::backend_type backend = gfx_api::backend_type::opengl_backend;
 bool uses_gfx_debug = false;
 static gfx_api::context* current_backend_context = nullptr;
 
+namespace gfx_api {
 static const char* to_string(gfx_api::backend_type backendType)
 {
 	switch (backendType)
@@ -39,6 +45,31 @@ static const char* to_string(gfx_api::backend_type backendType)
 		case gfx_api::backend_type::vulkan_backend: return "Vulkan backend";
 	}
 	return "";
+}
+} // namespace gfx_api
+
+const char* gfx_api::to_string(gfx_api::data_buffer_transport transport)
+{
+	switch (transport)
+	{
+		case gfx_api::data_buffer_transport::uniform_block: return "uniform block";
+		case gfx_api::data_buffer_transport::texel_buffer: return "texel buffer";
+		case gfx_api::data_buffer_transport::storage_buffer: return "storage buffer";
+	}
+	return "";
+}
+
+static gfx_api::light_capacity activeCapacity;
+
+const gfx_api::light_capacity& gfx_api::activeLightCapacity()
+{
+	return activeCapacity;
+}
+
+void gfx_api::setActiveLightCapacity(const gfx_api::light_capacity& capacity)
+{
+	activeCapacity = capacity;
+	debug(LOG_3D, "Point light capacity: %zu lights, %zu indexed, %zux%zu buckets", capacity.maxLights, capacity.maxIndexedLights, capacity.bucketDimension, capacity.bucketDimension);
 }
 
 bool gfx_api::context::initialize(const gfx_api::backend_Impl_Factory& impl, int32_t antialiasing, swap_interval_mode swapMode, optional<float> mipLodBias, uint32_t depthMapResolution, gfx_api::backend_type backendType)
@@ -73,6 +104,7 @@ bool gfx_api::context::initialize(const gfx_api::backend_Impl_Factory& impl, int
 			break;
 	}
 	ASSERT_OR_RETURN(false, current_backend_context != nullptr, "Failed to initialize gfx backend context");
+	current_backend_context->setMipLodBias(mipLodBias);
 	bool result = gfx_api::context::get()._initialize(impl, antialiasing, swapMode, mipLodBias, depthMapResolution);
 	if (!result)
 	{
@@ -83,13 +115,21 @@ bool gfx_api::context::initialize(const gfx_api::backend_Impl_Factory& impl, int
 		return false;
 	}
 
-	// Calculate the best available run-time compression formats
-	gfx_api::initBestRealTimeCompressionFormats();
+	// The transport is settled once the context is up, and the context is what decides whether the light
+	// arrays are still bound by the uniform block size limits.
+	{
+		gfx_api::light_capacity capacity;
+		if (current_backend_context->lightDataTransport() != gfx_api::data_buffer_transport::uniform_block)
+		{
+			capacity.maxLights = 512;
+			capacity.maxIndexedLights = 2048;
+			capacity.bucketDimension = max_bucket_dimension;
+		}
+		gfx_api::setActiveLightCapacity(capacity);
+	}
 
-#if defined(BASIS_ENABLED)
-	// Init basis transcoder
-	gfx_api::initBasisTranscoder();
-#endif
+	// Calculate the best available compression formats, and whether they can all be sampled as sRGB
+	current_backend_context->initColorTextureFormats();
 
 	return result;
 }
@@ -338,19 +378,6 @@ gfx_api::texture* gfx_api::context::loadTextureFromFile(const char *filename, gf
 	}
 }
 
-static inline size_t calcMipmapLevelsForUncompressedImage(const iV_BaseImage& image, gfx_api::texture_type textureType)
-{
-	// 3.) Determine mipmap levels (if needed / desired)
-	bool generateMipMaps = (textureType != gfx_api::texture_type::user_interface);
-	size_t mipmap_levels = 1;
-	if (generateMipMaps)
-	{
-		// Calculate how many mip-map levels (with a target minimum level dimension of 4)
-		mipmap_levels = 1 + static_cast<size_t>(floor(log2(std::max(image.width(), image.height()))));
-	}
-	return mipmap_levels;
-}
-
 static inline bool uncompressedPNGImageConvertChannels(iV_Image& image, gfx_api::pixel_format_target target, gfx_api::texture_type textureType, const std::string& filename)
 {
 	// 1.) Convert to expected # of channels based on textureType
@@ -414,33 +441,6 @@ static bool checkFormatVersusMaxCompressionLevel_FromUncompressed(optional<gfx_a
 	return true;
 }
 
-static std::vector<std::unique_ptr<iV_Image>> generateMipMapsFromUncompressedImage(const iV_Image& image, size_t mipmap_levels, gfx_api::texture_type textureType)
-{
-	std::vector<std::unique_ptr<iV_Image>> results;
-
-	const iV_Image *pLastImage = &image;
-	for (size_t i = 1; i < mipmap_levels; i++)
-	{
-		optional<int> alphaChannelOverride;
-		if (textureType == gfx_api::texture_type::alpha_mask)
-		{
-			alphaChannelOverride = 0;
-		}
-
-		unsigned int output_w = std::max<unsigned int>(1, pLastImage->width() >> 1);
-		unsigned int output_h = std::max<unsigned int>(1, pLastImage->height() >> 1);
-
-		iV_Image *pNewLevel = new iV_Image();
-		pNewLevel->resizedFromOther(*pLastImage, output_w, output_h, alphaChannelOverride);
-
-		results.push_back(std::unique_ptr<iV_Image>(pNewLevel));
-
-		pLastImage = pNewLevel;
-	}
-
-	return results;
-}
-
 // Takes an iv_Image and texture_type and loads a texture as appropriate / possible
 gfx_api::texture* gfx_api::context::loadTextureFromUncompressedImage(iV_Image&& image, gfx_api::texture_type textureType, const std::string& filename, int maxWidth /*= -1*/, int maxHeight /*= -1*/)
 {
@@ -469,6 +469,10 @@ gfx_api::texture* gfx_api::context::loadTextureFromUncompressedImage(iV_Image&& 
 	}
 
 	auto uploadFormat = image.pixel_format();
+	if (textureType == gfx_api::texture_type::game_texture)
+	{
+		uploadFormat = gfx_api::colorTextureFormat(gfx_api::pixel_format_target::texture_2d, uploadFormat);
+	}
 	auto bestAvailableCompressedFormat = gfx_api::bestRealTimeCompressionFormatForImage(gfx_api::pixel_format_target::texture_2d, image, textureType);
 	if (bestAvailableCompressedFormat.has_value() && bestAvailableCompressedFormat.value() != gfx_api::pixel_format::invalid)
 	{
@@ -482,11 +486,16 @@ gfx_api::texture* gfx_api::context::loadTextureFromUncompressedImage(iV_Image&& 
 		}
 	}
 
+	if (textureType == gfx_api::texture_type::game_texture)
+	{
+		gfx_api::noteColorTextureFormat(uploadFormat, filename);
+	}
+
 	// 5.) Create a new compatible gpu texture object
 	std::unique_ptr<gfx_api::texture> pTexture = std::unique_ptr<gfx_api::texture>(gfx_api::context::get().create_texture(mipmap_levels, image.width(), image.height(), uploadFormat, filename));
 
 	// 6.) Upload initial (full) level
-	if (uploadFormat == image.pixel_format())
+	if (gfx_api::format_bytes_compatible(image.pixel_format(), uploadFormat))
 	{
 		bool uploadResult = pTexture->upload(0, image);
 		ASSERT_OR_RETURN(nullptr, uploadResult, "Failed to upload buffer to image");
@@ -515,7 +524,7 @@ gfx_api::texture* gfx_api::context::loadTextureFromUncompressedImage(iV_Image&& 
 		bool resizeResult = image.resize(output_w, output_h, alphaChannelOverride);
 		ASSERT_OR_RETURN(nullptr, resizeResult, "Failed to resize image mipmap [%zu] to output size (%u x %u): %s", i, output_w, output_h, filename.c_str());
 
-		if (uploadFormat == image.pixel_format())
+		if (gfx_api::format_bytes_compatible(image.pixel_format(), uploadFormat))
 		{
 			bool uploadResult = pTexture->upload(i, image);
 			ASSERT_OR_RETURN(nullptr, uploadResult, "Failed to upload buffer to image");
@@ -597,15 +606,116 @@ optional<unsigned int> gfx_api::context::getClosestSupportedUncompressedImageFor
 	return channels;
 }
 
+optional<gfx_api::pixel_format> gfx_api::color_format_choice::forCurrentLighting() const
+{
+	return gfx_api::context::get().linearLightingEnabled() ? srgb : plain;
+}
+
+bool gfx_api::srgbColorTextureFormatsComplete()
+{
+	for (size_t target_idx = 0; target_idx < gfx_api::PIXEL_FORMAT_TARGET_COUNT; target_idx++)
+	{
+		const auto target = static_cast<gfx_api::pixel_format_target>(target_idx);
+		// Any color texture can fall back to uncompressed, so RGBA8 and RGB8 need sRGB versions.
+		// A device without RGB8 loads RGB images as RGBA8, so RGB8_SRGB is only needed if RGB8 is supported.
+		for (auto format : { gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8, gfx_api::pixel_format::FORMAT_RGB8_UNORM_PACK8 })
+		{
+			if (gfx_api::context::get().textureFormatIsSupported(target, format, gfx_api::pixel_format_usage::sampled_image)
+				&& !gfx_api::context::get().textureFormatIsSupported(target, gfx_api::srgb_format_for(format), gfx_api::pixel_format_usage::sampled_image))
+			{
+				return false;
+			}
+		}
+	}
+	if (!gfx_api::realTimeCompressionSrgbComplete())
+	{
+		return false;
+	}
+#if defined(BASIS_ENABLED)
+	if (!gfx_api::basisTranscodeSrgbComplete())
+	{
+		return false;
+	}
+#endif
+	return true;
+}
+
+void gfx_api::noteColorTextureFormat(gfx_api::pixel_format format, const std::string& filename)
+{
+	static bool reported = false;
+	if (reported || !gfx_api::context::get().linearLightingEnabled() || gfx_api::is_srgb_format(format))
+	{
+		return;
+	}
+	reported = true;
+	debug(LOG_ERROR, "Color texture %s loads as %s, which the sampler does not decode, so it will read too dark under linear lighting",
+		filename.c_str(), gfx_api::format_to_str(format));
+}
+
+void gfx_api::context::initColorTextureFormats()
+{
+	gfx_api::initBestRealTimeCompressionFormats();
+#if defined(BASIS_ENABLED)
+	gfx_api::initBasisTranscoder();
+#endif
+	_srgbColorFormatsComplete = gfx_api::srgbColorTextureFormatsComplete();
+}
+
+void gfx_api::context::updateFloatSceneColorInUse(bool inUse)
+{
+	if (_hdrSceneEnabled && !inUse && !_loggedNoFloatSceneColor)
+	{
+		_loggedNoFloatSceneColor = true;
+		debug(LOG_INFO, "HDR scene rendering is off: no floating point scene color at these settings");
+	}
+	else if (inUse)
+	{
+		_loggedNoFloatSceneColor = false;
+	}
+	_floatSceneColorInUse = inUse;
+}
+
+bool gfx_api::context::setLinearLightingEnabled(bool enabled)
+{
+	if (enabled == _linearLightingEnabled)
+	{
+		return true;
+	}
+	_linearLightingEnabled = enabled;
+	if (enabled && !linearLightingEnabled())
+	{
+		debug(LOG_INFO, "Linear lighting is off: %s",
+			(!hdrSceneInEffect()) ? "HDR scene rendering is not in effect" : "the color texture formats here are not all available in sRGB");
+	}
+	return true;
+}
+
+gfx_api::pixel_format gfx_api::colorTextureFormat(gfx_api::pixel_format_target target, gfx_api::pixel_format format)
+{
+	if (!gfx_api::context::get().linearLightingEnabled())
+	{
+		return format;
+	}
+	const gfx_api::pixel_format srgb = gfx_api::srgb_format_for(format);
+	if (srgb == gfx_api::pixel_format::invalid
+		|| !gfx_api::context::get().textureFormatIsSupported(target, srgb, gfx_api::pixel_format_usage::sampled_image))
+	{
+		return format;
+	}
+	return srgb;
+}
+
 // Determine the best available uncompressed image format for the current system (+ textureType)
 gfx_api::pixel_format gfx_api::context::bestUncompressedPixelFormat(gfx_api::pixel_format_target target, gfx_api::texture_type textureType)
 {
 	switch (textureType)
 	{
 		case gfx_api::texture_type::user_interface:
+			// The UI draws straight to the swapchain, past the tonemap, so it stays gamma encoded
+			return gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8;
 		case gfx_api::texture_type::game_texture: // a RGB / RGBA texture, possibly stored in a compressed format
 			// Since we don't have an image, to check whether it's actually RGB (no alpha), we have to err on the side of RGBA
-			return gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8;
+			return gfx_api::colorTextureFormat(target, gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8);
 		case gfx_api::texture_type::specular_map:
 		case gfx_api::texture_type::alpha_mask:	// a single-channel texture, containing the alpha values
 		case gfx_api::texture_type::height_map:
@@ -651,6 +761,23 @@ const char* gfx_api::format_to_str(gfx_api::pixel_format format)
 		case gfx_api::pixel_format::FORMAT_RGB8_UNORM_PACK8: return "RGB8_UNORM";
 		case gfx_api::pixel_format::FORMAT_RG8_UNORM: return "RG8_UNORM";
 		case gfx_api::pixel_format::FORMAT_R8_UNORM: return "R8_UNORM";
+		case gfx_api::pixel_format::FORMAT_R16_UNORM: return "R16_UNORM";
+		case gfx_api::pixel_format::FORMAT_RG16_UNORM: return "RG16_UNORM";
+		case gfx_api::pixel_format::FORMAT_D24_UNORM_S8: return "D24_UNORM_S8";
+		case gfx_api::pixel_format::FORMAT_A2B10G10R10_UNORM_PACK32: return "A2B10G10R10_UNORM_PACK32";
+		case gfx_api::pixel_format::FORMAT_R16G16B16A16_SFLOAT: return "R16G16B16A16_SFLOAT";
+		case gfx_api::pixel_format::FORMAT_B10G11R11_UFLOAT_PACK32: return "B10G11R11_UFLOAT_PACK32";
+		case gfx_api::pixel_format::FORMAT_RGBA8_SRGB_PACK8: return "RGBA8_SRGB_PACK8";
+		case gfx_api::pixel_format::FORMAT_RGB8_SRGB_PACK8: return "RGB8_SRGB_PACK8";
+		case gfx_api::pixel_format::FORMAT_RGB_BC1_SRGB: return "RGB_BC1_SRGB";
+		case gfx_api::pixel_format::FORMAT_RGBA_BC2_SRGB: return "RGBA_BC2_SRGB";
+		case gfx_api::pixel_format::FORMAT_RGBA_BC3_SRGB: return "RGBA_BC3_SRGB";
+		case gfx_api::pixel_format::FORMAT_RGBA_BPTC_SRGB: return "RGBA_BPTC_SRGB";
+		case gfx_api::pixel_format::FORMAT_RGB8_ETC2_SRGB: return "RGB8_ETC2_SRGB";
+		case gfx_api::pixel_format::FORMAT_RGBA8_ETC2_EAC_SRGB: return "RGBA8_ETC2_EAC_SRGB";
+		case gfx_api::pixel_format::FORMAT_ASTC_4x4_SRGB: return "ASTC_4x4_SRGB";
+		case gfx_api::pixel_format::FORMAT_D32_SFLOAT_S8_UINT: return "D32_SFLOAT_S8_UINT";
+		case gfx_api::pixel_format::FORMAT_D32_SFLOAT: return "D32_SFLOAT";
 		// COMPRESSED FORMAT
 		case gfx_api::pixel_format::FORMAT_RGB_BC1_UNORM: return "RGB_BC1_UNORM";
 		case gfx_api::pixel_format::FORMAT_RGBA_BC2_UNORM: return "RGBA_BC2_UNORM";
@@ -679,37 +806,59 @@ unsigned int gfx_api::format_channels(gfx_api::pixel_format format)
 			return 1; // just return 1 for now...
 		// UNCOMPRESSED FORMATS
 		case gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8:
+		case gfx_api::pixel_format::FORMAT_RGBA8_SRGB_PACK8:
 		case gfx_api::pixel_format::FORMAT_BGRA8_UNORM_PACK8:
 			return 4;
 		case gfx_api::pixel_format::FORMAT_RGB8_UNORM_PACK8:
+		case gfx_api::pixel_format::FORMAT_RGB8_SRGB_PACK8:
 			return 3;
 		case gfx_api::pixel_format::FORMAT_RG8_UNORM:
 			return 2;
 		case gfx_api::pixel_format::FORMAT_R8_UNORM:
 			return 1;
+		case gfx_api::pixel_format::FORMAT_R16_UNORM:
+			return 1;
+		case gfx_api::pixel_format::FORMAT_RG16_UNORM:
+			return 2;
+		case gfx_api::pixel_format::FORMAT_D24_UNORM_S8:
+		case gfx_api::pixel_format::FORMAT_D32_SFLOAT_S8_UINT:
+		case gfx_api::pixel_format::FORMAT_D32_SFLOAT:
+			return 0;
+		case gfx_api::pixel_format::FORMAT_A2B10G10R10_UNORM_PACK32:
+		case gfx_api::pixel_format::FORMAT_R16G16B16A16_SFLOAT:
+			return 4;
+		case gfx_api::pixel_format::FORMAT_B10G11R11_UFLOAT_PACK32:
+			return 3;
 		// COMPRESSED FORMAT
 		case gfx_api::pixel_format::FORMAT_RGB_BC1_UNORM:
+		case gfx_api::pixel_format::FORMAT_RGB_BC1_SRGB:
 			return 3;
 		case gfx_api::pixel_format::FORMAT_RGBA_BC2_UNORM:
+		case gfx_api::pixel_format::FORMAT_RGBA_BC2_SRGB:
 			return 4;
 		case gfx_api::pixel_format::FORMAT_RGBA_BC3_UNORM:
+		case gfx_api::pixel_format::FORMAT_RGBA_BC3_SRGB:
 			return 4;
 		case gfx_api::pixel_format::FORMAT_R_BC4_UNORM:
 			return 1;
 		case gfx_api::pixel_format::FORMAT_RG_BC5_UNORM:
 			return 2;
 		case gfx_api::pixel_format::FORMAT_RGBA_BPTC_UNORM:
+		case gfx_api::pixel_format::FORMAT_RGBA_BPTC_SRGB:
 			return 4;
 		case gfx_api::pixel_format::FORMAT_RGB8_ETC1:
 		case gfx_api::pixel_format::FORMAT_RGB8_ETC2:
+		case gfx_api::pixel_format::FORMAT_RGB8_ETC2_SRGB:
 			return 3;
 		case gfx_api::pixel_format::FORMAT_RGBA8_ETC2_EAC:
+		case gfx_api::pixel_format::FORMAT_RGBA8_ETC2_EAC_SRGB:
 			return 4;
 		case gfx_api::pixel_format::FORMAT_R11_EAC:
 			return 1;
 		case gfx_api::pixel_format::FORMAT_RG11_EAC:
 			return 2;
 		case gfx_api::pixel_format::FORMAT_ASTC_4x4_UNORM:
+		case gfx_api::pixel_format::FORMAT_ASTC_4x4_SRGB:
 			return 4; // just return 4 for now...
 	}
 
@@ -722,41 +871,6 @@ static inline size_t calculate_astc_size(size_t width, size_t height)
 	return ((width + blockWidth - 1) / blockWidth) * ((height + blockHeight - 1) / blockHeight) * 16;
 }
 
-size_t gfx_api::format_texel_block_width(gfx_api::pixel_format format)
-{
-	switch (format)
-	{
-		case gfx_api::pixel_format::invalid:
-			return 1; // just return 1 for now...
-		// UNCOMPRESSED FORMATS
-		case gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8:
-		case gfx_api::pixel_format::FORMAT_BGRA8_UNORM_PACK8:
-		case gfx_api::pixel_format::FORMAT_RGB8_UNORM_PACK8:
-		case gfx_api::pixel_format::FORMAT_RG8_UNORM:
-		case gfx_api::pixel_format::FORMAT_R8_UNORM:
-			return 1;
-		// COMPRESSED FORMAT
-		case gfx_api::pixel_format::FORMAT_RGB_BC1_UNORM:
-		case gfx_api::pixel_format::FORMAT_RGBA_BC2_UNORM:
-		case gfx_api::pixel_format::FORMAT_RGBA_BC3_UNORM:
-		case gfx_api::pixel_format::FORMAT_R_BC4_UNORM:
-		case gfx_api::pixel_format::FORMAT_RG_BC5_UNORM:
-			return 4;
-		case gfx_api::pixel_format::FORMAT_RGBA_BPTC_UNORM:
-			return 4;
-		case gfx_api::pixel_format::FORMAT_RGB8_ETC1:
-		case gfx_api::pixel_format::FORMAT_RGB8_ETC2:
-		case gfx_api::pixel_format::FORMAT_RGBA8_ETC2_EAC:
-		case gfx_api::pixel_format::FORMAT_R11_EAC:
-		case gfx_api::pixel_format::FORMAT_RG11_EAC:
-			return 4;
-		case gfx_api::pixel_format::FORMAT_ASTC_4x4_UNORM:
-			return 4;
-	}
-
-	return 1; // silence warning
-}
-
 size_t gfx_api::format_memory_size(gfx_api::pixel_format format, size_t width, size_t height)
 {
 	switch (format)
@@ -765,33 +879,57 @@ size_t gfx_api::format_memory_size(gfx_api::pixel_format format, size_t width, s
 			return 0;
 		// [UNCOMPRESSED FORMATS]
 		case gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8:
+		case gfx_api::pixel_format::FORMAT_RGBA8_SRGB_PACK8:
 		case gfx_api::pixel_format::FORMAT_BGRA8_UNORM_PACK8:
 			return width * height * 4;
 		case gfx_api::pixel_format::FORMAT_RGB8_UNORM_PACK8:
+		case gfx_api::pixel_format::FORMAT_RGB8_SRGB_PACK8:
 			return width * height * 3;
 		case gfx_api::pixel_format::FORMAT_RG8_UNORM:
 			return width * height * 2;
 		case gfx_api::pixel_format::FORMAT_R8_UNORM:
 			return width * height;
+		case gfx_api::pixel_format::FORMAT_R16_UNORM:
+			return width * height * 2;
+		case gfx_api::pixel_format::FORMAT_RG16_UNORM:
+			return width * height * 4;
+		case gfx_api::pixel_format::FORMAT_D24_UNORM_S8:
+			return width * height * 4;
+		case gfx_api::pixel_format::FORMAT_A2B10G10R10_UNORM_PACK32:
+		case gfx_api::pixel_format::FORMAT_B10G11R11_UFLOAT_PACK32:
+			return width * height * 4;
+		case gfx_api::pixel_format::FORMAT_R16G16B16A16_SFLOAT:
+			return width * height * 8;
+		case gfx_api::pixel_format::FORMAT_D32_SFLOAT_S8_UINT:
+			// Vulkan packs D32F+S8 as 64-bit texels (32-bit depth + 8-bit stencil + padding).
+			return width * height * 8;
+		case gfx_api::pixel_format::FORMAT_D32_SFLOAT:
+			return width * height * 4;
 		// [COMPRESSED FORMATS]
 		// BC / DXT formats
 		// 4x4 blocks, each block having a certain number of bytes
 		case gfx_api::pixel_format::FORMAT_RGB_BC1_UNORM:
+		case gfx_api::pixel_format::FORMAT_RGB_BC1_SRGB:
 			return ((width + 3) / 4) * ((height + 3) / 4) * 8;
 		case gfx_api::pixel_format::FORMAT_RGBA_BC2_UNORM:
+		case gfx_api::pixel_format::FORMAT_RGBA_BC2_SRGB:
 		case gfx_api::pixel_format::FORMAT_RGBA_BC3_UNORM:
+		case gfx_api::pixel_format::FORMAT_RGBA_BC3_SRGB:
 			return ((width + 3) / 4) * ((height + 3) / 4) * 16;
 		case gfx_api::pixel_format::FORMAT_R_BC4_UNORM:
 			return ((width + 3) / 4) * ((height + 3) / 4) * 8;
 		case gfx_api::pixel_format::FORMAT_RG_BC5_UNORM:
 		case gfx_api::pixel_format::FORMAT_RGBA_BPTC_UNORM:
+		case gfx_api::pixel_format::FORMAT_RGBA_BPTC_SRGB:
 			return ((width + 3) / 4) * ((height + 3) / 4) * 16;
 		// ETC
 		// Size calculations from: https://www.khronos.org/registry/OpenGL-Refpages/es3.0/html/glCompressedTexImage2D.xhtml
 		case gfx_api::pixel_format::FORMAT_RGB8_ETC1:
 		case gfx_api::pixel_format::FORMAT_RGB8_ETC2:
+		case gfx_api::pixel_format::FORMAT_RGB8_ETC2_SRGB:
 			return ((width + 3) / 4) * ((height + 3) / 4) * 8;
 		case gfx_api::pixel_format::FORMAT_RGBA8_ETC2_EAC:
+		case gfx_api::pixel_format::FORMAT_RGBA8_ETC2_EAC_SRGB:
 			return ((width + 3) / 4) * ((height + 3) / 4) * 16;
 		case gfx_api::pixel_format::FORMAT_R11_EAC:
 			return ((width + 3) / 4) * ((height + 3) / 4) * 8;
@@ -799,6 +937,7 @@ size_t gfx_api::format_memory_size(gfx_api::pixel_format format, size_t width, s
 			return ((width + 3) / 4) * ((height + 3) / 4) * 16;
 		// ASTC
 		case gfx_api::pixel_format::FORMAT_ASTC_4x4_UNORM:
+		case gfx_api::pixel_format::FORMAT_ASTC_4x4_SRGB:
 			return calculate_astc_size<4, 4>(width, height);
 
 		// no default case to ensure compiler error if more formats are added
@@ -807,52 +946,6 @@ size_t gfx_api::format_memory_size(gfx_api::pixel_format format, size_t width, s
 }
 
 // texture arrays
-
-// loads an image into a texture array, generating mip levels as needed (based on textureType)
-bool gfx_api::context::loadTextureArrayLayerFromUncompressedImage(gfx_api::texture_array& array, size_t layer, const iV_Image& image, gfx_api::texture_type textureType, gfx_api::pixel_format uploadFormat, const std::string& filename, int maxWidth /*= -1*/, int maxHeight /*= -1*/)
-{
-	size_t mipmap_levels = calcMipmapLevelsForUncompressedImage(image, textureType);
-	return loadTextureArrayLayerFromUncompressedImage(array, layer, image, textureType, mipmap_levels, uploadFormat, filename, maxWidth, maxHeight);
-}
-bool gfx_api::context::loadTextureArrayLayerFromUncompressedImage(gfx_api::texture_array& array, size_t layer, const iV_Image& rootImage, gfx_api::texture_type textureType, size_t mipmap_levels, gfx_api::pixel_format uploadFormat, const std::string& filename, int maxWidth /*= -1*/, int maxHeight /*= -1*/)
-{
-	auto miplevels = generateMipMapsFromUncompressedImage(rootImage, mipmap_levels, textureType);
-
-	auto uploadMipLevel = [&](const iV_Image* image, size_t level) {
-		if (uploadFormat == image->pixel_format())
-		{
-			bool uploadResult = array.upload_layer(layer, level, *image);
-			ASSERT_OR_RETURN(false, uploadResult, "Failed to upload buffer to image");
-		}
-		else
-		{
-			// Run-time compression
-			auto compressedImage = gfx_api::compressImage(*image, uploadFormat);
-			ASSERT_OR_RETURN(false, compressedImage != nullptr, "Failed to compress image to format: %zu", static_cast<size_t>(uploadFormat));
-			bool uploadResult = array.upload_layer(layer, level, *compressedImage);
-			ASSERT_OR_RETURN(false, uploadResult, "Failed to upload buffer to image");
-		}
-		return true;
-	};
-
-	if (!uploadMipLevel(&rootImage, 0))
-	{
-		return false;
-	}
-
-	for (size_t level = 1; level <= miplevels.size(); ++level)
-	{
-		const iV_Image* image = dynamic_cast<iV_Image*>(miplevels[level - 1].get());
-		ASSERT_OR_RETURN(false, image != nullptr, "Image wasn't an iV_Image?");
-
-		if (!uploadMipLevel(image, level))
-		{
-			return false;
-		}
-	}
-
-	return true;
-}
 
 // used to load basis mip levels (already encoded in the desired target format) into a texture array
 bool gfx_api::context::loadTextureArrayLayerFromBaseImages(gfx_api::texture_array& array, size_t layer, const std::vector<std::unique_ptr<iV_BaseImage>>& images, const std::string& filename, int maxWidth /*= -1*/, int maxHeight /*= -1*/)
@@ -868,243 +961,90 @@ bool gfx_api::context::loadTextureArrayLayerFromBaseImages(gfx_api::texture_arra
 	return true;
 }
 
-static std::vector<std::unique_ptr<iV_BaseImage>> loadUncompressedImageWithMips(const std::string& imageLoadFilename, gfx_api::texture_type textureType, int maxWidth /*= -1*/, int maxHeight /*= -1*/, bool forceRGBA8 /*= false*/)
+std::pair<uint32_t, uint32_t> gfx_api::context::getSceneRenderTargetDimensions()
 {
-	std::vector<std::unique_ptr<iV_BaseImage>> results;
-#if defined(BASIS_ENABLED)
-	if (strEndsWith(imageLoadFilename, ".ktx2"))
+	std::pair<uint32_t, uint32_t> targetDims = {0, 0};
+	abstract_texture* sceneColor = getPipelineSurface(PipelineSurfaceId::SceneColor);
+	if (sceneColor != nullptr)
 	{
-		results = gfx_api::loadiVImagesFromFile_Basis(imageLoadFilename, textureType, gfx_api::pixel_format_target::texture_2d_array, (forceRGBA8) ? WZ_BASIS_UNCOMPRESSED_FORMAT : gfx_api::context::get().bestUncompressedPixelFormat(gfx_api::pixel_format_target::texture_2d_array, textureType), std::max(0, maxWidth), std::max(0, maxHeight));
-
-		if (forceRGBA8)
+		const auto dims = getRenderTargetDimensions(sceneColor);
+		if (dims.has_value())
 		{
-			for (auto& image : results)
-			{
-				auto pLoadedUncompressedImage = dynamic_cast<iV_Image*>(image.get());
-				if (!pLoadedUncompressedImage)
-				{
-					debug(LOG_ERROR, "Loaded image is not an uncompressed format?: %s", imageLoadFilename.c_str());
-					continue;
-				}
-				pLoadedUncompressedImage->convert_to_rgba();
-			}
+			targetDims = dims.value();
 		}
-
-		return results;
 	}
-	else
-#endif
-	if (strEndsWith(imageLoadFilename, ".png"))
+	if (targetDims.first == 0 || targetDims.second == 0)
 	{
-		auto pCurrentImage = gfx_api::loadUncompressedImageFromFile(imageLoadFilename.c_str(), gfx_api::pixel_format_target::texture_2d_array, textureType, maxWidth, maxHeight, forceRGBA8);
-		if (!pCurrentImage)
-		{
-			debug(LOG_ERROR, "Unable to load image file: %s", imageLoadFilename.c_str());
-			return {};
-		}
-		size_t mipmap_levels = calcMipmapLevelsForUncompressedImage(*pCurrentImage, textureType);
-		auto miplevels = generateMipMapsFromUncompressedImage(*pCurrentImage, mipmap_levels, textureType);
-		results.push_back(std::move(pCurrentImage));
-		results.insert(results.end(), std::make_move_iterator(miplevels.begin()), std::make_move_iterator(miplevels.end()));
-		miplevels.clear();
+		targetDims = getDrawableDimensions();
 	}
-	else
+	const float fraction = getSceneRenderFraction();
+	if (fraction < 1.f && targetDims.first > 0 && targetDims.second > 0)
 	{
-		debug(LOG_ERROR, "Unable to load image file: %s", imageLoadFilename.c_str());
-		return {};
+		targetDims.first = std::min(targetDims.first, std::max<uint32_t>(static_cast<uint32_t>(std::lround(targetDims.first * fraction)), 2));
+		targetDims.second = std::min(targetDims.second, std::max<uint32_t>(static_cast<uint32_t>(std::lround(targetDims.second * fraction)), 2));
 	}
-	return results;
+	return targetDims;
 }
 
-gfx_api::texture_array* gfx_api::context::loadTextureArrayFromFiles(const std::vector<WzString>& filenames, gfx_api::texture_type textureType, int maxWidth /*= -1*/, int maxHeight /*= -1*/, const GenerateDefaultTextureFunc& defaultTextureGenerator, const std::function<void ()>& progressCallback, const std::string& debugName /*= ""*/)
+void gfx_api::context::warmCompiledRenderGraph(std::vector<RenderPassDesc>& /*passes*/,
+	PassGraphCompileResult& /*compileResult*/)
 {
-	ASSERT_OR_RETURN(nullptr, filenames.size() <= gfx_api::context::get().get_context_value(gfx_api::context::context_value::MAX_ARRAY_TEXTURE_LAYERS), "Too many layers");
+}
 
-	std::vector<WzString> imageLoadFilenames;
-	std::transform(filenames.cbegin(), filenames.cend(), std::back_inserter(imageLoadFilenames), [](const WzString& filename) {
-		return imageLoadFilenameFromInputFilename(filename);
-	});
+void gfx_api::context::executeCompiledRenderGraph(std::vector<RenderPassDesc>& passes,
+	const PassGraphCompileResult& compileResult)
+{
+	ASSERT(compileResult.passes.size() == passes.size(),
+	       "executeCompiledRenderGraph: pass count mismatch (descs=%zu compiled=%zu)",
+	       passes.size(), compileResult.passes.size());
 
-	bool allFilesAreKTX2 = std::all_of(imageLoadFilenames.cbegin(), imageLoadFilenames.cend(), [](const WzString& imageLoadFilename) { return imageLoadFilename.endsWith(".ktx2"); });
-	bool anyFileIsKTX2 = allFilesAreKTX2 || std::any_of(imageLoadFilenames.cbegin(), imageLoadFilenames.cend(), [](const WzString& imageLoadFilename) { return imageLoadFilename.endsWith(".ktx2"); });
-	bool anyFileIsPNG = !allFilesAreKTX2 && std::any_of(imageLoadFilenames.cbegin(), imageLoadFilenames.cend(), [](const WzString& imageLoadFilename) { return imageLoadFilename.endsWith(".png"); });
+	setRenderGraphExecuting(true);
 
-#if !defined(BASIS_ENABLED)
-	if (anyFileIsKTX2)
+	ASSERT(compileResult.executionBatches.size() > 0
+		|| std::none_of(compileResult.passes.begin(), compileResult.passes.end(),
+			[](const CompiledPass& p) { return !p.skipped; }),
+		"executeCompiledRenderGraph: non-skipped passes but no execution batches");
+
+	for (const ExecutionBatch& batch : compileResult.executionBatches)
 	{
-		for (auto& imageLoadFilename : imageLoadFilenames)
-		{
-			const std::string& filename = imageLoadFilename.toUtf8();
-			if (strEndsWith(filename, ".ktx2"))
-			{
-				debug(LOG_ERROR, "Unable to load image file: %s", filename.c_str());
-			}
-		}
-		return nullptr;
-	}
+		ASSERT(batch.startIndex <= compileResult.passes.size()
+			&& batch.count <= compileResult.passes.size() - batch.startIndex,
+			"executeCompiledRenderGraph: batch range out of bounds (start=%zu count=%zu compiled=%zu)",
+			batch.startIndex, batch.count, compileResult.passes.size());
+
+		const CompiledPass& head = compileResult.passes[batch.startIndex];
+		const size_t batchEnd = batch.startIndex + batch.count;
+
+#if defined(DEBUG)
+		ASSERT(passes[head.graphIndex].debugName == head.desc.debugName,
+			"CompiledPass.desc diverged from descs[graphIndex] for pass %zu", head.graphIndex);
 #endif
 
-	gfx_api::pixel_format uploadFormat = bestUncompressedPixelFormat(gfx_api::pixel_format_target::texture_2d_array, textureType);
-	gfx_api::pixel_format desiredImageExtractionFormat = uploadFormat;
-#if defined(BASIS_ENABLED)
-	if (allFilesAreKTX2)
-	{
-		auto bestBasisFormat = gfx_api::getBestAvailableTranscodeFormatForBasis(gfx_api::pixel_format_target::texture_2d_array, textureType);
-		if (bestBasisFormat.has_value())
+		debugStringMarker(head.desc.debugName.c_str());
+
+		// Out-of-graph pre-pass barriers must be emitted before the render pass begins (layout
+		// transitions are illegal inside an active render pass) and are coalesced into a single
+		// pipelineBarrier for the whole batch.
+		emitPrePassBarriers(batch, compileResult.passes);
+
+		beginPass(head.desc, &head);
+
+		for (size_t j = batch.startIndex; j < batchEnd; ++j)
 		{
-			uploadFormat = bestBasisFormat.value();
-			desiredImageExtractionFormat = uploadFormat;
+			const CompiledPass& batchPass = compileResult.passes[j];
+			if (j != batch.startIndex)
+			{
+				debugStringMarker(batchPass.desc.debugName.c_str());
+			}
+			if (batchPass.desc.recordFunc)
+			{
+				const RenderPassContext batchContext = buildRenderPassContext(batchPass);
+				batchPass.desc.recordFunc(batchContext);
+			}
 		}
-	}
-	else
-#endif
-	{
-		// just use the best runtime compression format
-		auto bestAvailableCompressedFormat = gfx_api::bestRealTimeCompressionFormat(gfx_api::pixel_format_target::texture_2d_array, textureType);
-		if (bestAvailableCompressedFormat.has_value() && bestAvailableCompressedFormat.value() != gfx_api::pixel_format::invalid)
-		{
-			uploadFormat = bestAvailableCompressedFormat.value();
-			desiredImageExtractionFormat = gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8; // must extract to RGBA for run-time compression
-		}
-		if (anyFileIsKTX2 && anyFileIsPNG)
-		{
-			debug(LOG_INFO, "Performance info: Some files are .ktx2, but others are .png");
-		}
+
+		endPass(&head);
 	}
 
-	bool uncompressedExtractionFormat = gfx_api::is_uncompressed_format(desiredImageExtractionFormat);
-	std::vector<std::unique_ptr<iV_BaseImage>> defaultTextureMips;
-
-	auto getDefaultTextureMipsP = [&defaultTextureMips, &defaultTextureGenerator, textureType, maxWidth, maxHeight](size_t layer, unsigned int width, unsigned int height, size_t mipmap_levels, gfx_api::pixel_format format) -> std::vector<std::unique_ptr<iV_BaseImage>>* {
-		if (defaultTextureMips.empty())
-		{
-			ASSERT_OR_RETURN(nullptr, defaultTextureGenerator != nullptr, "Failed to generate default texture - no default texture generator provided");
-			ASSERT_OR_RETURN(nullptr, gfx_api::is_uncompressed_format(format), "Expected uncompressed extraction format, but received: %s", gfx_api::format_to_str(format));
-			if (defaultTextureGenerator)
-			{
-				auto pCurrentImage = defaultTextureGenerator((layer > 0) ? width : maxWidth, (layer > 0) ? height : maxHeight, gfx_api::format_channels(format));
-				ASSERT_OR_RETURN(nullptr, pCurrentImage != nullptr, "Failed to generate default texture");
-				if (layer > 0)
-				{
-					ASSERT_OR_RETURN(nullptr, pCurrentImage->width() == width && pCurrentImage->height() == height, "Failed to generate matching default texture");
-				}
-				size_t expectedMipLevels = calcMipmapLevelsForUncompressedImage(*pCurrentImage, textureType);
-				if (layer > 0)
-				{
-					ASSERT_OR_RETURN(nullptr, expectedMipLevels == mipmap_levels, "Failed to generate matching default texture");
-				}
-				auto miplevels = generateMipMapsFromUncompressedImage(*pCurrentImage, expectedMipLevels, textureType);
-				defaultTextureMips.push_back(std::move(pCurrentImage));
-				defaultTextureMips.insert(defaultTextureMips.end(), std::make_move_iterator(miplevels.begin()), std::make_move_iterator(miplevels.end()));
-				miplevels.clear();
-			}
-		}
-		return &defaultTextureMips;
-	};
-
-	std::unique_ptr<gfx_api::texture_array> texture_array = nullptr;
-	unsigned int width = 0;
-	unsigned int height = 0;
-	size_t mipmap_levels = 0;
-	size_t layers_count = imageLoadFilenames.size();
-
-	for (size_t layer = 0; layer < layers_count; ++layer)
-	{
-		const WzString& imageLoadFilename = imageLoadFilenames[layer];
-
-		// load the file to an array of base images
-		std::vector<std::unique_ptr<iV_BaseImage>> loadedImagesForLayer;
-		std::vector<std::unique_ptr<iV_BaseImage>>* pImagesForLayer = nullptr;
-		if (imageLoadFilename.isEmpty())
-		{
-			pImagesForLayer = getDefaultTextureMipsP(layer, width, height, mipmap_levels, desiredImageExtractionFormat);
-			ASSERT_OR_RETURN(nullptr, pImagesForLayer != nullptr, "Failed to generate matching default texture");
-		}
-		else if (uncompressedExtractionFormat || imageLoadFilename.endsWith(".png"))
-		{
-			// load into an uncompressed format
-			loadedImagesForLayer = loadUncompressedImageWithMips(imageLoadFilename.toUtf8(), textureType, maxWidth, maxHeight, desiredImageExtractionFormat == gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8);
-			if (!loadedImagesForLayer.empty())
-			{
-				pImagesForLayer = &loadedImagesForLayer;
-			}
-			else
-			{
-				// failed to load image
-				debug(LOG_INFO, "Using default texture generator for failed image: %s", imageLoadFilename.toUtf8().c_str());
-				pImagesForLayer = getDefaultTextureMipsP(layer, width, height, mipmap_levels, desiredImageExtractionFormat);
-			}
-		}
-		else
-		{
-			// load directly into a compressed format
-#if defined(BASIS_ENABLED)
-			if (imageLoadFilename.endsWith(".ktx2"))
-			{
-				loadedImagesForLayer = gfx_api::loadiVImagesFromFile_Basis(imageLoadFilename.toUtf8(), textureType, gfx_api::pixel_format_target::texture_2d_array, desiredImageExtractionFormat, std::max(0, maxWidth), std::max(0, maxHeight));
-				pImagesForLayer = &loadedImagesForLayer;
-			}
-			else
-#endif
-			{
-				debug(LOG_ERROR, "Unable to load image file: %s", imageLoadFilename.toUtf8().c_str());
-				return {};
-			}
-		}
-
-		if (progressCallback)
-		{
-			progressCallback();
-		}
-
-		ASSERT_OR_RETURN(nullptr, pImagesForLayer && !pImagesForLayer->empty(), "Unable to load images: %s", imageLoadFilename.toUtf8().c_str());
-
-		if (layer == 0)
-		{
-			width = pImagesForLayer->front()->width();
-			height = pImagesForLayer->front()->height();
-			mipmap_levels = pImagesForLayer->size();
-
-			texture_array = std::unique_ptr<gfx_api::texture_array>(gfx_api::context::get().create_texture_array(mipmap_levels, layers_count, width, height, uploadFormat, debugName));
-			ASSERT_OR_RETURN(nullptr, texture_array.get() != nullptr, "Failed to create texture array (miplevels: %zu, layers: %zu, width: %u, height: %u): %s", mipmap_levels, layers_count, width, height, imageLoadFilename.toUtf8().c_str());
-		}
-		else
-		{
-			ASSERT_OR_RETURN(nullptr, width == pImagesForLayer->front()->width() && height == pImagesForLayer->front()->height(), "Unexpected image dimensions (%u x %u) does not match the first image dimensions (%u x %u): %s", pImagesForLayer->front()->width(), pImagesForLayer->front()->height(), width, height, imageLoadFilename.toUtf8().c_str());
-			ASSERT_OR_RETURN(nullptr, pImagesForLayer->size() == mipmap_levels, "Unexpected number of mip levels (%zu; expected: %zu): %s", pImagesForLayer->size(), mipmap_levels, imageLoadFilename.toUtf8().c_str());
-		}
-
-		// upload the layer
-
-		// If already in the uploadFormat
-		if (uploadFormat == desiredImageExtractionFormat)
-		{
-			// just load directly
-			bool uploadSuccess = gfx_api::context::get().loadTextureArrayLayerFromBaseImages(*texture_array, layer, *pImagesForLayer, imageLoadFilename.toUtf8(), width, height);
-			ASSERT_OR_RETURN(nullptr, uploadSuccess, "Failed to loadTextureArrayLayerFromBaseImages");
-		}
-		else
-		{
-			// convert from (presumably uncompressed) to desired run-time compressed target format (for each mip level)
-			ASSERT_OR_RETURN(nullptr, uncompressedExtractionFormat, "Expected uncompressed extraction format, but received: %s", gfx_api::format_to_str(desiredImageExtractionFormat));
-
-			for (size_t level = 0; level < pImagesForLayer->size(); ++level)
-			{
-				const iV_Image* image = dynamic_cast<iV_Image*>(pImagesForLayer->at(level).get());
-				ASSERT_OR_RETURN(nullptr, image != nullptr, "Image wasn't an iV_Image?");
-				// Run-time compression
-				auto compressedImage = gfx_api::compressImage(*image, uploadFormat);
-				ASSERT_OR_RETURN(nullptr, compressedImage != nullptr, "Failed to compress image to format: %zu", static_cast<size_t>(uploadFormat));
-				bool uploadResult = texture_array->upload_layer(layer, level, *compressedImage);
-				ASSERT_OR_RETURN(nullptr, uploadResult, "Failed to upload buffer to image");
-			}
-		}
-	}
-
-	if (texture_array)
-	{
-		texture_array->flush();
-	}
-
-	return texture_array.release();
+	setRenderGraphExecuting(false);
 }

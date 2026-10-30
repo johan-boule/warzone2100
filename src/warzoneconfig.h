@@ -25,6 +25,7 @@
 #define __INCLUDED_SRC_WARZONECONFIG_H__
 
 #include "lib/framework/frame.h"
+#include "lib/framework/wzstring.h"
 #include "lib/sequence/sequence.h"
 #include "lib/sound/sounddefs.h"
 #include "multiplaydefs.h"
@@ -35,6 +36,19 @@
 #define	CAMERASPEED_MIN		(100)
 #define	CAMERASPEED_DEFAULT	(2500)
 #define	CAMERASPEED_STEP	(100)
+
+#define GAMEPAD_CURSOR_SPEED_MIN          (200)
+#define GAMEPAD_CURSOR_SPEED_MAX          (2000)
+#define GAMEPAD_CURSOR_SPEED_DEFAULT      (1000)
+#define GAMEPAD_CURSOR_SPEED_STEP         (100)
+#define GAMEPAD_DEADZONE_MIN              (5)
+#define GAMEPAD_DEADZONE_MAX              (40)
+#define GAMEPAD_DEADZONE_DEFAULT          (15)
+#define GAMEPAD_TRIGGER_THRESHOLD_MIN     (20)
+#define GAMEPAD_TRIGGER_THRESHOLD_MAX     (90)
+#define GAMEPAD_TRIGGER_THRESHOLD_DEFAULT (50)
+#define GAMEPAD_MAGNETISM_MAX             (100)
+#define GAMEPAD_MAGNETISM_DEFAULT         (50)
 
 #define MIN_MPINACTIVITY_MINUTES 4
 #define MIN_MPGAMETIMELIMIT_MINUTES 30
@@ -70,6 +84,13 @@ enum class TrapCursorMode : uint8_t
 	Automatic
 };
 
+enum class GamepadMode : uint8_t
+{
+	Disabled = 0,   // gamepad support fully off - the SDL gamepad subsystem is never initialized
+	Enabled,        // gamepad support always active
+	Automatic       // gamepad support active while a controller is connected (default)
+};
+
 /***************************************************************************/
 /*
  *	Global ProtoTypes
@@ -86,6 +107,26 @@ void war_setAntialiasing(int);
 int war_getAntialiasing();
 void war_SetTrapCursor(TrapCursorMode v);
 TrapCursorMode war_GetTrapCursor();
+void war_SetGamepadMode(GamepadMode v);
+GamepadMode war_GetGamepadMode();
+void war_SetGamepadCursorSpeed(int speed);
+int war_GetGamepadCursorSpeed();
+void war_SetGamepadStickDeadzone(int percent);
+int war_GetGamepadStickDeadzone();
+void war_SetGamepadTriggerThreshold(int percent);
+int war_GetGamepadTriggerThreshold();
+void war_SetGamepadCursorMagnetism(int percent);
+int war_GetGamepadCursorMagnetism();
+void war_SetGamepadInvertRightStick(bool inverted);
+bool war_GetGamepadInvertRightStick();
+void war_SetGamepadSwapSticks(bool swapped);
+bool war_GetGamepadSwapSticks();
+void war_SetGamepadRumble(bool enabled);
+bool war_GetGamepadRumble();
+void war_SetGamepadShowLayoutOnConnect(bool enabled);
+bool war_GetGamepadShowLayoutOnConnect();
+void war_SetGamepadLayoutSeenDevices(const std::string& deviceGUIDs);
+const std::string& war_GetGamepadLayoutSeenDevices();
 bool war_GetColouredCursor();
 void war_SetColouredCursor(bool enabled);
 void war_SetVsync(int value);
@@ -136,8 +177,12 @@ void war_setMPcolour(int colour);
 int war_getMPcolour();
 void war_setScanlineMode(SCANLINE_MODE mode);
 SCANLINE_MODE war_getScanlineMode();
+void war_setFMVGamma(float gamma);
+float war_getFMVGamma();
 video_backend war_getGfxBackend();
 void war_setGfxBackend(video_backend backend);
+WzString war_getVideoDecoderBackend();
+bool war_setVideoDecoderBackend(const WzString& backend);
 JS_BACKEND war_getJSBackend();
 void war_setJSBackend(JS_BACKEND backend);
 bool war_getAutoAdjustDisplayScale();
@@ -152,6 +197,9 @@ int war_getAutoNotReadyKickSeconds();
 void war_setAutoNotReadyKickSeconds(int seconds);
 bool war_getDisableReplayRecording();
 void war_setDisableReplayRecording(bool disable);
+// Dev-only: force preferring the legacy folder savegame over the new GameState blob when a save has both.
+bool war_getDevForceOldSavegameLoad();
+void war_setDevForceOldSavegameLoad(bool force);
 int war_getMaxReplaysSaved();
 void war_setMaxReplaysSaved(int maxReplaysSaved);
 int war_getOldLogsLimit();
@@ -164,6 +212,16 @@ uint16_t war_getMPopenSpectatorSlots();
 void war_setMPopenSpectatorSlots(uint16_t spectatorSlots);
 PLAYER_LEAVE_MODE war_getMPPlayerLeaveMode();
 void war_setMPPlayerLeaveMode(PLAYER_LEAVE_MODE);
+uint16_t war_getMPPlayerReconnectWaitSeconds();
+void war_setMPPlayerReconnectWaitSeconds(uint16_t seconds);
+
+enum class MP_CHAT_MODE : uint8_t
+{
+	ON = 0,
+	QUICK_CHAT_ONLY = 1
+};
+MP_CHAT_MODE war_getMPChatMode();
+void war_setMPChatMode(MP_CHAT_MODE mode);
 
 void war_setLastIpServerConnect(const std::string& serverName);
 const std::string& war_getLastIpServerConnect();
@@ -184,8 +242,74 @@ void war_setShadowFilterSize(uint32_t filterSize);
 uint32_t war_getShadowMapResolution();
 void war_setShadowMapResolution(uint32_t resolution);
 
+uint32_t war_getRenderResolutionPercent();
+void war_setRenderResolutionPercent(uint32_t percent);
+
+enum class SCENE_UPSCALING_MODE
+{
+	BILINEAR,
+	FSR1,
+};
+SCENE_UPSCALING_MODE war_getSceneUpscalingMode();
+void war_setSceneUpscalingMode(SCENE_UPSCALING_MODE mode);
+// RCAS sharpness in hundredths of stops (0 is sharpest, 200 is the least sharp)
+int war_getUpscalingSharpness();
+void war_setUpscalingSharpness(int hundredthsOfStops);
+
+enum class SMAA_MODE : uint8_t
+{
+	OFF,
+	LOW,
+	MEDIUM,
+	HIGH,
+	ULTRA,
+};
+SMAA_MODE war_getSmaaMode();
+void war_setSmaaMode(SMAA_MODE mode);
+
 bool war_getPointLightPerPixelLighting();
 void war_setPointLightPerPixelLighting(bool perPixelEnabled);
+
+bool war_getMuzzleFlashLighting();
+void war_setMuzzleFlashLighting(bool muzzleFlashesEnabled);
+
+bool war_getProjectileLighting();
+void war_setProjectileLighting(bool projectilesEnabled);
+
+enum class HDR_LIGHTING_MODE : uint8_t
+{
+	OFF,
+	ON,
+	AUTO,
+};
+HDR_LIGHTING_MODE war_getHdrLightingMode();
+void war_setHdrLightingMode(HDR_LIGHTING_MODE mode);
+/// Whether HDR lighting is asked for: On, or Auto with per-pixel point lights and normal mapped terrain
+bool war_getHdrLighting();
+
+enum class SSAO_MODE : uint8_t
+{
+	OFF,
+	LOW,
+	NORMAL,
+	HIGH,
+	ULTRA,
+};
+SSAO_MODE war_getSsaoMode();
+void war_setSsaoMode(SSAO_MODE mode);
+/// True when SSAO is not Off.
+bool war_getSSAO();
+
+enum class SSR_MODE : uint8_t
+{
+	OFF,
+	LOW,
+	NORMAL,
+	HIGH,
+	ULTRA,
+};
+SSR_MODE war_getSsrMode();
+void war_setSsrMode(SSR_MODE mode);
 
 bool war_getGroupsMenuEnabled();
 void war_setGroupsMenuEnabled(bool enabled);

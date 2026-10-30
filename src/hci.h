@@ -27,6 +27,8 @@
 #include <list>
 
 #include <functional>
+#include <string>
+#include <vector>
 typedef std::function<void (const int)> playerCallbackFunc; // callback function (that receives the player)
 
 #include "lib/framework/types.h"
@@ -226,7 +228,6 @@ enum INTMODE
 	INT_MISSIONRES,	// Results of a mission display.
 	INT_MULTIMENU,	// multiplayer only, player stats etc...
 	INT_CDCHANGE,		// CD Change message box
-	INT_POPUPMSG,	// Adds a popup message to user
 
 	INT_MAXMODE,   //leave as last so we can start the objMode at this value
 };
@@ -291,6 +292,9 @@ void intDoScreenRefresh();
 /* Run the widgets for the in game interface */
 INT_RETVAL intRunWidgets();
 
+/* Request quitting the game to the main menu (processed by the next intRunWidgets() call) */
+void intRequestQuitToMainMenu();
+
 /* Display the widgets for the in game interface */
 void intDisplayWidgets();
 
@@ -304,10 +308,42 @@ bool intShowGroupSelectionMenu();
 bool intAddPower();
 void intRemoveReticule();
 void intHideInGameOptionsButton();
-void setReticuleStats(int ButId, std::string tip = std::string(), std::string filename = std::string(), std::string filenameDown = std::string(), const playerCallbackFunc& callbackFunc = nullptr);
+/// The script function a reticule button calls when clicked (setReticuleButton's), by name,
+/// so that it can be found again once the scripts are loaded again (a saved game, an in-process restore)
+struct ReticuleCallbackRef
+{
+	std::string scriptName;
+	int player = -1;
+	std::string function;
+	bool empty() const { return function.empty(); }
+};
+void setReticuleStats(int ButId, std::string tip = std::string(), std::string filename = std::string(), std::string filenameDown = std::string(), const playerCallbackFunc& callbackFunc = nullptr, const ReticuleCallbackRef& callbackRef = ReticuleCallbackRef());
+void clearReticuleCallbacks();
 void setReticulesEnabled(bool enabled);
 void setReticuleFlash(int ButId, bool flash);
 optional<std::string> getReticuleButtonDisplayFilename(int ButId);
+
+/// What the scripts set on a reticule button (setReticuleButton, setReticuleFlash): saved with a game
+struct ReticuleButtonState
+{
+	std::string tip;
+	std::string filename;
+	std::string filenameDown;
+	bool flashing = false;
+	ReticuleCallbackRef callback;
+};
+std::vector<ReticuleButtonState> getReticuleButtonStates();
+/// Whether the scripts last showed or hid the interface (showInterface(), hideInterface()): saved with a game.
+/// Not the widgets' current state, which the game hides for a moment itself (the multiplayer start screen)
+enum class ScriptInterfaceRequest { None, Shown, Hidden };
+ScriptInterfaceRequest getScriptInterfaceRequest();
+/// Show or hide the interface for the scripts (as showInterface(), hideInterface())
+void scriptShowInterface(bool show);
+/// Set every reticule button as saved.
+/// resolveCallback finds the script function of a saved callback (none if it can't)
+void restoreReticuleButtonStates(const std::vector<ReticuleButtonState> &states, const std::function<playerCallbackFunc (const ReticuleCallbackRef &)> &resolveCallback);
+/// Find the script functions of the buttons' callbacks again, once the scripts were loaded again
+void resolveReticuleCallbacks(const std::function<playerCallbackFunc (const ReticuleCallbackRef &)> &resolveCallback);
 
 /* Set the map view point to the world coordinates x,y */
 void intSetMapPos(UDWORD x, UDWORD y);
@@ -343,6 +379,8 @@ void intScreenSizeDidChange(int oldWidth, int oldHeight, int newWidth, int newHe
 
 /* Refresh icons on the interface, without disturbing the layout. i.e. smartreset*/
 void intRefreshScreen();
+/// Test-only (--gamestate-ui-stress): open the build, manufacture, research, commander or order form, or close them
+bool intTestShowForm(unsigned which);
 
 /* Remove the stats widgets from the widget screen */
 void intRemoveStats();

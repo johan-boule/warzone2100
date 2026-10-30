@@ -6,7 +6,7 @@ include(WZVcpkgInit) # Must come before project() command
 set(CMAKE_MODULE_PATH "${_OLD_CMAKE_MODULE_PATH}")
 unset(_OLD_CMAKE_MODULE_PATH)
 
-project(warzone2100)
+project(warzone2100 LANGUAGES C CXX)
 
 include(CMakeDependentOption)
 
@@ -15,6 +15,8 @@ OPTION(WZ_ENABLE_WARNINGS_AS_ERRORS "Enable compiler flags that treat (most) war
 OPTION(WZ_ENABLE_BASIS_UNIVERSAL "Enable Basis Universal texture support" ON)
 OPTION(WZ_DEBUG_GFX_API_LEAKS "Enable debugging for graphics API leaks" ON)
 OPTION(WZ_FORCE_MINIMAL_OPUSFILE "Force a minimal build of Opusfile, since WZ does not need (or want) HTTP stream support" ON)
+OPTION(WZ_ENABLE_WEBM "Enable WebM (VP8/VP9) video support (requires libvpx)" ON)
+OPTION(WZ_ENABLE_VIDEO_BACKEND_MF "Enable the Windows Media Foundation video decode backend" ON)
 OPTION(ENABLE_NLS "Native Language Support" ON)
 if(NOT CMAKE_SYSTEM_NAME MATCHES "Emscripten")
 	OPTION(ENABLE_DOCS "Enable documentation generation" ON)
@@ -28,6 +30,7 @@ endif()
 
 # Dev options
 OPTION(WZ_PROFILING_NVTX "Add NVTX-based profiling instrumentation to the code" OFF)
+OPTION(WZ_PERF_COUNTERS "Compile in the per-tick performance counters used by --perfcounters" OFF)
 
 if(CMAKE_SYSTEM_NAME MATCHES "Windows" OR CMAKE_SYSTEM_NAME MATCHES "Darwin" OR CMAKE_SYSTEM_NAME MATCHES "Linux")
 	# Only supported on Windows, macOS, and Linux - requires additional configuration, so off by default
@@ -35,6 +38,13 @@ if(CMAKE_SYSTEM_NAME MATCHES "Windows" OR CMAKE_SYSTEM_NAME MATCHES "Darwin" OR 
 endif()
 
 set(WZ_DISTRIBUTOR "UNKNOWN" CACHE STRING "Name of distributor compiling this package")
+if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
+	# App bundles get theirs via pkg/buildmanifest_bundle.cmake
+	set(WZ_BUILDMANIFEST OFF)
+else()
+	OPTION(WZ_BUILDMANIFEST "Generate a build manifest when installing or packaging" ON)
+	OPTION(WZ_BUILDMANIFEST_DATA_ARCHIVES "Include the core data archives (base.wz, mp.wz) in the build manifest (turn off when they ship in a separately built package)" ON)
+endif()
 
 if (DEFINED ENV{WZ_CI_DISABLE_BASIS_COMPRESS_TEXTURES})
 	# NOTE: Do *NOT* set this when building packages to distribute / install - only intended for select CI runs
@@ -60,9 +70,10 @@ else()
 endif()
 
 # CXX Standard
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF) # Disable compiler-specific extensions
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 # Support folders (for nicer IDE organization)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -102,6 +113,10 @@ if(NOT DEFINED WZ_LOCALEDIR)
 		set(WZ_LOCALEDIR "/share/locale")
 	endif()
 endif()
+if(NOT DEFINED WZ_BUILDMANIFEST_DIR AND NOT CMAKE_SYSTEM_NAME MATCHES "Windows|Darwin|Emscripten")
+	# Architecture-specific, so kept out of WZ_DATADIR
+	set(WZ_BUILDMANIFEST_DIR "${CMAKE_INSTALL_LIBDIR}/warzone2100${WZ_OUTPUT_NAME_SUFFIX}")
+endif()
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
 	if(NOT CMAKE_INSTALL_BINDIR STREQUAL "bin")
 		# Windows builds expect a non-empty BINDIR
@@ -112,13 +127,16 @@ if(CMAKE_SYSTEM_NAME MATCHES "Windows")
 endif()
 if(IS_ABSOLUTE "${CMAKE_INSTALL_BINDIR}")
 	# Since the main executable install location is used to determine the install prefix,
-	# an absolute bindir requires an absolute CMAKE_INSTALL_LOCALEDIR + WZ_DATADIR (or locales + data won't be found)
+	# an absolute bindir requires absolute CMAKE_INSTALL_LOCALEDIR, WZ_DATADIR and WZ_BUILDMANIFEST_DIR (or they won't be found)
 	set(_nonAbsolutePaths)
 	if(NOT IS_ABSOLUTE "${CMAKE_INSTALL_LOCALEDIR}")
 		list(APPEND _nonAbsolutePaths "CMAKE_INSTALL_LOCALEDIR")
 	endif()
 	if(NOT IS_ABSOLUTE "${WZ_DATADIR}")
 		list(APPEND _nonAbsolutePaths "WZ_DATADIR")
+	endif()
+	if(DEFINED WZ_BUILDMANIFEST_DIR AND NOT IS_ABSOLUTE "${WZ_BUILDMANIFEST_DIR}")
+		list(APPEND _nonAbsolutePaths "WZ_BUILDMANIFEST_DIR")
 	endif()
 	if(_nonAbsolutePaths)
 		message( FATAL_ERROR "An absolute CMAKE_INSTALL_BINDIR path cannot be used if the following are not also absolute paths: ${_nonAbsolutePaths}\nRECOMMENDED SOLUTION:\nMake all of these *relative* paths, and use CMAKE_INSTALL_DIR and/or CPACK_PACKAGING_INSTALL_PREFIX to affect the install prefix / location (which can be absolute)." )
@@ -412,6 +430,8 @@ macro(CONFIGURE_WZ_COMPILER_WARNINGS)
 			set(CMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD "c++14")
 		elseif (CMAKE_CXX_STANDARD EQUAL 17)
 			set(CMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD "c++1z")
+		elseif (CMAKE_CXX_STANDARD EQUAL 20)
+			set(CMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD "c++2a")
 		else()
 			# Additional mapping required for CMAKE_CXX_STANDARD => Xcode's CLANG_CXX_LANGUAGE_STANDARD attribute (above)
 			# Also may need to bump the minimum supported version of Xcode for compilation
@@ -870,6 +890,7 @@ function(CHECK_IS_ABSOLUTE_PATH _var _output)
 endfunction()
 CHECK_IS_ABSOLUTE_PATH(WZ_DATADIR WZ_DATADIR_ISABSOLUTE)
 CHECK_IS_ABSOLUTE_PATH(WZ_LOCALEDIR WZ_LOCALEDIR_ISABSOLUTE)
+CHECK_IS_ABSOLUTE_PATH(WZ_BUILDMANIFEST_DIR WZ_BUILDMANIFEST_DIR_ISABSOLUTE)
 
 add_subdirectory(3rdparty)
 
@@ -896,6 +917,37 @@ add_subdirectory(doc)
 add_subdirectory(po)
 add_subdirectory(src)
 add_subdirectory(pkg)
+
+# Standalone unit test for the (dependency-free) terrain surface interpolation math
+option(WZ_BUILD_TERRAIN_SURFACE_TEST "Build the terrain surface math unit test (tests/terrain_surface_test.cpp)" OFF)
+if(WZ_BUILD_TERRAIN_SURFACE_TEST)
+	add_executable(terrain_surface_test "${PROJECT_SOURCE_DIR}/tests/terrain_surface_test.cpp")
+	target_include_directories(terrain_surface_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
+endif()
+
+# Standalone unit test for the (dependency-free) VP9 bitstream helpers
+option(WZ_BUILD_VP9_BITSTREAM_TEST "Build the VP9 bitstream helpers unit test (tests/vp9_bitstream_test.cpp)" OFF)
+if(WZ_BUILD_VP9_BITSTREAM_TEST)
+	add_executable(vp9_bitstream_test "${PROJECT_SOURCE_DIR}/tests/vp9_bitstream_test.cpp" "${PROJECT_SOURCE_DIR}/lib/sequence/vp9_bitstream.cpp")
+	target_include_directories(vp9_bitstream_test PRIVATE "${PROJECT_SOURCE_DIR}")
+endif()
+
+# Standalone unit test for the (dependency-free) main-thread exec queue
+option(WZ_BUILD_MAINTHREADEXEC_TEST "Build the main-thread exec queue unit test (tests/mainthreadexec_test.cpp)" OFF)
+if(WZ_BUILD_MAINTHREADEXEC_TEST)
+	find_package(Threads REQUIRED)
+	add_executable(mainthreadexec_test "${PROJECT_SOURCE_DIR}/tests/mainthreadexec_test.cpp")
+	target_include_directories(mainthreadexec_test PRIVATE "${PROJECT_SOURCE_DIR}")
+	target_link_libraries(mainthreadexec_test PRIVATE Threads::Threads)
+endif()
+
+# In-memory golden PassId sequences from PassGraphTopologyBlueprint::fromSnapshot (no GPU)
+option(WZ_BUILD_RENDER_GRAPH_TEST "Build the render-graph pass sequence unit test (tests/render_graph_pass_sequence_test.cpp)" OFF)
+if(WZ_BUILD_RENDER_GRAPH_TEST)
+	add_executable(render_graph_pass_sequence_test "${PROJECT_SOURCE_DIR}/tests/render_graph_pass_sequence_test.cpp")
+	target_include_directories(render_graph_pass_sequence_test PRIVATE "${PROJECT_SOURCE_DIR}")
+	target_link_libraries(render_graph_pass_sequence_test PRIVATE ivis-opengl framework)
+endif()
 
 # Install base text / info files
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")

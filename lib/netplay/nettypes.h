@@ -30,6 +30,7 @@
 #include "lib/framework/wzstring.h"
 
 #include <type_traits>
+#include <functional>
 
 #include <nonstd/optional.hpp>
 using nonstd::optional;
@@ -58,6 +59,19 @@ NETQUEUE NETgameQueue(unsigned player);       ///< The game action queue. (See c
 NETQUEUE NETgameQueueForced(unsigned player); ///< Only used by the host, to force-feed a GAME_PLAYER_LEFT message into someone's game queue.
 NETQUEUE NETbroadcastQueue(unsigned excludePlayer = NET_NO_EXCLUDE);  ///< The queue for sending data directly to the netQueues of all clients, not just a specific one. (See comments on broadcastQueue in nettypes.cpp.)
 
+/// Capture the pending (sim-unread) game-action messages for a player's game queue, in read order, as raw
+/// bytes. For disk savegames: a disk cold-load has no relay, so the backlog must be persisted and re-injected.
+/// Empty for an unallocated slot.
+std::vector<std::vector<uint8_t>> NETgameQueueCapturePending(unsigned player);
+/// Re-inject captured pending game-action messages (from NETgameQueueCapturePending) into a player's game
+/// queue, in the given order. Must be called while the queue is empty (before the first post-load tick).
+/// Returns the number restored; 0 if the queue slot is not allocated (caller should treat as "not restored").
+size_t NETgameQueueRestorePending(unsigned player, const std::vector<std::vector<uint8_t>> &rawMessages);
+/// Empty a player's game queue, keeping whether it sends its messages over the network and whether the game reads them
+/// (unlike NETinitQueue, which makes a queue that does both).
+/// For an in-process restore, before its messages are put back.
+void NETgameQueueReset(unsigned player);
+
 void NETinsertRawData(NETQUEUE queue, uint8_t *data, size_t dataLen);  ///< Dump raw data from sockets and raw data sent via host here.
 void NETinsertMessageFromNet(NETQUEUE queue, NetMessage&& message);     ///< Dump whole NetMessages into the queue.
 bool NETisMessageReady(NETQUEUE queue);       ///< Returns true if there is a complete message ready to deserialise in this queue.
@@ -79,8 +93,8 @@ void NETsetSessionKeys(uint8_t player, SessionKeys&& keys);
 void NETclearSessionKeys();
 void NETclearSessionKeys(uint8_t player);
 optional<MessageWriter> NETbeginEncodeSecured(NETQUEUE queue, uint8_t type); ///< For encoding a secured net message, for a *specific player* - see .cpp file for more details
-optional<MessageReader> NETbeginDecodeSecured(NETQUEUE queue, uint8_t type);
-bool NETdecryptSecuredNetMessage(NETQUEUE queue, uint8_t& type);
+optional<MessageReader> NETbeginDecodeSecured(NETQUEUE queue, uint8_t type, bool* pNotSecured = nullptr);
+bool NETdecryptSecuredNetMessage(NETQUEUE queue, uint8_t& type, const char*& failureReason);
 
 // New overloads that accept MessageReader:
 void NETuint8_t(MessageReader& r, uint8_t& val);
@@ -121,17 +135,31 @@ void NETbytes(MessageReader& r, VecT& vec, unsigned maxLen = 10000)
 void NETPosition(MessageReader& r, Position& pos);
 void NETRotation(MessageReader& r, Rotation& rot);
 void NETVector2i(MessageReader& r, Vector2i& vec);
-void NETnetMessage(MessageReader& r, NetMessage** msg);  ///< Must delete the NETMESSAGE.
+bool NETnetMessage(MessageReader& r, NetMessage** msg) WZ_DECL_WARN_UNUSED_RESULT;  ///< Must delete the NETMESSAGE. On failure *msg is nullptr and the reader is marked invalid.
+bool NETshareGameQueueContains(const NetMessage& shareGameQueueMessage, uint8_t gameMessageType);
 
+/// Reads an enum value. Fails (leaving enumRef unchanged and marking the reader invalid) if the value is > maxValue,
+/// which must keep the value within the enum's range.
 template <typename EnumT>
-void NETenum(MessageReader& r, EnumT& enumRef)
+void NETenum(MessageReader& r, EnumT& enumRef, uint32_t maxValue)
 {
 	static_assert(std::is_enum<EnumT>::value, "Expected enumeration type as the argument");
 
 	uint32_t val = 0;
 	NETuint32_t(r, val);
+	if (!r.valid() || val > maxValue)
+	{
+		r.markInvalid();
+		return;
+	}
 	enumRef = static_cast<EnumT>(val);
 }
+
+/// Reads a count of elements that follow. Fails (setting count to 0 and marking the reader invalid) if count > maxCount,
+/// or if the rest of the message is too short to hold count elements of at least minElemBytes each.
+/// On failure, onInvalid (if provided) is called with the rejected count, for logging.
+bool NETcount(MessageReader& r, uint32_t& count, uint32_t maxCount, size_t minElemBytes = 1);
+bool NETcount(MessageReader& r, uint32_t& count, uint32_t maxCount, size_t minElemBytes, const std::function<void (uint32_t invalidCount)>& onInvalid);
 
 bool NETend(MessageReader& r);
 
@@ -182,6 +210,14 @@ static void NETenum(MessageWriter& w, EnumT val)
 	NETuint32_t(w, static_cast<uint32_t>(val));
 }
 
+template <typename EnumT>
+static void NETenum(MessageWriter& w, EnumT val, uint32_t /*maxValue*/)
+{
+	NETenum(w, val);
+}
+
+bool NETcount(MessageWriter& w, uint32_t count, uint32_t maxCount, size_t minElemBytes = 1);
+
 bool NETend(MessageWriter& w);
 
 void NETbytesOutputToVector(const std::vector<uint8_t> &data, std::vector<uint8_t>& output);
@@ -210,6 +246,28 @@ public:
 bool NETloadReplay(std::string const &filename, ReplayOptionsHandler& optionsHandler);
 bool NETisReplay();
 void NETshutdownReplay();
+
+/// During replay playback: how many messages of each game queue (MAX_GAMEQUEUE_SLOTS entries) the game has read.
+/// The replay's messages are kept, read-only, for the whole playback,
+/// so these positions are all an in-process snapshot needs to put the queues back.
+std::vector<uint32_t> NETreplayReadPositions();
+/// Whether positions from NETreplayReadPositions() can be restored in this playback (error says why not).
+bool NETreplayCheckReadPositions(const std::vector<uint32_t> &positions, std::string *error = nullptr);
+/// Put each game queue the replay feeds back to the given read position:
+/// the replay's messages from there on, in order (with the REPLAY_ENDED marker last).
+/// A queue the replay doesn't feed (NETreplayLoadedCount() == 0: the viewer's own,
+/// which only gets what the viewer sends itself) is left to the caller.
+/// Returns false, changing nothing, if the positions don't fit this playback.
+bool NETreplayRestoreReadPositions(const std::vector<uint32_t> &positions);
+/// During replay playback: the file being played back (as given to NETloadReplay).
+const std::string &NETreplayFilename();
+/// During replay playback: the game time the recorded game had when the recording stopped
+/// (from the replay's end-of-game info), which playback reaches at the replay's end. 0 if unknown.
+uint32_t NETreplayEndGameTime();
+/// How many of the replay's messages were loaded into a game queue (0: the replay doesn't feed it).
+size_t NETreplayLoadedCount(unsigned player);
+/// The memory the kept replay messages take (bytes), for the logs.
+size_t NETreplayLoadedSize();
 
 bool NETgameIsBehindPlayersByAtLeast(size_t numGameTimeUpdates = 2);
 

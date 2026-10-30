@@ -1,6 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 /*
 	This file is part of Warzone 2100.
-	Copyright (C) 2008-2020  Warzone 2100 Project
+	Copyright (C) 2008-2026  Warzone 2100 Project (https://github.com/Warzone2100)
 
 	Warzone 2100 is free software; you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
@@ -21,8 +23,10 @@
 #define __INCLUDED_LIB_SEQUENCE_SEQUENCE_H__
 
 #include "lib/framework/types.h"
-#include "lib/framework/physfs_ext.h"
+#include "video_provider.h"
 #include <memory>
+
+struct WZVideoEditList;
 
 typedef enum
 {
@@ -31,13 +35,19 @@ typedef enum
 	SCANLINES_BLACK
 } SCANLINE_MODE;
 
-// Abstraction for handling loading videos from files, or from memory buffer, etc
-class VideoProvider;
-std::shared_ptr<VideoProvider> makeVideoProvider(PHYSFS_file *in, const WzString& filename);
-std::shared_ptr<VideoProvider> makeVideoProvider(std::shared_ptr<const std::vector<char>> memoryBuffer, const WzString& filename);
-
-bool seq_Play(std::shared_ptr<VideoProvider> video);
+/** Start playing a video.
+ * \param edits the video's edit list (optional): the timeline for the chosen audio language is applied
+ * \param videoLanguage the edit-list language whose "own" video this is (empty for the shared video) */
+bool seq_Play(std::shared_ptr<VideoProvider> video, std::shared_ptr<const WZVideoEditList> edits = nullptr,
+              const WzString& videoLanguage = WzString());
 bool seq_Playing();
+/** Set the preferred FMV audio-track language (a WZ locale code, e.g. "de").
+ * Empty / nullptr (the default) = automatic: follow the game language.
+ * Takes effect from the next seq_Play(). Videos without a matching track
+ * fall back to their English track. */
+void seq_SetPreferredAudioLanguage(const char *languageCode);
+/** The preferred FMV audio language in effect: the override if set, else the game language */
+WzString seq_GetPreferredAudioLanguage();
 bool seq_Update();
 void seq_Shutdown();
 int seq_GetFrameNumber();
@@ -46,6 +56,11 @@ void seq_setScanlinesDisabled(bool flag);
 bool seq_getScanlinesDisabled();
 void seq_setScanlineMode(SCANLINE_MODE mode);
 SCANLINE_MODE seq_getScanlineMode();
+/** The display gamma the video is adjusted for (clamped to [1.8, 3.0]).
+ * The default is 2.4, emulating the BT.1886 look of classic studio video displays. */
+void seq_setDisplayGamma(float gamma);
+float seq_getDisplayGamma();
+/** The video time subtitles follow: the furthest point of the video shown so far */
 double seq_GetFrameTime();
 
 #endif // __INCLUDED_LIB_SEQUENCE_SEQUENCE_H__

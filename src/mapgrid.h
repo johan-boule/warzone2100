@@ -27,30 +27,85 @@
 typedef std::vector<BASE_OBJECT *> GridList;
 typedef GridList::const_iterator GridIterator;
 
+struct GameWorld;
+
 // initialise the grid system
 bool gridInitialise();
 
 // shutdown the grid system
 void gridShutDown();
 
-// Reset the grid system. Called once per update.
+// Rebuild the grid from the world's objects.
+// Called once per update, at its end, right after objmemUpdate frees the objects that died earlier
+// (so everything that reads the grid before the next rebuild, including a game loaded from a save written
+// between updates, sees the same grid).
+// Objects created after the rebuild are found from the next rebuild on.
+// Objects that die after it stay in the grid, dead, until then (grid users skip dead objects).
 // Resets seenThisTick[] to false.
-void gridReset();
+void gridReset(GameWorld& world);
+
+/// Note that the grid no longer matches the world outside the normal flow of an update (objects freed outside the
+/// end of an update, which the grid may still point to, a world swapped in or out, or a level started).
+/// The next update then rebuilds the grid at its start, before anything reads it.
+void gridMarkDirty();
+
+/// Rebuild the grid if gridMarkDirty() was called since the last gridReset(). Called at the start of an update.
+void gridResetIfDirty(GameWorld& world);
+
+/// How many live DROID_PERSON droids gridReset() put in the grid. Nothing is added to the grid between
+/// one reset and the next, so a zero here means no query this update can return a person.
+unsigned gridLivePersonCount();
+
+/// A query's results, held in a pooled buffer for the handle's lifetime. Handles are strictly LIFO, so a
+/// query made from inside a loop over another query's results has a buffer of its own and neither one
+/// disturbs the other.
+class GridQuery
+{
+public:
+	~GridQuery();
+	// A handle owns a pool slot, so it is neither copied nor moved - a moved-from handle would release
+	// the slot twice. Guaranteed copy elision is what lets the factories return one anyway.
+	GridQuery(const GridQuery &) = delete;
+	GridQuery &operator=(const GridQuery &) = delete;
+	GridQuery(GridQuery &&) = delete;
+	GridQuery &operator=(GridQuery &&) = delete;
+
+	// The accessors are ref-qualified, so `const GridList &r = gridStartIterate(...).results();` does not
+	// compile: the buffer is released at the end of that full expression. Range-for over a factory call is
+	// fine, since it names the temporary for the length of the loop.
+	const GridList &results() const & { return *buffer; }
+	const GridList &results() const && = delete;
+	GridList::const_iterator begin() const & { return buffer->begin(); }
+	GridList::const_iterator end() const & { return buffer->end(); }
+	GridList::const_iterator begin() const && = delete;
+	GridList::const_iterator end() const && = delete;
+
+private:
+	GridQuery(unsigned slot_, const GridList *buffer_) : slot(slot_), buffer(buffer_) {}
+	unsigned slot;              // Pool slot (released in LIFO order by the destructor)
+	const GridList *buffer;     // The slot's buffer - (pool buffers never move, so this stays valid)
+
+	friend GridQuery gridStartIterate(int32_t x, int32_t y, uint32_t radius);
+	friend GridQuery gridStartIterateArea(int32_t x, int32_t y, uint32_t x2, uint32_t y2);
+	friend GridQuery gridStartIterateDroidsByPlayer(int32_t x, int32_t y, uint32_t radius, int player);
+	friend GridQuery gridStartIterateRepairCandidates(int32_t x, int32_t y, uint32_t radius, int player);
+	friend GridQuery gridStartIterateUnseen(int32_t x, int32_t y, uint32_t radius, int player);
+};
 
 /// Find all objects within radius.
-GridList const &gridStartIterate(int32_t x, int32_t y, uint32_t radius);
+GridQuery gridStartIterate(int32_t x, int32_t y, uint32_t radius);
 
-/// Find all objects within radius.
-GridList const &gridStartIterateArea(int32_t x, int32_t y, uint32_t x2, uint32_t y2);
+/// Find all objects within the rectangle.
+GridQuery gridStartIterateArea(int32_t x, int32_t y, uint32_t x2, uint32_t y2);
 
 /// Find all objects within radius where object->type == OBJ_DROID && object->player == player.
-GridList const &gridStartIterateDroidsByPlayer(int32_t x, int32_t y, uint32_t radius, int player);
+GridQuery gridStartIterateDroidsByPlayer(int32_t x, int32_t y, uint32_t radius, int player);
 
 /// Find all objects within radius where (object->type == OBJ_DROID && !object->died)
-GridList const &gridStartIterateRepairCandidates(int32_t x, int32_t y, uint32_t radius, int player);
+GridQuery gridStartIterateRepairCandidates(int32_t x, int32_t y, uint32_t radius, int player);
 
 // Used for visibility.
-/// Find all objects within radius where object->seenThisTick[player] != 255.
-GridList const &gridStartIterateUnseen(int32_t x, int32_t y, uint32_t radius, int player);
+/// Find all objects within radius where !object->died && object->seenThisTick[player] != 255.
+GridQuery gridStartIterateUnseen(int32_t x, int32_t y, uint32_t radius, int player);
 
 #endif // __INCLUDED_SRC_MAPGRID_H__

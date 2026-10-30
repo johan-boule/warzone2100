@@ -39,6 +39,7 @@
 #include "lib/gamelib/gtime.h"
 
 #include "warcam.h"
+#include "uiobjectrefs.h"
 
 #include "objects.h"
 #include "display.h"
@@ -118,6 +119,12 @@ static bool camTrackCamera();
 static void camRadarJump();
 
 //-----------------------------------------------------------------------------------
+void warCamVisitUiObjectRefs(const UiObjectRefVisitor &visit)
+{
+	// (A tracked droid cleared here stops the tracking at the next frame, as its death does: camTrackCamera)
+	visitUiObjectRef(trackingCamera.target, visit);
+}
+
 /* Sets the camera to inactive to begin with */
 void	initWarCam()
 {
@@ -174,6 +181,11 @@ static void processLeaderSelection()
 	bSuccess = false;
 	bestSoFar = UDWORD_MAX;
 
+	if (trackingCamera.target == nullptr || trackingCamera.target->died)
+	{
+		return;  // (the tracking has just stopped: processWarCam)
+	}
+
 	if (selectedPlayer >= MAX_PLAYERS)
 	{
 		// Not currently supported when selectedPlayer >= MAX_PLAYERS
@@ -183,7 +195,7 @@ static void processLeaderSelection()
 	switch (leaderClass)
 	{
 	case	LEADER_LEFT:
-		for (DROID* psDroid : apsDroidLists[selectedPlayer])
+		for (DROID* psDroid : gameWorld.objects.droids[selectedPlayer])
 		{
 			/* Is it even on the sscreen? */
 			if (DrawnInLastFrame(psDroid->sDisplay.frameNumber) && psDroid->selected && psDroid != trackingCamera.target)
@@ -202,7 +214,7 @@ static void processLeaderSelection()
 		}
 		break;
 	case	LEADER_RIGHT:
-		for (DROID* psDroid : apsDroidLists[selectedPlayer])
+		for (DROID* psDroid : gameWorld.objects.droids[selectedPlayer])
 		{
 			/* Is it even on the sscreen? */
 			if (DrawnInLastFrame(psDroid->sDisplay.frameNumber) && psDroid->selected && psDroid != trackingCamera.target)
@@ -221,7 +233,7 @@ static void processLeaderSelection()
 		}
 		break;
 	case	LEADER_UP:
-		for (DROID* psDroid : apsDroidLists[selectedPlayer])
+		for (DROID* psDroid : gameWorld.objects.droids[selectedPlayer])
 		{
 			/* Is it even on the sscreen? */
 			if (DrawnInLastFrame(psDroid->sDisplay.frameNumber) && psDroid->selected && psDroid != trackingCamera.target)
@@ -240,7 +252,7 @@ static void processLeaderSelection()
 		}
 		break;
 	case	LEADER_DOWN:
-		for (DROID* psDroid : apsDroidLists[selectedPlayer])
+		for (DROID* psDroid : gameWorld.objects.droids[selectedPlayer])
 		{
 			/* Is it even on the sscreen? */
 			if (DrawnInLastFrame(psDroid->sDisplay.frameNumber) && psDroid->selected && psDroid != trackingCamera.target)
@@ -337,6 +349,14 @@ void	processWarCam()
 }
 
 //-----------------------------------------------------------------------------------
+void camTestTrackDroid(DROID *psDroid)
+{
+	ASSERT_OR_RETURN(, psDroid != nullptr && !psDroid->died, "No live droid to track");
+	camAlignWithTarget(psDroid);
+	trackingCamera.status = CAM_TRACK_DROID;
+}
+
+//-----------------------------------------------------------------------------------
 
 /* Flips states for camera active */
 void	setWarCamActive(bool status)
@@ -384,7 +404,7 @@ DROID *camFindDroidTarget()
 		return nullptr;
 	}
 
-	for (DROID* psDroid : apsDroidLists[selectedPlayer])
+	for (DROID* psDroid : gameWorld.objects.droids[selectedPlayer])
 	{
 		if (psDroid->selected)
 		{
@@ -453,7 +473,7 @@ static uint16_t getAverageTrackAngle(unsigned groupNumber, bool bCheckOnScreen)
 	}
 
 	/* Got thru' all droids */
-	for (const DROID* psDroid : apsDroidLists[selectedPlayer])
+	for (const DROID* psDroid : gameWorld.objects.droids[selectedPlayer])
 	{
 		/* Is he worth selecting? */
 		if (groupNumber == GROUP_SELECTED ? psDroid->selected : psDroid->group == groupNumber)
@@ -482,7 +502,7 @@ static void getTrackingConcerns(SDWORD *x, SDWORD *y, SDWORD *z, UDWORD groupNum
 		return;
 	}
 
-	for (const DROID* psDroid : apsDroidLists[selectedPlayer])
+	for (const DROID* psDroid : gameWorld.objects.droids[selectedPlayer])
 	{
 		if (groupNumber == GROUP_SELECTED ? psDroid->selected : psDroid->group == groupNumber)
 		{
@@ -682,7 +702,7 @@ static void updateCameraRotationAcceleration(UBYTE update)
 
 		bGotFlying = true;
 		droidHeight = trackingCamera.target->pos.z;
-		droidMapHeight = map_Height(trackingCamera.target->pos.x, trackingCamera.target->pos.y);
+		droidMapHeight = map_Height(gameWorld.map, trackingCamera.target->pos.x, trackingCamera.target->pos.y);
 		difHeight = abs(droidHeight - droidMapHeight);
 		if (difHeight < MIN_TRACK_HEIGHT)
 		{
@@ -725,7 +745,7 @@ static void updateCameraRotationAcceleration(UBYTE update)
 			uint16_t pitch;
 			unsigned group = trackingCamera.target->selected ? GROUP_SELECTED : trackingCamera.target->group;
 			getTrackingConcerns(&xPos, &yPos, &zPos, GROUP_SELECTED, true);  // FIXME Should this be group instead of GROUP_SELECTED?
-			getBestPitchToEdgeOfGrid(xPos, zPos, DEG(180) - getAverageTrackAngle(group, true), &pitch);
+			getBestPitchToEdgeOfGrid(gameWorld.map, xPos, zPos, DEG(180) - getAverageTrackAngle(group, true), &pitch);
 			pitch = MAX(angleDelta(pitch), DEG(14));
 			xConcern = -pitch;
 		}
@@ -825,8 +845,8 @@ static bool camTrackCamera()
 	PROPULSION_STATS *psPropStats;
 	bool bFlying = false;
 
-	/* Most importantly - see if the target we're tracking is dead! */
-	if (trackingCamera.target->died)
+	/* Most importantly - see if the target we're tracking is dead! (or freed: uiobjectrefs.h) */
+	if (trackingCamera.target == nullptr || trackingCamera.target->died)
 	{
 		return (false);
 	}
@@ -881,7 +901,7 @@ static bool camTrackCamera()
 	}
 
 	/* Clip the position to the edge of the map */
-	CheckScrollLimits();
+	CheckScrollLimits(gameWorld.map);
 
 	/* Store away our last update as acceleration and velocity are all fn()/dt */
 	trackingCamera.lastUpdate = realTime;
@@ -925,7 +945,7 @@ DROID *getTrackingDroid()
 //-----------------------------------------------------------------------------------
 UDWORD	getNumDroidsSelected()
 {
-	return (selNumSelected(selectedPlayer));
+	return (selNumSelected(gameWorld.objects, selectedPlayer));
 }
 
 //-----------------------------------------------------------------------------------
@@ -975,8 +995,9 @@ void	camToggleInfo()
 void requestRadarTrack(SDWORD x, SDWORD y)
 {
 	auto initialPosition = Vector3f(playerPos.p);
-	auto targetPosition = Vector3f(x, calculateCameraHeightAt(map_coord(x), map_coord(y)), y);
-	auto animationDuration = static_cast<uint32_t>(glm::log(glm::length(targetPosition - initialPosition)) * 100);
+	auto targetPosition = Vector3f(x, calculateCameraHeightAt(gameWorld.map, map_coord(x), map_coord(y)), y);
+	const float distance = glm::length(targetPosition - initialPosition);
+	auto animationDuration = distance > 1 ? static_cast<uint32_t>(glm::log(distance) * 100) : 0;
 	auto finalRotation = trackingCamera.status == CAM_TRACK_DROID ? trackingCamera.oldView.r : playerPos.r;
 	finalRotation.z = 0;
 

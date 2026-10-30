@@ -24,6 +24,7 @@
  *
  */
 #include "lib/framework/frame.h"
+#include "lib/framework/gamepad_input.h"
 #include "lib/framework/input.h"
 #include "lib/framework/strres.h"
 #include "lib/framework/wzapp.h"
@@ -42,6 +43,13 @@
 #include "lib/netplay/netplay.h"
 
 #include "loop.h"
+#include "gamestate_serialize.h"
+#include "gamestate_harness.h"
+#include "movebench.h"
+#include "pathbench.h"
+#include "corridordump.h"
+#include "corridor_gate.h"
+#include "perfcounters.h"
 #include "objects.h"
 #include "display.h"
 #include "map.h"
@@ -63,8 +71,13 @@
 #include "visibility.h"
 #include "multimenu.h"
 #include "intelmap.h"
+#include "input/gamepadbindings.h"
 #include "loadsave.h"
 #include "game.h"
+#include "gamestate_capture.h"
+#include "gamestate_snapshot.h"
+#include "gamestate_snapshot_ring.h"
+#include "gamestate_replay_seek.h"
 #include "multijoin.h"
 #include "lighting.h"
 #include "intimage.h"
@@ -76,6 +89,7 @@
 #include "mapgrid.h"
 #include "edit3d.h"
 #include "fpath.h"
+#include "pathfinding_backend.h"
 #include "cmddroid.h"
 #include "keybind.h"
 #include "wrappers.h"
@@ -139,8 +153,14 @@ static unsigned numCommandDroids[MAX_PLAYERS];
 static unsigned numConstructorDroids[MAX_PLAYERS];
 
 static SDWORD videoMode = 0;
+static bool backdropWasActiveBeforeVideo = false;
 
 LOOP_MISSION_STATE		loopMissionState = LMS_NORMAL;
+
+bool levelChangePending()
+{
+	return loopMissionState != LMS_NORMAL;
+}
 
 // this is set by scrStartMission to say what type of new level is to be started
 LEVEL_TYPE nextMissionType = LEVEL_TYPE::LDS_NONE;
@@ -152,25 +172,46 @@ static void resetVideoSkipStates()
 	videoTimeSkipState.canSkip = false;
 }
 
+// A save from the in-game save menu, at the next safe point (see gamestate_capture.h):
+// now, unless a networked game is waiting for a player's messages for the next tick.
+static void saveGameFromMenu(const std::string &path)
+{
+	requestGameStateCapture([path]() {
+		char msgbuffer[256] = {'\0'};
+		if (saveGame(path.c_str(), GTYPE_SAVE_MIDMISSION))
+		{
+			sstrcpy(msgbuffer, _("GAME SAVED: "));
+			sstrcat(msgbuffer, savegameWithoutExtension(path.c_str()));
+			addConsoleMessage(msgbuffer, LEFT_JUSTIFY, NOTIFY_MESSAGE);
+		}
+		else
+		{
+			ASSERT(false, "saveGame(\"%s\") failed", path.c_str());
+			sstrcpy(msgbuffer, _("Could not save game!"));
+			addConsoleMessage(msgbuffer, LEFT_JUSTIFY, NOTIFY_MESSAGE);
+			deleteSaveGame_classic(path.c_str());
+		}
+	});
+}
+
 static GAMECODE renderLoop()
 {
 	WZ_PROFILE_SCOPE(renderLoop);
 	if (bMultiPlayer && !NetPlay.isHostAlive && NetPlay.bComms && !NetPlay.isHost)
 	{
-		intAddInGamePopup();
+		handleInGameHostQuit();
 	}
-
-	bool skipDrawing = !gfx_api::context::get().shouldDraw();
 
 	audio_Update();
 
-	wzShowMouse(true);
+	wzShowMouse(!isGamepadActiveInput());
 
 	INT_RETVAL intRetVal = INT_NONE;
 	if (!paused)
 	{
 		/* Always refresh the widgets' backing stores if needed, even if we don't process clicks below */
 		intDoScreenRefresh();
+		gamestate::harness::afterScreenRefresh();
 
 		/* Run the in game interface and see if it grabbed any mouse clicks */
 		if (!getRotActive() && getWidgetsStatus() && dragBox3D.status != DRAG_DRAGGING && wallDrag.status != DRAG_DRAGGING)
@@ -210,7 +251,7 @@ static GAMECODE renderLoop()
 
 			for (unsigned i = 0; i < MAX_PLAYERS; i++)
 			{
-				for (DROID *psCurr : apsDroidLists[i])
+				for (DROID *psCurr : gameWorld.objects.droids[i])
 				{
 					// Don't copy the next pointer - if droids somehow get destroyed in the graphics rendering loop, who cares if we crash.
 					calcDroidIllumination(psCurr);
@@ -242,12 +283,12 @@ static GAMECODE renderLoop()
 		{
 			WidgetTriggers const &triggers = widgRunScreen(psWScreen);		// always run the screen, so overlays can process input
 
-			if (InGameOpUp || isInGamePopupUp || intHelpOverlayIsUp())		// ingame options menu up, run it!
+			if (InGameOpUp || intHelpOverlayIsUp())		// ingame options menu up, run it!
 			{
 				unsigned widgval = triggers.empty() ? 0 : triggers.front().widget->id; // Just use first click here, since the next click could be on another menu.
 
 				intProcessInGameOptions(widgval);
-				if (widgval == INTINGAMEOP_QUIT || widgval == INTINGAMEOP_POPUP_QUIT)
+				if (widgval == INTINGAMEOP_QUIT)
 				{
 					if (gamePaused())
 					{
@@ -267,39 +308,15 @@ static GAMECODE renderLoop()
 			}
 			else
 			{
-				char msgbuffer[256] = {'\0'};
-
 				if (saveInMissionRes())
 				{
-					if (saveGame(sRequestResult, GTYPE_SAVE_START))
-					{
-						sstrcpy(msgbuffer, _("GAME SAVED: "));
-						sstrcat(msgbuffer, savegameWithoutExtension(sRequestResult));
-						addConsoleMessage(msgbuffer, LEFT_JUSTIFY, NOTIFY_MESSAGE);
-					}
-					else
-					{
-						ASSERT(false, "Mission Results: saveGame Failed");
-						sstrcpy(msgbuffer, _("Could not save game!"));
-						addConsoleMessage(msgbuffer, LEFT_JUSTIFY, NOTIFY_MESSAGE);
-						deleteSaveGame_classic(sRequestResult);
-					}
+					// NOTE: this mission-results save path is currently unreachable (FUTURE TODO: remove)
+					// GTYPE_SAVE_START is deprecated, so use MIDMISSION
+					saveGameFromMenu(sRequestResult);
 				}
 				else if (bMultiPlayer || saveMidMission())
 				{
-					if (saveGame(sRequestResult, GTYPE_SAVE_MIDMISSION))//mid mission from [esc] menu
-					{
-						sstrcpy(msgbuffer, _("GAME SAVED: "));
-						sstrcat(msgbuffer, savegameWithoutExtension(sRequestResult));
-						addConsoleMessage(msgbuffer, LEFT_JUSTIFY, NOTIFY_MESSAGE);
-					}
-					else
-					{
-						ASSERT(!"saveGame(sRequestResult, GTYPE_SAVE_MIDMISSION) failed", "Mid Mission: saveGame Failed");
-						sstrcpy(msgbuffer, _("Could not save game!"));
-						addConsoleMessage(msgbuffer, LEFT_JUSTIFY, NOTIFY_MESSAGE);
-						deleteSaveGame_classic(sRequestResult);
-					}
+					saveGameFromMenu(sRequestResult); //mid mission from [esc] menu
 				}
 				else
 				{
@@ -311,7 +328,8 @@ static GAMECODE renderLoop()
 
 	/* Check for quit */
 	bool quitting = false;
-	if (intRetVal == INT_QUIT)
+	// (A replay seek that can't restore any snapshot plays the replay again from the start: see gamestate_replay_seek.h)
+	if (intRetVal == INT_QUIT || gamestate::replayRestartPending())
 	{
 		if (!loop_GetVideoStatus())
 		{
@@ -322,35 +340,38 @@ static GAMECODE renderLoop()
 			pie_LoadBackDrop(SCREEN_RANDOMBDROP);
 		}
 	}
-	if (!loop_GetVideoStatus() && !quitting && !headlessGameMode() && !skipDrawing)
+	if (!loop_GetVideoStatus() && !quitting && !headlessGameMode())
 	{
 		if (!gameUpdatePaused())
 		{
 			processInput();
 
+			processGestureInput();
+			processGamepadCameraInput();
+
 			//no key clicks or in Intelligence Screen
-			if (!isMouseOverRadar() && !isDraggingInGameNotification() && !isMouseClickDownOnScreenOverlayChild() && intRetVal == INT_NONE && !InGameOpUp && !isInGamePopupUp)
+			if (!isMouseOverRadar() && !isDraggingInGameNotification() && !isMouseClickDownOnScreenOverlayChild() && intRetVal == INT_NONE && !InGameOpUp)
 			{
 				processMouseClickInput();
 			}
-			displayWorld();
+			if (!gameStateRestoreFailed())  // a half-restored world isn't drawn
+			{
+				displayWorld();
+			}
 		}
-		wzPerfBegin(PERF_GUI, "User interface");
-		WZ_PROFILE_SCOPE(DrawUI);
-		/* Display the in game interface */
-		pie_SetFogStatus(false);
-
-		if (getWidgetsStatus())
+		else
 		{
-			intDisplayWidgets();
+			gamepadProcessPausedBindings();
 		}
-		pie_SetFogStatus(true);
-		wzPerfEnd(PERF_GUI);
 	}
 
 	pie_GetResetCounts(&loopPieCount, &loopPolyCount);
 
 	// deal with the mission state
+	if (loopMissionState != LMS_NORMAL)
+	{
+		wzapi::processScriptQueuedObjectRemovals();
+	}
 	switch (loopMissionState)
 	{
 	case LMS_CLEAROBJECTS:
@@ -411,7 +432,7 @@ void countUpdate(bool synch)
 		numMissionDroids[i] = 0;
 		numTransporterDroids[i] = 0;
 
-		for (DROID *psCurr : apsDroidLists[i])
+		for (DROID *psCurr : gameWorld.objects.droids[i])
 		{
 			numDroids[i]++;
 			switch (psCurr->droidType)
@@ -431,7 +452,7 @@ void countUpdate(bool synch)
 				break;
 			}
 		}
-		for (DROID *psCurr : mission.apsDroidLists[i])
+		for (DROID *psCurr : mission.gameWorld.objects.droids[i])
 		{
 			numMissionDroids[i]++;
 			switch (psCurr->droidType)
@@ -469,7 +490,7 @@ void countUpdate(bool synch)
 		}
 		// FIXME: These for-loops are code duplicationo
 		setLasSatExists(false, i);
-		for (const STRUCTURE *psCBuilding : apsStructLists[i])
+		for (const STRUCTURE *psCBuilding : gameWorld.objects.structures[i])
 		{
 			if (psCBuilding == nullptr || isDead(psCBuilding))
 			{
@@ -485,7 +506,7 @@ void countUpdate(bool synch)
 				setLasSatExists(true, i);
 			}
 		}
-		for (const STRUCTURE *psCBuilding : mission.apsStructLists[i])
+		for (const STRUCTURE *psCBuilding : mission.gameWorld.objects.structures[i])
 		{
 			if (psCBuilding == nullptr || isDead(psCBuilding))
 			{
@@ -511,6 +532,7 @@ void countUpdate(bool synch)
 static void gameStateUpdate()
 {
 	WZ_PROFILE_SCOPE(gameStateUpdate);
+	WZ_PERF_SCOPE(T_gameStateUpdate);
 	syncDebug("map = \"%s\", pseudorandom 32-bit integer = 0x%08X, allocated = %d %d %d %d %d %d %d %d %d %d, position = %d %d %d %d %d %d %d %d %d %d", game.map, gameRandU32(),
 	          NetPlay.players[0].allocated, NetPlay.players[1].allocated, NetPlay.players[2].allocated, NetPlay.players[3].allocated, NetPlay.players[4].allocated, NetPlay.players[5].allocated, NetPlay.players[6].allocated, NetPlay.players[7].allocated, NetPlay.players[8].allocated, NetPlay.players[9].allocated,
 	          NetPlay.players[0].position, NetPlay.players[1].position, NetPlay.players[2].position, NetPlay.players[3].position, NetPlay.players[4].position, NetPlay.players[5].position, NetPlay.players[6].position, NetPlay.players[7].position, NetPlay.players[8].position, NetPlay.players[9].position
@@ -532,6 +554,16 @@ static void gameStateUpdate()
 	sendPlayerGameTime();
 	NETflush();  // Make sure the game time tick message is really sent over the network.
 
+	// The grid was built at the end of the last update.
+	// Rebuild it first if objects were freed or worlds swapped since then (between updates), or if a level just started.
+	gridResetIfDirty(gameWorld);
+
+	// Apply the tile coverage changes made between ticks (a range upgrade from a research gift, ...)
+	// before anything in this tick reads the coverage.
+	// Every client has processed the same messages at this point,
+	// unlike right after recvMessage, which runs at frame-dependent times.
+	visFlushCoverageChanges();
+
 	if (!paused && !scriptPaused())
 	{
 		executeFnAndProcessScriptQueuedRemovals([]() { updateScripts(); });
@@ -543,17 +575,21 @@ static void gameStateUpdate()
 	// Update the visibility change stuff
 	visUpdateLevel();
 
-	// Put all droids/structures/features into the grid.
-	gridReset();
-
 	// Check which objects are visible.
-	processVisibility();
+	executeFnAndProcessScriptQueuedRemovals([]() { processVisibility(); });
 
 	// Update the map.
-	mapUpdate();
+	mapUpdate(gameWorld);
+
+	// Snapshot each corridor's flow direction before any droid moves, so every
+	// droid this tick decides against the same picture. Runs before the
+	// backend update, whose overlay build reads the contest state: computed
+	// and consumed in the same tick, so a loaded game reconstructs it from
+	// synced state (apart from the joint flow a save restores).
+	corridorGateUpdate(gameWorld);
 
 	//update the findpath system
-	fpathUpdate();
+	fpathActiveBackend().updateTick(gameWorld.map);
 
 	// update the command droids
 	cmdDroidUpdate();
@@ -564,14 +600,14 @@ static void gameStateUpdate()
 		updatePlayerPower(i);
 
 		executeFnAndProcessScriptQueuedRemovals([i]() {
-			mutating_list_iterate(apsDroidLists[i], [](DROID* d)
+			mutating_list_iterate(gameWorld.objects.droids[i], [](DROID* d)
 			{
 				droidUpdate(d);
 				return IterationResult::CONTINUE_ITERATION;
 			});
 		});
 		executeFnAndProcessScriptQueuedRemovals([i]() {
-			mutating_list_iterate(mission.apsDroidLists[i], [](DROID* d)
+			mutating_list_iterate(mission.gameWorld.objects.droids[i], [](DROID* d)
 			{
 				missionDroidUpdate(d);
 				return IterationResult::CONTINUE_ITERATION;
@@ -579,37 +615,50 @@ static void gameStateUpdate()
 		});
 		// FIXME: These for-loops are code duplication
 		executeFnAndProcessScriptQueuedRemovals([i]() {
-			mutating_list_iterate(apsStructLists[i], [](STRUCTURE* s)
+			mutating_list_iterate(gameWorld.objects.structures[i], [](STRUCTURE* s)
 			{
-				structureUpdate(s, false);
+				structureUpdate(s, gameWorld);
 				return IterationResult::CONTINUE_ITERATION;
 			});
 		});
 		executeFnAndProcessScriptQueuedRemovals([i]() {
-			mutating_list_iterate(mission.apsStructLists[i], [](STRUCTURE* s)
+			mutating_list_iterate(mission.gameWorld.objects.structures[i], [](STRUCTURE* s)
 			{
-				structureUpdate(s, true); // update for mission
+				structureUpdate(s, mission.gameWorld); // update for mission
 				return IterationResult::CONTINUE_ITERATION;
 			});
 		});
 	}
 
 	missionTimerUpdate();
+	missionReinforcementUpdate();
 
 	executeFnAndProcessScriptQueuedRemovals([]() { proj_UpdateAll(); });
 
-	for (FEATURE *psCFeat : apsFeatureList[0])
+	for (FEATURE *psCFeat : gameWorld.objects.features[0])
 	{
 		featureUpdate(psCFeat);
 	}
 
 	// Free dead droid memory.
-	objmemUpdate();
+	executeFnAndProcessScriptQueuedRemovals([]() { objmemUpdate(); });
+
+	// Put all droids/structures/features into the grid, for everything that reads it until the end of the next
+	// update (see gridReset). Must follow objmemUpdate directly: the grid may point to the objects it freed.
+	gridReset(gameWorld);
+
+	// Bring the tile coverage of the objects that this tick's terrain changes and range upgrades may have changed
+	// up to date, so that at the end of every tick it is what a recompute from the current state gives
+	// (which is all a loaded game can do).
+	visFlushCoverageChanges();
 
 	// accumulate occasional stats / snapshots
 	if (!paused && !scriptPaused())
 	{
 		GameStoryLogger::instance().logGameFrame();
+		movementBenchUpdate();
+		pathBenchUpdate();
+		corridorDumpUpdate();
 	}
 
 	// Must end update, since we may or may not have ticked, and some message queue processing code may vary depending on whether it's in an update.
@@ -617,6 +666,31 @@ static void gameStateUpdate()
 
 	// Must be at the end of gameStateUpdate, since countUpdate is also called randomly (unsynchronised) between gameStateUpdate calls, but should have no effect if we already called it, and recvMessage requires consistent counts on all clients.
 	countUpdate(true);
+
+	// Optional GameState reconstruct-fidelity test (no-op unless --gamestate-roundtrip was set).
+	gamestate::gamestateMaybeRunRoundTripTest();
+}
+
+/// Record the object census and write this tick's counter line. Runs after gameStateUpdate() has
+/// returned so that T_gameStateUpdate is on the line for the tick it measured.
+static void gameStatePerfEndOfTick()
+{
+	if (!perf::g_enabled)
+	{
+		return;
+	}
+#if defined(WZ_PERF_COUNTERS)
+	size_t numDroidsAlive = 0, numStructuresAlive = 0;
+	for (unsigned i = 0; i < MAX_PLAYERS; ++i)
+	{
+		numDroidsAlive += gameWorld.objects.droids[i].size();
+		numStructuresAlive += gameWorld.objects.structures[i].size();
+	}
+	WZ_PERF_COUNT(C_droidsAlive, numDroidsAlive);
+	WZ_PERF_COUNT(C_structuresAlive, numStructuresAlive);
+	WZ_PERF_COUNT(C_projectilesAlive, proj_Count());
+#endif
+	perf::endOfTick(gameTime);
 }
 
 size_t getMaxFastForwardTicks()
@@ -659,26 +733,47 @@ GAMECODE gameLoop()
 
 	size_t numRegularUpdatesTicks = 0;
 	size_t numFastForwardTicks = 0;
+	const uint32_t loopStartTicks = wzGetTicks();
+	constexpr uint32_t SEEK_FASTFORWARD_MS_PER_FRAME = 100;
 	gameTimeUpdateBegin();
 	while (true)
 	{
 		// Receive NET_BLAH messages.
 		// Receive GAME_BLAH messages, and if it's time, process exactly as many GAME_BLAH messages as required to be able to tick the gameTime.
 		executeFnAndProcessScriptQueuedRemovals([]() { recvMessage(); });
+		// Saves and snapshots requested while the messages for the next tick were still to arrive (networked games)
+		runPendingGameStateCaptures();
+		gamestate::harness::afterMessages();  // (the harness save point)
+		// (Both do nothing unless started)
+		gamestate::replaySeekAtCapturePoint();
+		gamestate::snapshotRingAtCapturePoint();
 
 		bool selectedPlayerIsSpectator = bMultiPlayer && NetPlay.players[selectedPlayer].isSpectator;
 		bool multiplayerHostDisconnected = bMultiPlayer && !NetPlay.isHostAlive && NetPlay.bComms && !NetPlay.isHost; // do not fast-forward after the host has disconnected
 		bool canFastForwardGameTime =
-			selectedPlayerIsSpectator 			// current player must be a spectator
+			selectedPlayerIsSpectator			// current player must be a spectator
 			&& !NetPlay.isHost					// AND NOT THE HOST (!)
 			&& !multiplayerHostDisconnected		// and the multiplayer host must not be disconnected ("host quit")
 			&& numFastForwardTicks < maxFastForwardTicks // and the number of forced updates this call of gameLoop must not exceed the max allowed
 			&& checkPlayerGameTime(NET_ALL_PLAYERS);	// and there must be a new game tick available to process from all players
 
 		bool forceTryGameTickUpdate = canFastForwardGameTime && ((!fastForwardTicksFixedToNormalTickRate && numForcedUpdatesLastCall > 0) || numRegularUpdatesTicks > 0) && NETgameIsBehindPlayersByAtLeast(4);
+		// A replay seek fast-forwards to its target as fast as the ticks run, rendering a frame every so often
+		if (gamestate::replaySeekFastForwarding() && wzGetTicks() - loopStartTicks < SEEK_FASTFORWARD_MS_PER_FRAME && checkPlayerGameTime(NET_ALL_PLAYERS))
+		{
+			forceTryGameTickUpdate = true;
+		}
+
+		// No game state update once a level change or a savegame load has been requested
+		// (in a tick, by a script's loadLevel()): renderLoop() hands over to it in the next frames,
+		// which block for a while, and the ticks run until then would depend on how long those frames take.
+		// (The world would also go on without its scripts.)
+		// Game time stops at the tick that made the request, and the next level starts from that tick.
+		// Nor after an in-process restore failed halfway (gamestate_snapshot.h): the world isn't consistent.
+		const bool mayTick = !levelChangePending() && !gameStateRestoreFailed();
 
 		// Update gameTime and graphicsTime, and corresponding deltas. Note that gameTime and graphicsTime pause, if we aren't getting our GAME_GAME_TIME messages.
-		auto timeUpdateResult = gameTimeUpdate(renderBudget > 0 || previousUpdateWasRender, forceTryGameTickUpdate);
+		auto timeUpdateResult = gameTimeUpdate(mayTick && (renderBudget > 0 || previousUpdateWasRender), mayTick && forceTryGameTickUpdate);
 
 		if (timeUpdateResult == GameTimeUpdateResult::GAME_TIME_UPDATED_FORCED)
 		{
@@ -694,13 +789,18 @@ GAMECODE gameLoop()
 		{
 			break;  // Not doing a game state update.
 		}
+		gameStateCaptureOnTick();
 
 		ASSERT(!paused && !gameUpdatePaused(), "Nonsensical pause values.");
 
 		unsigned before = wzGetTicks();
 		syncDebug("Begin game state update, gameTime = %d", gameTime);
 		gameStateUpdate();
+		gameStatePerfEndOfTick();
 		syncDebug("End game state update, gameTime = %d", gameTime);
+		// No-op unless a --gamestate-* harness option was set.
+		// Between two ticks, so a save sees what a menu save sees.
+		gamestate::harness::tick();
 		unsigned after = wzGetTicks();
 
 		renderBudget -= (after - before) * renderFraction.n;
@@ -786,12 +886,21 @@ void videoLoop()
 			}
 			executeFnAndProcessScriptQueuedRemovals([]() { triggerEvent(TRIGGER_VIDEO_QUIT); });
 		}
+
+		// Only resume the music once the video quit handlers have run
+		// (Scripts may chain the next video via eventVideoDone, and resuming in-between could let the music
+		// briefly interrupt - and potentially cause audio glitches / clicks.)
+		if (videoMode == 0)
+		{
+			cdAudio_Resume();
+		}
 	}
 }
 
 
 void loop_SetVideoPlaybackMode()
 {
+	backdropWasActiveBeforeVideo = screen_GetBackDrop();
 	videoMode += 1;
 	paused = true;
 	video = true;
@@ -812,9 +921,14 @@ void loop_ClearVideoPlaybackMode()
 	resetVideoSkipStates();
 	gameTimeStart();
 	pie_SetFogStatus(true);
-	cdAudio_Resume();
-	wzShowMouse(true);
+	// NOTE: The music is resumed by videoLoop(), once it's known that no other video follows
+	wzShowMouse(!isGamepadActiveInput());
 	ASSERT(videoMode == 0, "loop_ClearVideoPlaybackMode: out of sync.");
+	if (backdropWasActiveBeforeVideo)
+	{
+		screen_RestartBackDrop();
+		backdropWasActiveBeforeVideo = false;
+	}
 }
 
 

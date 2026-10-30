@@ -88,8 +88,8 @@ if(ENABLE_NLS)
 	find_package (Intl REQUIRED)
 endif()
 
-file(GLOB HEADERS "*.h" "3rdparty/*.h" "titleui/*.h" "titleui/*/*.h" "hci/*.h" "input/*.h" "screens/*.h" "steering/*.h")
-file(GLOB SRC "*.cpp" "3rdparty/*.cpp" "titleui/*.cpp" "titleui/*/*.cpp" "hci/*.cpp" "input/*.cpp" "screens/*.cpp" "steering/*.cpp")
+file(GLOB HEADERS "*.h" "3rdparty/*.h" "buildprovenance/*.h" "titleui/*.h" "titleui/*/*.h" "hci/*.h" "input/*.h" "researchtree/*.h" "screens/*.h" "steering/*.h")
+file(GLOB SRC "*.cpp" "3rdparty/*.cpp" "buildprovenance/*.cpp" "titleui/*.cpp" "titleui/*/*.cpp" "hci/*.cpp" "input/*.cpp" "researchtree/*.cpp" "screens/*.cpp" "steering/*.cpp")
 
 set(_additionalSourceFiles)
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
@@ -130,6 +130,7 @@ endif()
 
 target_link_libraries(warzone2100 exception-handler gamelib wzmaplib ZipIOProvider ivis-opengl netplay sdl-backend framework sequence sound widget)
 target_link_libraries(warzone2100 launchinfo EmbeddedJSONSignature)
+target_link_libraries(warzone2100 mikktspace) # terrain decal tangents - see calcDecalTangents
 target_link_libraries(warzone2100 fmt::fmt)
 if(ENABLE_NLS)
 	target_link_libraries(warzone2100 ${Intl_LIBRARIES})
@@ -139,6 +140,8 @@ target_link_libraries(warzone2100 nlohmann_json)
 target_link_libraries(warzone2100 optional-lite)
 target_link_libraries(warzone2100 quickjs)
 target_link_libraries(warzone2100 inih)
+find_package(ZLIB REQUIRED) # the snapshot ring compresses its snapshots (netplay already requires zlib)
+target_link_libraries(warzone2100 ZLIB::ZLIB)
 
 if(CMAKE_SYSTEM_NAME MATCHES "Emscripten")
 	# Exclude CURL implementation, Use Fetch API for Emscripten
@@ -831,6 +834,21 @@ if(NOT CMAKE_SYSTEM_NAME MATCHES "Emscripten")
 
 	# Executable
 	install(TARGETS warzone2100 COMPONENT Core DESTINATION "${WZ_APP_INSTALL_DEST}")
+
+	if(WZ_BUILDMANIFEST)
+		# Placeholder, rewritten by pkg/buildmanifest_stage.cmake.in (archive generators only package files tracked at component-install time)
+		get_target_property(_wzbm_exe_output_name warzone2100 OUTPUT_NAME)
+		if(NOT _wzbm_exe_output_name)
+			set(_wzbm_exe_output_name "warzone2100")
+		endif()
+		file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/buildmanifest_placeholder" "")
+		if(DEFINED WZ_BUILDMANIFEST_DIR)
+			set(_wzbm_manifest_dest "${WZ_BUILDMANIFEST_DIR}")
+		else()
+			set(_wzbm_manifest_dest "${WZ_APP_INSTALL_DEST}")
+		endif()
+		install(FILES "${CMAKE_CURRENT_BINARY_DIR}/buildmanifest_placeholder" COMPONENT Core DESTINATION "${_wzbm_manifest_dest}" RENAME "${_wzbm_exe_output_name}.buildmanifest")
+	endif()
 
 	# For Portable packages only, copy the ".portable" file that triggers portable mode (Windows-only)
 	install(FILES "${CMAKE_SOURCE_DIR}/pkg/portable.in" COMPONENT PortableConfig DESTINATION "${WZ_APP_INSTALL_DEST}" RENAME ".portable" EXCLUDE_FROM_ALL)

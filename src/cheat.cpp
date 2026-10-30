@@ -39,6 +39,7 @@
 #include "activity.h"
 #include "multiint.h"
 #include "multiplay.h"
+#include "gamestate_serialize.h"
 
 struct CHEAT_ENTRY
 {
@@ -51,6 +52,7 @@ static CHEAT_ENTRY cheatCodes[] =
 {
 	{"templates", listTemplates}, // print templates
 	{"jsdebug", jsShowDebug}, // show scripting states
+	{"gamestate check", gamestate::runGameStateLiveWriteCheck}, // serialize live match-state (non-destructive)
 	{"teach us", kf_TeachSelected}, // give experience to selected units
 	{"makemehero", kf_MakeMeHero}, // make selected units Heros
 	{"untouchable", kf_Unselectable}, // make selected droids unselectable
@@ -223,9 +225,16 @@ void recvProcessDebugMappings(NETQUEUE queue)
 	bool val = false;
 	auto r = NETbeginDecode(queue, GAME_DEBUG_MODE);
 	NETbool(r, val);
-	NETend(r);
+	if (!NETend(r))
+	{
+		if (recordInvalidMessage(queue.index, GAME_DEBUG_MODE))
+		{
+			debug(LOG_INFO, "Ignoring truncated GAME_DEBUG_MODE from %d - further invalid ones will not be logged", (int)queue.index);
+		}
+		return;
+	}
 
-	if (getLockedOptions().cheats && val)
+	if (ingame.cheatsLocked.value_or(getLockedOptions().cheats) && val)
 	{
 		addConsoleMessage(_("The host has disabled debug mode / cheats for this game."), DEFAULT_JUSTIFY,  SYSTEM_MESSAGE);
 		return;

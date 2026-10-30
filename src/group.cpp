@@ -32,6 +32,7 @@
 #include "droid.h"
 #include "order.h"
 #include "hci.h"
+#include "game_world.h"
 #include <map>
 
 // Group system variables: grpGlobalManager enables to remove all the groups to Shutdown the system
@@ -78,6 +79,24 @@ DROID_GROUP *grpCreate()
 	return rawPsGroup;
 }
 
+// reassign an existing group's id (keeping grpGlobalManager keyed correctly)
+void grpReassignId(DROID_GROUP *psGroup, int newId)
+{
+	ASSERT_OR_RETURN(, grpInitialized, "Group code not initialized yet");
+	ASSERT_OR_RETURN(, psGroup != nullptr, "null group");
+	if (psGroup->id == newId)
+	{
+		return;
+	}
+	auto it = grpGlobalManager.find(psGroup->id);
+	ASSERT_OR_RETURN(, it != grpGlobalManager.end() && it->second.get() == psGroup, "group not registered under its id %d", psGroup->id);
+	ASSERT_OR_RETURN(, grpGlobalManager.find(newId) == grpGlobalManager.end(), "target group id %d already in use", newId);
+	std::unique_ptr<DROID_GROUP> owned = std::move(it->second);
+	grpGlobalManager.erase(it);
+	owned->id = newId;
+	grpGlobalManager.emplace(newId, std::move(owned));
+}
+
 // add a droid to a group
 void DROID_GROUP::add(DROID *psDroid)
 {
@@ -93,6 +112,17 @@ void DROID_GROUP::add(DROID *psDroid)
 			return;
 		}
 
+		// Check before changing the droid's group, so that a rejected droid stays in its old group
+		if (psDroid->isTransporter())
+		{
+			ASSERT_OR_RETURN(, (type == GT_NORMAL), "grpJoin: Cannot have two transporters in a group");
+			ASSERT_OR_RETURN(, psList.empty(), "Adding transporter to non-empty list.");
+		}
+		else if ((psDroid->droidType == DROID_COMMAND) && (type != GT_TRANSPORTER))
+		{
+			ASSERT_OR_RETURN(, (type == GT_NORMAL) && (psCommander == nullptr), "grpJoin: Cannot have two command droids in a group");
+		}
+
 		if (psDroid->psGroup != nullptr)
 		{
 			psDroid->psGroup->remove(psDroid);
@@ -101,14 +131,11 @@ void DROID_GROUP::add(DROID *psDroid)
 
 		if (psDroid->isTransporter())
 		{
-			ASSERT_OR_RETURN(, (type == GT_NORMAL), "grpJoin: Cannot have two transporters in a group");
-			ASSERT_OR_RETURN(, psList.empty(), "Adding transporter to non-empty list.");
 			type = GT_TRANSPORTER;
 			psList.push_front(psDroid);
 		}
 		else if ((psDroid->droidType == DROID_COMMAND) && (type != GT_TRANSPORTER))
 		{
-			ASSERT_OR_RETURN(, (type == GT_NORMAL) && (psCommander == nullptr), "grpJoin: Cannot have two command droids in a group");
 			type = GT_COMMAND;
 			psCommander = psDroid;
 		}
@@ -232,6 +259,6 @@ void DROID_GROUP::setSecondary(SECONDARY_ORDER sec, SECONDARY_STATE state)
 
 	for (DROID* psCurr : psList)
 	{
-		secondarySetState(psCurr, sec, state);
+		secondarySetState(psCurr, gameWorld.objects, sec, state);
 	}
 }

@@ -145,6 +145,7 @@ Links to further information
       * [libtheora](https://theora.org)
       * [libvorbis](https://xiph.org/vorbis)
       * [libogg](https://xiph.org/ogg/)
+      * [libvpx](https://www.webmproject.org/code/)
       * [opus](https://github.com/xiph/opus)
       * [Freetype](https://www.freetype.org/) _(strongly recommended: ≥ 2.10.4)_
       * [Harfbuzz](https://github.com/harfbuzz/harfbuzz) ≥ 1.0 _(strongly recommended: ≥ 3.3.0)_

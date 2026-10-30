@@ -1,7 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 /*
 	This file is part of Warzone 2100.
 	Copyright (C) 1999-2004  Eidos Interactive
-	Copyright (C) 2005-2020  Warzone 2100 Project
+	Copyright (C) 2005-2026  Warzone 2100 Project (https://github.com/Warzone2100)
 
 	Warzone 2100 is free software; you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
@@ -30,6 +32,8 @@
 #include "lib/framework/wzapp.h"
 #include "lib/framework/physfs_ext.h"
 #include "lib/framework/frameresource.h"
+#include "lib/framework/resource_loading_controller.h"
+#include "resource_loading_dispatch.h"
 
 #include "lib/ivis_opengl/piepalette.h" // for pal_Init()
 #include "lib/ivis_opengl/piestate.h"
@@ -50,6 +54,7 @@
 #include "component.h"
 #include "console.h"
 #include "multiplay.h"
+#include "ordersource.h"
 #include "lib/sound/audio.h"
 #include "multijoin.h"
 #include "frontend.h"
@@ -67,8 +72,10 @@
 #include "activity.h"
 #include "warzoneconfig.h"
 #include "screens/netpregamescreen.h"
+#include "game_world.h"
 
 #define MAX_STRUCTURE_LIMITS 4096 // Set a high (but explicit) maximum for the number of structure limits supported
+static constexpr uint32_t MaxModHashes = 255;
 
 // send complete game info set!
 void sendOptions()
@@ -84,7 +91,7 @@ void sendOptions()
 	NETstring(w, game.map, 128);
 	NETbin(w, game.hash.bytes, game.hash.Bytes);
 	uint32_t modHashesSize = game.modHashes.size();
-	NETuint32_t(w, modHashesSize);
+	NETcount(w, modHashesSize, MaxModHashes);
 	for (auto &hash : game.modHashes)
 	{
 		NETbin(w, hash.bytes, hash.Bytes);
@@ -110,6 +117,9 @@ void sendOptions()
 	}
 	NETuint32_t(w, game.gameTimeLimitMinutes);
 	NETuint8_t(w, static_cast<uint8_t>(game.playerLeaveMode));
+	game.playerReconnectWaitSeconds = clampPlayerReconnectWaitSeconds(game.playerReconnectWaitSeconds);
+	NETuint16_t(w, game.playerReconnectWaitSeconds);
+	NETuint16_t(w, game.pathfindingBackend);
 
 	for (unsigned i = 0; i < MAX_PLAYERS; i++)
 	{
@@ -138,13 +148,13 @@ void sendOptions()
 		debug(LOG_ERROR, "Number of structure limits (%" PRIu32") exceeds maximum supported - truncating", numStructureLimits);
 		numStructureLimits = MAX_STRUCTURE_LIMITS;
 	}
-	NETuint32_t(w, numStructureLimits);
+	NETcount(w, numStructureLimits, MAX_STRUCTURE_LIMITS);
 	debug(LOG_NET, "(Host) Structure limits to process on client is %zu", ingame.structureLimits.size());
 	// Send the structures changed
-	for (auto structLimit : ingame.structureLimits)
+	for (uint32_t i = 0; i < numStructureLimits; ++i)
 	{
-		NETuint32_t(w, structLimit.id);
-		NETuint32_t(w, structLimit.limit);
+		NETuint32_t(w, ingame.structureLimits[i].id);
+		NETuint32_t(w, ingame.structureLimits[i].limit);
 	}
 	updateStructureDisabledFlags();
 	NETuint8_t(w, ingame.flags);
@@ -180,14 +190,27 @@ bool recvOptions(NETQUEUE queue)
 	NETstring(r, game.map, 128);
 	NETbin(r, game.hash.bytes, game.hash.Bytes);
 	uint32_t modHashesSize;
-	NETuint32_t(r, modHashesSize);
-	ASSERT_OR_RETURN(false, modHashesSize < 1000000, "Way too many mods %u", modHashesSize);
+	if (!NETcount(r, modHashesSize, MaxModHashes, Sha256::Bytes, [](uint32_t badCount) {
+		debug(LOG_ERROR, "Invalid number of mod hashes: %" PRIu32, badCount);
+	}))
+	{
+		NETend(r);
+		return false;
+	}
 	game.modHashes.resize(modHashesSize);
 	for (auto &hash : game.modHashes)
 	{
 		NETbin(r, hash.bytes, hash.Bytes);
 	}
-	NETuint8_t(r, game.maxPlayers);
+	uint8_t maxPlayers = 0;
+	NETuint8_t(r, maxPlayers);
+	if (maxPlayers == 0 || maxPlayers > MAX_PLAYERS)
+	{
+		debug(LOG_ERROR, "Invalid maxPlayers value specified: %" PRIu8, maxPlayers);
+		NETend(r);
+		return false;
+	}
+	game.maxPlayers = maxPlayers;
 	NETstring(r, game.name, 128);
 	NETuint32_t(r, game.power);
 	NETuint8_t(r, game.base);
@@ -199,12 +222,14 @@ bool recvOptions(NETQUEUE queue)
 	if (game.inactivityMinutes > 0 && game.inactivityMinutes < MIN_MPINACTIVITY_MINUTES)
 	{
 		debug(LOG_ERROR, "Invalid inactivityMinutes value specified: %" PRIu32, game.inactivityMinutes);
+		NETend(r);
 		return false;
 	}
 	NETuint32_t(r, game.gameTimeLimitMinutes);
 	if (game.gameTimeLimitMinutes > 0 && game.gameTimeLimitMinutes < MIN_MPGAMETIMELIMIT_MINUTES)
 	{
 		debug(LOG_ERROR, "Invalid gameTimeLimitMinutes value specified: %" PRIu32, game.gameTimeLimitMinutes);
+		NETend(r);
 		return false;
 	}
 	uint8_t tempPlayerLeaveModeValue = 0;
@@ -212,9 +237,20 @@ bool recvOptions(NETQUEUE queue)
 	if (tempPlayerLeaveModeValue > static_cast<uint8_t>(PLAYER_LEAVE_MODE_MAX))
 	{
 		debug(LOG_ERROR, "Invalid playerLeaveMode value specified: %" PRIu8, tempPlayerLeaveModeValue);
+		NETend(r);
 		return false;
 	}
 	game.playerLeaveMode = static_cast<PLAYER_LEAVE_MODE>(tempPlayerLeaveModeValue);
+	uint16_t tempPlayerReconnectWaitSeconds = 0;
+	NETuint16_t(r, tempPlayerReconnectWaitSeconds);
+	if (tempPlayerReconnectWaitSeconds > PLAYER_RECONNECT_WAIT_SECONDS_MAX)
+	{
+		debug(LOG_ERROR, "Invalid playerReconnectWaitSeconds value specified: %" PRIu16, tempPlayerReconnectWaitSeconds);
+		NETend(r);
+		return false;
+	}
+	game.playerReconnectWaitSeconds = tempPlayerReconnectWaitSeconds;
+	NETuint16_t(r, game.pathfindingBackend);
 
 	for (i = 0; i < MAX_PLAYERS; i++)
 	{
@@ -248,14 +284,14 @@ bool recvOptions(NETQUEUE queue)
 
 	// Get the number of structure limits to expect
 	uint32_t numStructureLimits = 0;
-	NETuint32_t(r, numStructureLimits);
-	debug(LOG_NET, "Host is sending us %u structure limits", numStructureLimits);
-	if (numStructureLimits > MAX_STRUCTURE_LIMITS)
+	if (!NETcount(r, numStructureLimits, MAX_STRUCTURE_LIMITS, 2, [](uint32_t badCount) {
+		debug(LOG_POPUP, "Invalid number of structure limits (%" PRIu32 "). Incompatible host.", badCount);
+	}))
 	{
-		debug(LOG_POPUP, "Number of structure limits (%" PRIu32") exceeds maximum supported. Incompatible host.", numStructureLimits);
 		NETend(r);
 		return false;
 	}
+	debug(LOG_NET, "Host is sending us %u structure limits", numStructureLimits);
 	// If there were any changes allocate memory for them
 	if (numStructureLimits)
 	{
@@ -264,15 +300,16 @@ bool recvOptions(NETQUEUE queue)
 		// Do not load limits if mods present because mods are not loaded yet
 		if (!modHashesSize && !bLimiterLoaded)
 		{
-			initLoadingScreen(true);
-			if (!resLoad("wrf/limiter_data.wrf", 503))
+			auto& controller = ResourceLoadingController::instance();
+			ResourceLoadingController::FramePolicy policy;
+			policy.showLoadingScreen = true;
+			if (!runBlockingResourceLoad(resLoad(controller, "wrf/limiter_data.wrf", 503), policy))
 			{
 				debug(LOG_INFO, "Unable to load limiter_data during recvOptions!");
 			}
 			else
 			{
 				bLimiterLoaded = true;
-				closeLoadingScreen();
 			}
 		}
 	}
@@ -391,7 +428,7 @@ bool recvOptions(NETQUEUE queue)
 				// do nothing - just wait
 				break;
 			case FileRequestResult::FileExists:
-				debug(LOG_FATAL, "Can't load map %s, even though we downloaded %s", game.map, filename);
+				debug(LOG_ERROR, "Can't load map %s, even though we downloaded %s", game.map, filename);
 				return false;
 			case FileRequestResult::FailedToOpenFileForWriting:
 				// TODO: How best to handle? Ideally, message + back out of lobby?
@@ -443,7 +480,7 @@ bool recvOptions(NETQUEUE queue)
 
 	if (mapData)
 	{
-		loadMapPreview(false);
+		requestMapPreviewLoad(false);
 	}
 
 	ActivityManager::instance().updateMultiplayGameData(game, ingame, NETGameIsLocked());
@@ -539,7 +576,8 @@ bool multiShutdown()
 }
 
 // ////////////////////////////////////////////////////////////////////////////
-static bool gameInit()
+// fromSnapshot: a GameState load, whose restored world is authoritative
+static bool gameInit(bool fromSnapshot)
 {
 	UDWORD			player;
 
@@ -565,6 +603,18 @@ static bool gameInit()
 		}
 	}
 
+	// A GameState load restored the world with the players below already removed and the spectators converted.
+	// Only the local player's spectator interface needs setting up again.
+	if (fromSnapshot)
+	{
+		if (selectedPlayer < NetPlay.players.size() && NetPlay.players[selectedPlayer].isSpectator)
+		{
+			setUpLocalSpectatorInterface();
+			setPlayerHasLost(true); // set this flag to true so we don't accumulate loss statistics
+		}
+		return true;
+	}
+
 	for (player = 1; player < MAX_CONNECTED_PLAYERS; player++)
 	{
 		// we want to remove disabled AI & all the other players that don't belong
@@ -573,7 +623,7 @@ static bool gameInit()
 			&& !(NetPlay.players[player].isSpectator && NetPlay.players[player].allocated)
 			&& !(player < game.maxPlayers && NetPlay.players[player].allocated))
 		{
-			clearPlayer(player, true);			// do this quietly
+			clearPlayer(gameWorld, player, true);			// do this quietly
 			debug(LOG_NET, "removing disabled AI (%d) from map.", player);
 		}
 	}
@@ -620,7 +670,7 @@ void playerResponding()
 
 // ////////////////////////////////////////////////////////////////////////////
 //called when the game finally gets fired up.
-bool multiGameInit()
+bool multiGameInit(bool fromSnapshot)
 {
 	UDWORD player;
 
@@ -629,7 +679,8 @@ bool multiGameInit()
 		openchannels[player] = true;								//open comms to this player.
 	}
 
-	gameInit();
+	gameInit(fromSnapshot);
+	resetInvalidMessageLog();
 
 	return true;
 }
@@ -657,15 +708,23 @@ bool multiGameShutdown()
 {
 	debug(LOG_NET, "%s is shutting down.", getPlayerName(selectedPlayer));
 
+	{
+		const std::string provenance = orderProvenanceSummary();
+		if (!provenance.empty())
+		{
+			debug(LOG_INFO, "Order provenance: %s", provenance.c_str());
+		}
+	}
+
 	shutdownGameStartScreen();	// make sure the start screen overlay is closed (in case the game shuts down before it fully starts)
 
 	sendLeavingMsg();							// say goodbye
 
-	if (selectedPlayer < MAX_CONNECTED_PLAYERS)
+	if (selectedPlayer < MAX_CONNECTED_PLAYERS && !NETisReplay())
 	{
 		PLAYERSTATS st = getMultiStats(selectedPlayer);	// save stats
 
-		saveMultiStats(getPlayerName(selectedPlayer), getPlayerName(selectedPlayer), &st);
+		saveMultiStats(sPlayer, sPlayer, &st);
 	}
 
 	// if we terminate the socket too quickly, then, it is possible not to get the leave message
@@ -677,6 +736,7 @@ bool multiGameShutdown()
 	// close game
 	NETclose();
 	NETremRedirects();
+	resetInvalidMessageLog();
 
 	ingame.structureLimits.clear();
 	ingame.flags = 0;
@@ -685,6 +745,7 @@ bool multiGameShutdown()
 	ingame.localOptionsReceived = false;
 	ingame.side = InGameSide::HOST_OR_SINGLEPLAYER;
 	ingame.TimeEveryoneIsInGame = nullopt;
+	ingame.cheatsLocked = nullopt;
 	ingame.startTime = std::chrono::steady_clock::time_point();
 	ingame.endTime = nullopt;
 	ingame.lastLagCheck = std::chrono::steady_clock::time_point();

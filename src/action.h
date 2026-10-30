@@ -67,6 +67,12 @@ void actionUpdateDroid(DROID *psDroid);
 /** Do sanity update only. Called from actionUpdateDroid() normally. */
 void actionSanity(DROID *psDroid);
 
+/** Whether \c value is a DROID_ACTION. */
+bool validDroidAction(int value);
+
+/** Whether \c psTarget is a valid target for \c action. */
+bool validTargetForAction(DROID_ACTION action, BASE_OBJECT const *psTarget);
+
 /** Give a droid an action. */
 void actionDroid(DROID *psDroid, DROID_ACTION action);
 
@@ -94,6 +100,9 @@ bool actionVisibleTarget(DROID *psDroid, BASE_OBJECT *psTarget, int weapon_slot)
 
 /** Check whether a droid is in the neighboring tile to a build position. */
 bool actionReachedBuildPos(DROID const *psDroid, int x, int y, uint16_t direction, BASE_STATS const *psStats);
+
+/** Whether a stopped or blocked droid may join a build already under way from one tile outside the ring. */
+bool actionCanBuildFromHere(DROID const *psDroid, int x, int y, uint16_t dir, STRUCTURE_STATS const *psStats);
 
 /** Check that  two droids are next to each other */
 bool actionReachedDroid(DROID const *psDroid, DROID const *psOther);

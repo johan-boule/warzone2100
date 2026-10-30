@@ -36,8 +36,11 @@
 #include "intdisplay.h"
 #include "objmem.h"
 #include "transporter.h"
+#include "uiobjectrefs.h"
+#include "ordersource.h"
 #include "group.h"
 #include "move.h"
+#include "pathfinding_backend.h"
 #include "display3d.h"
 #include "mission.h"
 #include "objects.h"
@@ -141,6 +144,26 @@ void initTransporters()
 	psCurrTransporter = nullptr;
 }
 
+void transporterVisitUiObjectRefs(const UiObjectRefVisitor &visit)
+{
+	if (visitUiObjectRef(psCurrTransporter, visit))
+	{
+		intRefreshScreen();  // closes the transporter screen (intRefreshTransporter)
+	}
+	// The transporter timer (mission.cpp) shows the transporter it was given
+	if (psWScreen != nullptr)
+	{
+		if (WIDGET *psTimer = widgGetFromID(psWScreen, IDTRANTIMER_DISPLAY))
+		{
+			const BASE_OBJECT *psObj = static_cast<const BASE_OBJECT *>(psTimer->pUserData);
+			if (psObj != nullptr && visit(psObj))
+			{
+				psTimer->pUserData = nullptr;
+			}
+		}
+	}
+}
+
 // Call to refresh the transporter screen, ie when a droids boards it.
 //
 bool intRefreshTransporter()
@@ -148,6 +171,12 @@ bool intRefreshTransporter()
 	// Is the transporter screen up?
 	if (intMode == INT_TRANSPORTER && widgGetFromID(psWScreen, IDTRANS_FORM) != nullptr)
 	{
+		if (psCurrTransporter == nullptr)
+		{
+			// Its transporter was freed (uiobjectrefs.h)
+			intRemoveTransNoAnim();
+			return true;
+		}
 		bool Ret;
 		// Refresh it by re-adding it.
 		Ret = intAddTransporter(psCurrTransporter, onMission);
@@ -605,7 +634,7 @@ bool intAddDroidsAvailForm()
 	sBarInit.sMinorCol = WZCOL_ACTION_PROGRESS_BAR_MINOR;
 
 	//add droids built before the mission
-	for (DROID *psDroid : mission.apsDroidLists[selectedPlayer])
+	for (DROID *psDroid : mission.gameWorld.objects.droids[selectedPlayer])
 	{
 		//stop adding the buttons once IDTRANS_DROIDEND has been reached
 		if (nextButtonId == IDTRANS_DROIDEND)
@@ -913,8 +942,10 @@ void transporterRemoveDroid(DROID *psTransport, DROID *psDroid, QUEUE_MODE mode)
 
 	if (bMultiMessages && mode == ModeQueue)
 	{
-		sendDroidDisembark(psTransport, psDroid);
-		psDroid->selected = true;  // Remove from interface.
+		if (sendDroidDisembark(psTransport, psDroid, currentOrderSource()))
+		{
+			psDroid->selected = true;  // Remove from interface.
+		}
 		return;
 	}
 
@@ -938,12 +969,12 @@ void transporterRemoveDroid(DROID *psTransport, DROID *psDroid, QUEUE_MODE mode)
 			//pick a tile because save games won't remember where the droid was when it was loaded
 			droidPos = map_coord(Vector2i(getLandingX(0), getLandingY(0)));
 		}
-		if (!pickATileGen(&droidPos, LOOK_FOR_EMPTY_TILE, zonedPAT))
+		if (!pickATileGen(gameWorld, &droidPos, LOOK_FOR_EMPTY_TILE, zonedPAT))
 		{
 			ASSERT(false, "Unable to find a valid location");
 		}
-		droidSetPosition(psDroid, world_coord(droidPos.x), world_coord(droidPos.y));
-		updateDroidOrientation(psDroid);
+		droidSetPosition(psDroid, gameWorld.map, world_coord(droidPos.x), world_coord(droidPos.y));
+		updateDroidOrientation(psDroid, gameWorld.map);
 	}
 
 	// remove it from the transporter group
@@ -952,19 +983,19 @@ void transporterRemoveDroid(DROID *psTransport, DROID *psDroid, QUEUE_MODE mode)
 	//add it back into apsDroidLists
 	if (onMission)
 	{
-		addDroid(psDroid, mission.apsDroidLists);
+		addDroid(psDroid, mission.gameWorld.objects.droids);
 	}
 	else
 	{
 		// add the droid back onto the droid list
-		addDroid(psDroid, apsDroidLists);
+		addDroid(psDroid, gameWorld.objects.droids);
 	}
 
 	if (psDroid->pos.x != INVALID_XY)
 	{
 		// We can update the orders now, since everyone has been
 		// notified of the droid exiting the transporter
-		updateDroidOrientation(psDroid);
+		updateDroidOrientation(psDroid, gameWorld.map);
 	}
 	//initialise the movement data
 	initDroidMovement(psDroid);
@@ -1033,13 +1064,18 @@ void transporterAddDroid(DROID *psTransporter, DROID *psDroidToAdd)
 		debug(LOG_ERROR, "We can't add the unit to the transporter!");
 		return;
 	}
+	if (psTransporter->player != psDroidToAdd->player || !psTransporter->isTransporter() || psDroidToAdd->isTransporter())
+	{
+		objTrace(psDroidToAdd->id, "Can't embark on %u", psTransporter->id);
+		return;
+	}
 	/* check for space */
 	if (!checkTransporterSpace(psTransporter, psDroidToAdd))
 	{
 		if (bMultiPlayer)
 		{
 			// search for the nearest transporter if the current one is already full
-			for (auto psOtherDroid : apsDroidLists[psTransporter->player])
+			for (auto psOtherDroid : gameWorld.objects.droids[psTransporter->player])
 			{
 				if (psOtherDroid->isTransporter() &&
 					checkTransporterSpace(psOtherDroid, psDroidToAdd) &&
@@ -1075,12 +1111,12 @@ void transporterAddDroid(DROID *psTransporter, DROID *psDroidToAdd)
 	if (onMission)
 	{
 		// removing from droid mission list
-		bDroidRemoved = droidRemove(psDroidToAdd, mission.apsDroidLists);
+		bDroidRemoved = droidRemove(psDroidToAdd, mission.gameWorld.objects.droids);
 	}
 	else
 	{
 		// removing from droid list
-		bDroidRemoved = droidRemove(psDroidToAdd, apsDroidLists);
+		bDroidRemoved = droidRemove(psDroidToAdd, gameWorld.objects.droids);
 	}
 
 	if (bDroidRemoved)
@@ -1099,9 +1135,9 @@ void transporterAddDroid(DROID *psTransporter, DROID *psDroidToAdd)
 	}
 	else
 	{
-		visRemoveVisibility((BASE_OBJECT *)psDroidToAdd);
+		visRemoveVisibility((BASE_OBJECT *)psDroidToAdd, gameWorld.map);
 	}
-	fpathRemoveDroidData(psDroidToAdd->id);
+	fpathActiveBackend().removeDroidData(psDroidToAdd->id);
 
 	// This is called by droidRemove. But we still need to refresh after adding to the transporter group.
 	intRefreshScreen();
@@ -1156,11 +1192,11 @@ DroidList* transInterfaceDroidList()
 	ASSERT_OR_RETURN(nullptr, selectedPlayer < MAX_PLAYERS, "Cannot be called for selectedPlayer: %" PRIu32 "", selectedPlayer);
 	if (onMission)
 	{
-		return &mission.apsDroidLists[selectedPlayer];
+		return &mission.gameWorld.objects.droids[selectedPlayer];
 	}
 	else
 	{
-		return &apsDroidLists[selectedPlayer];
+		return &gameWorld.objects.droids[selectedPlayer];
 	}
 }
 
@@ -1172,6 +1208,49 @@ UDWORD transporterGetLaunchTime()
 void transporterSetLaunchTime(UDWORD time)
 {
 	g_iLaunchTime = time;
+}
+
+bool transporterGetOnMission()
+{
+	return onMission;
+}
+
+void transporterRestoreOnMission(bool onMissionState)
+{
+	onMission = onMissionState;
+}
+
+// --gamestate-test-reinforce: send reinforcements during an off-world mission as the player does,
+// by putting one of the home base's droids aboard the transporter waiting there and launching it
+bool transporterTestLaunchReinforcements()
+{
+	ASSERT_OR_RETURN(false, selectedPlayer < MAX_PLAYERS, "No local player");
+	DROID *psTransporter = nullptr;
+	DROID *psCargo = nullptr;
+	for (DROID *psDroid : mission.gameWorld.objects.droids[selectedPlayer])
+	{
+		if (psDroid->isTransporter())
+		{
+			psTransporter = (psTransporter == nullptr && !transporterFlying(psDroid)) ? psDroid : psTransporter;
+		}
+		else if (psCargo == nullptr)
+		{
+			psCargo = psDroid;
+		}
+	}
+	if (psTransporter == nullptr || psCargo == nullptr)
+	{
+		debug(LOG_ERROR, "No transporter waiting off-world, or no droid at the home base, to send reinforcements with");
+		return false;
+	}
+	onMission = true;  // (as intAddTransporter(psTransporter, true) sets it)
+	transporterAddDroid(psTransporter, psCargo);
+	debug(LOG_INFO, "Launching reinforcements: transporter %u with droid %u aboard", psTransporter->id, psCargo->id);
+	// As processLaunchTransporter does
+	const bool launched = launchTransporter(psTransporter);
+	widgSetUserData(psWScreen, IDTRANTIMER_DISPLAY, (void *)psTransporter);
+	executeFnAndProcessScriptQueuedRemovals([psTransporter]() { triggerEvent(TRIGGER_TRANSPORTER_LAUNCH, psTransporter); });
+	return launched;
 }
 
 /*launches the defined transporter to the offworld map*/
@@ -1257,7 +1336,7 @@ bool updateTransporter(DROID *psTransporter)
 		//Remove visibility so tiles are not bright around where the transporter left the map
 		if (psTransporter->action != DACTION_TRANSPORTIN)
 		{
-			visRemoveVisibility((BASE_OBJECT *) psTransporter);
+			visRemoveVisibility((BASE_OBJECT *) psTransporter, gameWorld.map);
 		}
 
 		// Got to destination

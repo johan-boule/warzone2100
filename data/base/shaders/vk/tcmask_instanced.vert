@@ -2,6 +2,8 @@
 //#pragma debug(on)
 
 #include "tcmask_instanced.glsl"
+#include "mesh_shading_normal.glsl"
+#include "srgb.glsl"
 
 layout(location = 0) in vec4 vertex;
 layout(location = 3) in vec3 vertexNormal;
@@ -47,24 +49,20 @@ void main()
 
 	mat4 ModelVeiwMatrix = ViewMatrix * instanceModelMatrix;
 	NormalMatrix = mat3(transpose(inverse(instanceModelMatrix)));
-
-	// transform face normals of classic models to World Space
-	normal = -normalize(NormalMatrix * vertexNormal);
+	normal = wzWorldShadingNormal(NormalMatrix, vertexNormal, hasTangents);
 
 	if (hasTangents != 0)
 	{
 		// Building the World Space <-> Tangent Space matrix with handness w to support uv mirroring
-		normal = normalize(NormalMatrix * vertexNormal);
 		vec3 t = normalize(NormalMatrix * vertexTangent.xyz);
 		vec3 b = cross (normal, t) * vertexTangent.w;
-		TangentSpaceMatrix = mat3(t, normal, b);
+		TangentSpaceMatrix = mat3(t, b, normal); // conventional (T, B, N)
 	}
 
 	// Lighting
-	posViewSpace = vec3(ModelVeiwMatrix * vertex);
 	posModelSpace = vec3(instanceModelMatrix * vertex);
 	vec3 cameraVec = normalize(cameraPos.xyz - posModelSpace.xyz);
-	lightDir = -normalize(mat3(inverse(ViewMatrix)) * lightPosition.xyz); //to-do: pass Sun pos in world space
+	lightDir = -normalize(lightPosition.xyz);
 	halfVec = lightDir + cameraVec;
 
 	vec3 localPosition = vertex.xyz;
@@ -82,6 +80,7 @@ void main()
 	uvLightmap = vec3((ModelUVLightmapMatrix * vec4(posModelSpace, 1.0)).xy, localPosition.y + heightAboveTerrain);
 
 	// Translate every vertex according to the Model View and Projection Matrix
+	posViewSpace = vec3(ModelVeiwMatrix * vec4(localPosition, vertex.w));
 	vec4 gposition = ProjectionMatrix * ModelVeiwMatrix * vec4(localPosition, vertex.w);
 	gl_Position = gposition;
 
@@ -90,6 +89,12 @@ void main()
 
 	// pack outputs for fragment shader
 	colour = instanceColour;
+	if (linearLighting != 0)
+	{
+		// The tint multiplies the lit color, so convert it to linear.
+		// The team color stays encoded because it is blended in display space.
+		colour.rgb = wzSrgbToLinear(colour.rgb);
+	}
 	teamcolour = instanceTeamColour;
 	packed_ecmState_alphaTest_texCoord = vec4(ecmState, alphaTest, texCoord.x, texCoord.y);
 }

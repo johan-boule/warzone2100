@@ -56,12 +56,17 @@ void pie_GetResetCounts(size_t *pPieCount, size_t *pPolyCount);
 void pie_BeginLighting(const Vector3f &light);
 void pie_setShadows(bool drawShadows);
 
-/** Set light parameters */
+/** Set light parameters (display values, as scripts and saved games provide them) */
 void pie_InitLighting();
 void pie_Lighting0(LIGHTING_TYPE entry, const float value[4]);
 glm::vec4 pie_GetLighting0(LIGHTING_TYPE entry);
+/// A light parameter in the form a scene shader needs it: decoded to linear while linear lighting is on
+glm::vec4 pie_GetSceneLighting0(LIGHTING_TYPE entry);
 
 void pie_InitializeInstancedRenderer();
+/// Frees the mesh batch storage the renderer keeps across frames. For ending a match, so a finished
+/// game's peak batch memory is not held for the rest of the session. Leaves the GPU buffers alone.
+void pie_ReleaseMeshBatchMemory();
 void pie_CleanUp();
 
 enum class ShadowMode

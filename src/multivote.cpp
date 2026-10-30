@@ -32,6 +32,7 @@
 #include "wzjsonhelpers.h"
 #include "main.h"
 #include "stdinreader.h"
+#include "hci/quickchat.h"
 
 #include <array>
 #include <unordered_map>
@@ -48,6 +49,7 @@ using nonstd::nullopt;
 #define VOTE_KICK_TAG_PREFIX     "votekick::"
 
 static uint8_t playerVotes[MAX_PLAYERS];
+static bool playerVoteNoticeSent[MAX_PLAYERS];
 
 struct PlayerPreferences
 {
@@ -639,30 +641,22 @@ bool NETEnumTSet_uint8(MessageReader& r, std::set<T>& val, std::function<bool(ui
 
 	val.clear();
 
-	NETuint32_t(r, numElements);
-
-	if (numElements > MaxSupportedSetMembers)
+	if (!NETcount(r, numElements, MaxSupportedSetMembers, 1, [](uint32_t badCount) {
+		debug(LOG_NET, "Invalid number of set members: %" PRIu32, badCount);
+	}))
 	{
-		debug(LOG_NET, "Invalid number of set members: %" PRIu32, numElements);
-		// will skip extras in the loop, set return value to false
-		retVal = false;
+		return false;
 	}
 	for (uint32_t i = 0; i < numElements; ++i)
 	{
 		uint8_t el = 0;
 		NETuint8_t(r, el);
-		if (i < numElements)
+		if (validateValueFunc && !validateValueFunc(el))
 		{
-			if (validateValueFunc)
-			{
-				if (!validateValueFunc(el))
-				{
-					retVal = false;
-					continue;
-				}
-			}
-			val.insert(static_cast<T>(el));
+			retVal = false;
+			continue;
 		}
+		val.insert(static_cast<T>(el));
 	}
 	return retVal;
 }
@@ -689,7 +683,7 @@ bool NETEnumTSet_uint8(MessageWriter& w, std::set<T>& val, std::function<bool(ui
 		numElements = MaxSupportedSetMembers;
 	}
 
-	NETuint32_t(w, numElements);
+	NETcount(w, numElements, MaxSupportedSetMembers);
 
 	size_t i = 0;
 	for (auto el : val)
@@ -748,6 +742,7 @@ void resetLobbyChangeVoteData()
 	for (unsigned int i = 0; i < MAX_PLAYERS; ++i)
 	{
 		playerVotes[i] = 0;
+		playerVoteNoticeSent[i] = false;
 	}
 }
 
@@ -755,6 +750,7 @@ void resetLobbyChangePlayerVote(uint32_t player)
 {
 	ASSERT_OR_RETURN(, player < MAX_PLAYERS, "Invalid player: %" PRIu32, player);
 	playerVotes[player] = 0;
+	playerVoteNoticeSent[player] = false;
 }
 
 void sendLobbyChangeVoteData(uint8_t currentVote)
@@ -793,20 +789,23 @@ uint8_t getLobbyChangeVoteTotal()
 	return total;
 }
 
-static void recvLobbyChangeVote(uint32_t player, uint8_t newVote)
+static bool recvLobbyChangeVote(uint32_t player, uint8_t newVote)
 {
-	ASSERT_OR_RETURN(, player < MAX_PLAYERS, "Invalid sender: %" PRIu32, player);
+	ASSERT_OR_RETURN(false, player < MAX_PLAYERS, "Invalid sender: %" PRIu32, player);
 
-	playerVotes[player] = (newVote == 1) ? 1 : 0;
+	const uint8_t vote = (newVote == 1) ? 1 : 0;
+	const bool changed = (playerVotes[player] != vote);
+	playerVotes[player] = vote;
 
 	debug(LOG_NET, "total votes: %d/%d", static_cast<int>(getLobbyChangeVoteTotal()), static_cast<int>(NET_numHumanPlayers()));
 
 	// there is no "votes" that disallows map change so assume they are all allowing
-	if(newVote == 1) {
-		char msg[128] = {0};
-		ssprintf(msg, _("%s (%d) allowed map change. Total: %d/%d"), getPlayerName(player, true), player, static_cast<int>(getLobbyChangeVoteTotal()), static_cast<int>(NET_numHumanPlayers()));
-		sendRoomSystemMessage(msg);
+	if (vote == 1 && !playerVoteNoticeSent[player])
+	{
+		playerVoteNoticeSent[player] = true;
+		sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::MapChangeVoteAllowed, (static_cast<uint32_t>(getLobbyChangeVoteTotal()) << 16) | (static_cast<uint32_t>(NET_numHumanPlayers()) & 0xFFFF), player);
 	}
+	return changed;
 }
 
 void sendPlayerKickedVote(uint32_t voteID, uint8_t newVote)
@@ -820,9 +819,9 @@ void sendPlayerKickedVote(uint32_t voteID, uint8_t newVote)
 	NETend(w);
 }
 
-static void recvPlayerKickVote(uint32_t voteID, uint32_t sender, uint8_t newVote)
+static bool recvPlayerKickVote(uint32_t voteID, uint32_t sender, uint8_t newVote)
 {
-	ASSERT_OR_RETURN(, sender < MAX_PLAYERS, "Invalid sender: %" PRIu32, sender);
+	ASSERT_OR_RETURN(false, sender < MAX_PLAYERS, "Invalid sender: %" PRIu32, sender);
 
 	auto it = std::find_if(pendingKickVotes.begin(), pendingKickVotes.end(), [voteID](const PendingVoteKick& a) -> bool {
 		return a.unique_vote_id == voteID;
@@ -830,30 +829,28 @@ static void recvPlayerKickVote(uint32_t voteID, uint32_t sender, uint8_t newVote
 	if (it == pendingKickVotes.end())
 	{
 		// didn't find the vote? may have already ended
-		return;
+		return false;
 	}
 
 	bool voteToKick = (newVote == 1);
-	if (it->setPlayerVote(sender, voteToKick))
+	const bool changed = it->setPlayerVote(sender, voteToKick);
+	if (changed)
 	{
-		std::string outputMsg;
 		if (voteToKick)
 		{
-			outputMsg = astringf(_("A player voted FOR kicking: %s"), getPlayerName(it->target_player_id, true));
-			sendInGameSystemMessage(outputMsg.c_str());
+			sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::VoteKickFor, 0, it->target_player_id);
 			debug(LOG_INFO, "Player [%" PRIu32 "] %s voted FOR kicking player: %s", sender, getPlayerName(sender, true), getPlayerName(it->target_player_id, true));
 		}
 		else
 		{
 			if (newVote == 0)
 			{
-				outputMsg = astringf(_("A player voted AGAINST kicking: %s"), getPlayerName(it->target_player_id, true));
-				sendInGameSystemMessage(outputMsg.c_str());
+				sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::VoteKickAgainst, 0, it->target_player_id);
 				debug(LOG_INFO, "Player [%" PRIu32 "] %s voted AGAINST kicking player: %s", sender, getPlayerName(sender, true), getPlayerName(it->target_player_id, true));
 			}
 			else
 			{
-				outputMsg = astringf(_("A player's client ignored your vote to kick request (too frequent): %s"), getPlayerName(it->target_player_id, true));
+				std::string outputMsg = astringf(_("A player's client ignored your vote to kick request (too frequent): %s"), getPlayerName(it->target_player_id, true));
 				addConsoleMessage(outputMsg.c_str(), DEFAULT_JUSTIFY, SYSTEM_MESSAGE, false); // only display to the host
 				debug(LOG_INFO, "Player [%" PRIu32 "] %s ignored vote to kick request for player: %s - (too frequent)", sender, getPlayerName(sender, true), getPlayerName(it->target_player_id, true));
 			}
@@ -865,6 +862,7 @@ static void recvPlayerKickVote(uint32_t voteID, uint32_t sender, uint8_t newVote
 		// got a result and handled it
 		pendingKickVotes.erase(it);
 	}
+	return changed;
 }
 
 static void sendPlayerMultiOptPreferencesBuiltin(uint32_t playerIdx)
@@ -931,6 +929,11 @@ bool recvVote(NETQUEUE queue, bool inLobby)
 	{
 		case NetVoteType::LOBBY_SETTING_CHANGE:
 		case NetVoteType::KICK_PLAYER:
+			if (static_cast<NetVoteType>(voteType) == NetVoteType::LOBBY_SETTING_CHANGE && !inLobby)
+			{
+				debug(LOG_NET, "Ignoring lobby change NET_VOTE from %d during the game", (int)queue.index);
+				return false;
+			}
 			if (senderIsSpectator)
 			{
 				// Silently ignore LOBBY_SETTING_CHANGE and KICK_PLAYER votes from spectators
@@ -960,11 +963,9 @@ bool recvVote(NETQUEUE queue, bool inLobby)
 	switch (static_cast<NetVoteType>(voteType))
 	{
 		case NetVoteType::LOBBY_SETTING_CHANGE:
-			recvLobbyChangeVote(player, newVote);
-			return true;
+			return recvLobbyChangeVote(player, newVote);
 		case NetVoteType::KICK_PLAYER:
-			recvPlayerKickVote(voteID, player, newVote);
-			return true;
+			return recvPlayerKickVote(voteID, player, newVote);
 		case NetVoteType::LOBBY_OPTION_PREFERENCES_BUILTIN:
 			if (!validPrefs)
 			{
@@ -1108,7 +1109,7 @@ bool recvVoteRequest(NETQUEUE queue)
 	NETuint8_t(r, voteType);
 	NETend(r);
 
-	if (sender >= MAX_PLAYERS)
+	if (sender >= MAX_CONNECTED_PLAYERS)
 	{
 		debug(LOG_NET, "Invalid NET_VOTE_REQUEST from player %d: player id = %d", queue.index, static_cast<int>(sender));
 		return false;
@@ -1324,8 +1325,7 @@ static bool handleVoteKickResult(PendingVoteKick& pendingVote)
 
 	if (currentResult.value())
 	{
-		std::string outputMsg = astringf(_("The vote to kick player %s succeeded (sufficient votes in favor) - kicking"), getPlayerName(pendingVote.target_player_id, true));
-		sendInGameSystemMessage(outputMsg.c_str());
+		sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::VoteKickSucceeded, 0, pendingVote.target_player_id);
 		std::string logMsg = astringf("kicked %s : %s from the game", getPlayerName(pendingVote.target_player_id), NetPlay.players[pendingVote.target_player_id].IPtextAddress);
 		NETlogEntry(logMsg.c_str(), SYNC_FLAG, pendingVote.target_player_id);
 
@@ -1334,8 +1334,7 @@ static bool handleVoteKickResult(PendingVoteKick& pendingVote)
 	else
 	{
 		// Vote failed - message all players
-		std::string outputMsg = astringf(_("The vote to kick player %s failed (insufficient votes in favor)"), getPlayerName(pendingVote.target_player_id, true));
-		sendInGameSystemMessage(outputMsg.c_str());
+		sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::VoteKickFailed, 0, pendingVote.target_player_id);
 	}
 	return true;
 }
@@ -1358,9 +1357,8 @@ void processPendingKickVotes()
 			if (!handleVoteKickResult(*it))
 			{
 				// dismiss the pending vote
-				std::string outputMsg = astringf(_("The vote to kick player %s failed (insufficient votes before timeout)"), getPlayerName(it->target_player_id, true));
-				sendInGameSystemMessage(outputMsg.c_str());
-				debug(LOG_INFO, "%s", outputMsg.c_str());
+				sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::VoteKickTimedOut, 0, it->target_player_id);
+				debug(LOG_INFO, "The vote to kick player %s failed (insufficient votes before timeout)", getPlayerName(it->target_player_id, true));
 			}
 
 			it = pendingKickVotes.erase(it);

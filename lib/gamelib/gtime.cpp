@@ -30,6 +30,7 @@
 #include "gtime.h"
 #include "src/multiplay.h"
 #include "lib/netplay/netplay.h"
+#include "lib/netplay/sync_debug.h"
 
 
 #include <time.h>
@@ -58,12 +59,22 @@ static uint32_t gameQueueCheckTime[MAX_GAMEQUEUE_SLOTS];
 static uint32_t gameQueueCheckCrc[MAX_GAMEQUEUE_SLOTS];
 static bool     crcError = false;
 
+// A client that resumed mid-match from a GameState snapshot cannot reproduce the sync CRC of any tick
+// at or before its resume tick: it never simulated those ticks, and the resume tick's CRC is an
+// attribution-boundary artifact (a tick's object syncDebug is attributed to the next boundary). So
+// incoming GAME_GAME_TIME CRC checks for checkTime <= this floor must NOT be treated as a desync.
+// 0 = no floor (normal game). Set to the resume gameTime on snapshot restore; reset in gameTimeInit.
+static uint32_t syncCheckFloorTime = 0;
+
+static constexpr int MaxLatency = GAME_TICKS_PER_UPDATE * GAME_UPDATES_PER_SEC;
+
 static uint32_t updateReadyTime = 0;
 static uint32_t updateWantedTime = 0;
 static uint16_t chosenLatency = GAME_TICKS_PER_UPDATE;
 static uint16_t discreteChosenLatency = GAME_TICKS_PER_UPDATE;
 static uint16_t wantedLatency = GAME_TICKS_PER_UPDATE;
 static uint16_t wantedLatencies[MAX_GAMEQUEUE_SLOTS];
+static bool deterministicLatency = false;
 
 static optional<uint32_t> waitingOnPlayersStartTime;
 #define MIN_WAITONPLAYERS_DISPLAYTIME_FOR_SPECTATORS GAME_TICKS_PER_UPDATE
@@ -120,6 +131,7 @@ void gameTimeInit(void)
 
 	// Don't let syncDebug from previous games cause a desynch dump at gameTime 102.
 	crcError = false;
+	syncCheckFloorTime = 0; // no resume floor for a normal game start (set later if a snapshot is restored)
 	resetSyncDebug();
 }
 
@@ -136,6 +148,42 @@ void setGameTime(uint32_t newGameTime)
 	graphicsTimeFraction = 0.f;
 
 	// Not setting real time.
+}
+
+void setSyncCheckFloorTime(uint32_t gameTimeValue)
+{
+	syncCheckFloorTime = gameTimeValue;
+}
+
+GameTimeNetState getGameTimeNetState()
+{
+	GameTimeNetState s;
+	s.chosenLatency = chosenLatency;
+	s.discreteChosenLatency = discreteChosenLatency;
+	s.wantedLatency = wantedLatency;
+	s.wantedLatencies.assign(wantedLatencies, wantedLatencies + MAX_GAMEQUEUE_SLOTS);
+	s.gameQueueTime.assign(gameQueueTime, gameQueueTime + MAX_GAMEQUEUE_SLOTS);
+	s.gameQueueCheckTime.assign(gameQueueCheckTime, gameQueueCheckTime + MAX_GAMEQUEUE_SLOTS);
+	s.gameQueueCheckCrc.assign(gameQueueCheckCrc, gameQueueCheckCrc + MAX_GAMEQUEUE_SLOTS);
+	return s;
+}
+
+void setGameTimeNetState(const GameTimeNetState &s)
+{
+	chosenLatency = s.chosenLatency;
+	discreteChosenLatency = s.discreteChosenLatency;
+	wantedLatency = s.wantedLatency;
+	for (size_t i = 0; i < MAX_GAMEQUEUE_SLOTS; ++i)
+	{
+		if (i < s.wantedLatencies.size())     { wantedLatencies[i]     = s.wantedLatencies[i]; }
+		if (i < s.gameQueueTime.size())       { gameQueueTime[i]       = s.gameQueueTime[i]; }
+		if (i < s.gameQueueCheckTime.size())  { gameQueueCheckTime[i]  = s.gameQueueCheckTime[i]; }
+		if (i < s.gameQueueCheckCrc.size())   { gameQueueCheckCrc[i]   = s.gameQueueCheckCrc[i]; }
+	}
+	// The wall-clock samples of the wait for the next tick belong to the game this state replaces
+	// (an in-process restore), not to the restored one
+	updateReadyTime = 0;
+	updateWantedTime = 0;
 }
 
 UDWORD getModularScaledGameTime(UDWORD timePeriod, UDWORD requiredRange)
@@ -179,6 +227,12 @@ GameTimeUpdateResult gameTimeUpdate(bool mayUpdate, bool forceTryGameTickUpdate)
 	// Do not update the game time if gameTimeStop has been called
 	if (stopCount != 0)
 	{
+		if (extraGameTicksProcessed > 0)
+		{
+			// Time was stopped right after extra game ticks (ex. a replay seek done while paused):
+			// as below, graphicsTime must catch up with them, or objects are drawn far from where the ticks left them
+			graphicsTime = gameTime;
+		}
 		return GameTimeUpdateResult::NO_UPDATE;
 	}
 
@@ -345,6 +399,11 @@ void gameTimeStart(void)
 	stopCount = std::max<int>(stopCount - 1, 0);
 }
 
+void gameTimeRebaseRealTimeBase()
+{
+	prevRealTime = wzGetTicks();
+}
+
 /* Call this to reset the game timer */
 void gameTimeReset(UDWORD time)
 {
@@ -369,6 +428,11 @@ void getTimeComponents(unsigned time, int *hours, int *minutes, int *seconds, in
 	*hours = time;
 }
 
+void gameTimeSetDeterministicLatency(bool enabled)
+{
+	deterministicLatency = enabled;
+}
+
 static void updateLatency()
 {
 	uint16_t maxWantedLatency = 0;
@@ -387,9 +451,9 @@ static void updateLatency()
 		}
 	}
 	// Adjust the agreed latency. (Can maximum decrease by 5ms or increase by 30ms per update.
-	chosenLatency = chosenLatency + clip(maxWantedLatency - chosenLatency, -5, 60);
+	chosenLatency = clip(chosenLatency + clip(maxWantedLatency - chosenLatency, -5, 60), 0, MaxLatency);
 	// Round the chosen latency to an integer number of updates, up to 10.
-	discreteChosenLatency = clip((chosenLatency + GAME_TICKS_PER_UPDATE / 2) / GAME_TICKS_PER_UPDATE * GAME_TICKS_PER_UPDATE, GAME_TICKS_PER_UPDATE, GAME_TICKS_PER_UPDATE * GAME_UPDATES_PER_SEC);
+	discreteChosenLatency = clip((chosenLatency + GAME_TICKS_PER_UPDATE / 2) / GAME_TICKS_PER_UPDATE * GAME_TICKS_PER_UPDATE, GAME_TICKS_PER_UPDATE, MaxLatency);
 	if (prevDiscreteChosenLatency != discreteChosenLatency)
 	{
 		debug(LOG_SYNC, "Adjusting latency %d -> %d", prevDiscreteChosenLatency, discreteChosenLatency);
@@ -397,7 +461,20 @@ static void updateLatency()
 
 	// We want the chosen latency to increase by how much our update was delayed waiting for others, or to decrease by how long after we got the messages from others that it was time to tick. Plus a tiny 10ms buffer.
 	// We will send this number to others.
-	wantedLatency = static_cast<uint16_t>(clip<int>((int)(discreteChosenLatency + updateReadyTime - updateWantedTime + 10), 0, UINT16_MAX));
+	// updateReadyTime/updateWantedTime are wall-clock samples (wzGetTicks()), so wantedLatency - and via
+	// the chosenLatency feedback loop, all of discreteChosenLatency/latencyTicks/gameQueueTime scheduling -
+	// is wall-clock-nondeterministic. That value is broadcast in GAME_GAME_TIME and hashed into the per-tick
+	// sync CRC (recvPlayerGameTime's syncDebug "wlat"), which is fine in a live game (everyone logs the same
+	// broadcast value) but makes two independent runs' --gamestate-crc-trace outputs diverge from the first
+	// post-load tick regardless of snapshot fidelity. When a trace is active, drop the wall-clock terms so the
+	// latency negotiation is deterministic and both runs stay comparable; any remaining CRC divergence is then
+	// genuine sim non-determinism. (No effect on normal play.) Benchmark modes opt in for the same reason,
+	// mid-run orders otherwise apply on a load-dependent tick and a watched run cannot reproduce a headless
+	// one.
+	const bool traceDeterministic = syncCrcTraceActive() || deterministicLatency;
+	const uint32_t readyTime = traceDeterministic ? 0u : updateReadyTime;
+	const uint32_t wantedTime = traceDeterministic ? 0u : updateWantedTime;
+	wantedLatency = static_cast<uint16_t>(clip<int>((int)(discreteChosenLatency + readyTime - wantedTime + 10), 0, UINT16_MAX));
 
 	// Reset the times, ready to be set again.
 	updateReadyTime = 0;
@@ -410,6 +487,10 @@ void sendPlayerGameTime()
 	uint32_t latencyTicks = discreteChosenLatency / GAME_TICKS_PER_UPDATE;
 	uint32_t checkTime = gameTime;
 	GameCrcType checkCrc = nextDebugSync();
+
+	// Record the local per-tick CRC for the cross-process join acceptance test (no-op unless a
+	// trace file was set). nextDebugSync() is consuming, so we trace the value it just returned.
+	syncCrcTraceRecord(checkTime, checkCrc);
 
 	for (player = 0; player < MAX_CONNECTED_PLAYERS; ++player)
 	{
@@ -444,7 +525,6 @@ bool gtimeShouldWaitForPlayer(unsigned player)
 static inline bool shouldCheckDebugSyncForPlayerSlot(unsigned player)
 {
 	return NetPlay.players[player].allocated	// human player
-		&& !ingame.endTime.has_value()			// and game hasn't ended
 		&& (!NetPlay.players[player].isSpectator || player == NetPlay.hostPlayer);
 }
 
@@ -455,13 +535,22 @@ void recvPlayerGameTime(NETQUEUE queue)
 	uint32_t latencyTicks = 0;
 	uint32_t checkTime = 0;
 	GameCrcType checkCrc = 0;
+	uint16_t playerWantedLatency = 0;
 
 	auto r = NETbeginDecode(queue, GAME_GAME_TIME);
 	NETuint32_t(r, latencyTicks);
 	NETuint32_t(r, checkTime);
 	NETuint16_t(r, checkCrc);
-	NETuint16_t(r, wantedLatencies[queue.index]);
-	NETend(r);
+	NETuint16_t(r, playerWantedLatency);
+	if (!NETend(r) || latencyTicks > static_cast<uint32_t>(MaxLatency / GAME_TICKS_PER_UPDATE) || checkTime > gameTime + MaxLatency)
+	{
+		if (recordInvalidMessage(queue.index, GAME_GAME_TIME))
+		{
+			debug(LOG_INFO, "Ignoring invalid GAME_GAME_TIME from %d - further invalid ones will not be logged", (int)queue.index);
+		}
+		return;
+	}
+	wantedLatencies[queue.index] = playerWantedLatency;
 
 	gameQueueTime[queue.index] = checkTime + latencyTicks * GAME_TICKS_PER_UPDATE;  // gameTime when future messages shall be processed.
 
@@ -470,8 +559,14 @@ void recvPlayerGameTime(NETQUEUE queue)
 
 	if (shouldCheckDebugSyncForPlayerSlot(queue.index))
 	{
+		// NOTE: the syncDebug line is emitted unconditionally so this client's per-tick CRC stays
+		// consistent with peers (GAME_GAME_TIME is broadcast - everyone logs the same line). Only the
+		// CRC *comparison* below is suppressed once the local game has ended, and for
+		// checkTime <= syncCheckFloorTime: a client that resumed from a snapshot at that tick cannot
+		// reproduce those ticks' CRCs (see syncCheckFloorTime), so comparing would spuriously flag a
+		// desync on reconnect / mid-match join.
 		syncDebug("GAME_GAME_TIME p%d;lat%u,ct%u,crc%04X,wlat%u", queue.index, latencyTicks, checkTime, checkCrc, wantedLatencies[queue.index]);
-		if (!checkDebugSync(checkTime, checkCrc))
+		if (!ingame.endTime.has_value() && checkTime > syncCheckFloorTime && !checkDebugSync(checkTime, checkCrc))
 		{
 			debug(LOG_ERROR, "Found CRC error when receiving GAME_GAME_TIME for player: %" PRIu8 " (checkTime: %" PRIu32 ", checkCrc: %" PRIu16 ")", queue.index, checkTime, checkCrc);
 			crcError = true;

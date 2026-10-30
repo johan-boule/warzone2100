@@ -63,7 +63,8 @@ dies before the queued call runs, nothing happens.
 Registers a new event namespace. All events can now have this prefix. This is useful for
 code libraries, to implement event that do not conflict with events in main code. This
 function should be called from global; do not (for hopefully obvious reasons) put it
-inside an event.
+inside an event. The prefix must not be empty, and registering the same prefix again
+has no effect.
 
 ## debugGetCallerFuncName()
 
@@ -183,6 +184,13 @@ Return the number of droids currently in the given group. Note that you can use 
 ## _(string)
 
 Mark string for translation.
+
+## N_(string)
+
+Mark string for translation, without translating it (returns it unchanged).
+For text the game translates itself where it shows it (the tooltip of setReticuleButton()),
+so that it is shown in the player's language even when it was set before a change of language,
+or in a game saved by a player using another language. (4.8+ only)
 
 ## syncRandom(limit)
 
@@ -625,6 +633,7 @@ THIS FUNCTION IS DEPRECATED AND WILL BE REMOVED! (3.2+ only)
 ## setExperienceModifier(player, percent)
 
 Set the percentage of experience this player droids are going to gain. (3.2+ only)
+The percentage must not be negative, and is capped at 32767.
 
 ## enumCargo(transporterDroid)
 
@@ -684,13 +693,22 @@ Set build limits for a structure.
 
 Mix user set limits with script set limits and defaults.
 
-## setMissionTime(time)
+## setMissionTime(time[, mode])
 
-Set mission countdown in seconds.
+Set mission countdown in seconds. If time is negative, the mission timer is removed.
+The optional mode parameter (4.8+ only) selects how the timer behaves, and is one of:
+* ```TIMER_COUNTDOWN``` Timer counts down from the given time and expires when it reaches zero (default).
+* ```TIMER_COUNTUP``` Timer counts up, starting from the given number of elapsed seconds, and never expires.
+* ```TIMER_PAUSE``` Timer is frozen at the given time and never expires.
+
+When a countdown timer expires, ```eventMissionTimeout``` is triggered once and the timer freezes at zero, as if ```setMissionTime(0, TIMER_PAUSE)``` had been called.
+(The event handler may set a new timer.)
 
 ## getMissionTime()
 
 Get time remaining on mission countdown in seconds. (3.2+ only)
+If the mission timer is counting up, returns the elapsed time in seconds.
+If it is paused, returns the time it is frozen at. (4.8+ only.)
 
 ## setReinforcementTime(time[, removeLaunch])
 
@@ -716,19 +734,23 @@ Enable a research for the given player, allowing it to be researched.
 ## setPower(power[, player])
 
 Set a player's power directly. (Do not use this in an AI script.)
+The power must not be negative, and is capped at 1000000000.
 
 ## setPowerModifier(powerModifier[, player])
 
 Set a player's power modifier percentage. (Do not use this in an AI script.) (3.2+ only)
+The percentage must not be negative, and is capped at 10000.
 
 ## setPowerStorageMaximum(powerMaximum[, player])
 
 Set a player's power storage maximum. (Do not use this in an AI script.) (3.2+ only)
+The maximum must not be negative, and is capped at 1000000000.
 
 ## extraPowerTime(time[, player])
 
 Increase a player's power as if that player had power income equal to current income
 over the given amount of extra time. (3.2+ only)
+The time, in seconds, must not be negative, and is capped at one day.
 
 ## setTutorialMode(enableTutorialMode)
 
@@ -754,8 +776,10 @@ Turns visible minimap on or off in the GUI.
 
 Add reticule button. buttonId is which button to change, where zero is zero is the middle button, then going clockwise from
 the uppermost button. filename is button graphics and filenameDown is for highlighting. The tooltip is the text you see when
-you mouse over the button. Finally, the callback is which scripting function to call. Hide and show the user interface
-for such changes to take effect. (3.2+ only)
+you mouse over the button: the game translates it where it shows it, so pass it marked with N_() rather than translated
+with _(), and it is shown in the player's language even in a saved game loaded with another one (4.8+). Finally, the
+callback is which scripting function to call. Hide and show the user interface for such changes to take effect.
+(3.2+ only)
 
 ## setReticuleFlash(buttonId, flash)
 
@@ -793,7 +817,7 @@ Returns true if an alliance exists between the two players, or they are the same
 
 ## removeStruct(structure)
 
-Immediately remove the given structure from the map. Returns a boolean that is true on success.
+Queue the given structure for removal from the map. Returns a boolean that is true on success.
 No special effects are applied. DEPRECATED since 3.2. Use `removeObject` instead.
 
 ## removeObject(gameObject[, sfx])

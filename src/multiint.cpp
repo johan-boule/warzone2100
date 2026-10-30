@@ -1,7 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 /*
 	This file is part of Warzone 2100.
 	Copyright (C) 1999-2004  Eidos Interactive
-	Copyright (C) 2005-2020  Warzone 2100 Project
+	Copyright (C) 2005-2026  Warzone 2100 Project (https://github.com/Warzone2100)
 
 	Warzone 2100 is free software; you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
@@ -67,6 +69,7 @@
 #include "lib/widget/margin.h"
 
 #include "challenge.h"
+#include "corridordump.h"
 #include "main.h"
 #include "levels.h"
 #include "objects.h"
@@ -91,15 +94,22 @@
 #include "game.h"
 #include "warzoneconfig.h"
 #include "modding.h"
+#include "movebench.h"
 #include "qtscript.h"
 #include "random.h"
+#include "gamestate_harness.h"
 #include "notifications.h"
 #include "radar.h"
+#include "lib/framework/resource_loading_controller.h"
+#include "resource_loading_dispatch.h"
+#include "lib/framework/loading_task.h"
+#include "lib/framework/crc.h"
 #include "lib/framework/wztime.h"
 
 #include "multiplay.h"
 #include "multiint.h"
 #include "multijoin.h"
+#include "buildprovenance/wzdatacheck.h"
 #include "multistat.h"
 #include "multirecv.h"
 #include "multimenu.h"
@@ -133,6 +143,8 @@
 
 #include "activity.h"
 #include <algorithm>
+#include <chrono>
+#include <deque>
 #include <set>
 #include "3rdparty/gsl_finally.h"
 
@@ -196,6 +208,11 @@ static UDWORD hideTime = 0;
 static bool bInActualHostedLobby = false;
 static bool bRequestedSelfMoveToPlayers = false;
 static std::vector<bool> bHostRequestedMoveToPlayers = std::vector<bool>(MAX_CONNECTED_PLAYERS, false);
+
+static inline bool isFullscreenMapPreviewActive()
+{
+	return hideTime != 0 && gameTime - hideTime < MAP_PREVIEW_DISPLAY_TIME;
+}
 
 static std::weak_ptr<WzMultiplayerOptionsTitleUI> currentMultiOptionsTitleUI;
 
@@ -341,6 +358,7 @@ public:
 	{
 		DISABLED,
 		HOSTMSG_ONLY,
+		LOCAL_QUICKCHAT_ONLY,
 		ENABLED
 	};
 protected:
@@ -496,6 +514,27 @@ const char *getAIName(int player)
 	}
 }
 
+static WzString launchScriptsIni;
+static WzString launchScriptsPath;
+static WzString restoredLaunchScriptsIni;
+static WzString restoredLaunchScriptsPath;
+
+const WzString &getLaunchScriptsIni()
+{
+	return launchScriptsIni;
+}
+
+const WzString &getLaunchScriptsPath()
+{
+	return launchScriptsPath;
+}
+
+void setRestoredLaunchScripts(const WzString &ini, const WzString &path)
+{
+	restoredLaunchScriptsIni = ini;
+	restoredLaunchScriptsPath = path;
+}
+
 void loadMultiScripts()
 {
 	bool defaultRules = true;
@@ -505,7 +544,7 @@ void loadMultiScripts()
 	ASSERT_OR_RETURN(, psLevel, "No level found for %s", game.map);
 	ASSERT_OR_RETURN(, psLevel->game >= 0 && psLevel->game < LEVEL_MAXFILES, "Invalid psLevel->game: %" PRIi16 " - may be a corrupt level load (%s; hash: %s)", psLevel->game, game.map, game.hash.toString().c_str());
 	sstrcpy(aFileName, psLevel->apDataFiles[psLevel->game].c_str());
-	aFileName[strlen(aFileName) - 4] = '\0';
+	aFileName[std::max<size_t>(strlen(aFileName), 4) - 4] = '\0';
 	sstrcpy(aPathName, aFileName);
 	sstrcat(aFileName, ".json");
 	sstrcat(aPathName, "/");
@@ -533,6 +572,23 @@ void loadMultiScripts()
 		path = "autohost/";
 		loadExtra = true;
 	}
+
+	// A savegame of a game launched with such a settings file runs its scripts too
+	launchScriptsIni.clear();
+	launchScriptsPath.clear();
+	if (getHostLaunch() == HostLaunch::Skirmish || getHostLaunch() == HostLaunch::Autohost)
+	{
+		launchScriptsIni = ininame;
+		launchScriptsPath = path;
+	}
+	else if (!loadExtra && !restoredLaunchScriptsIni.isEmpty())
+	{
+		ininame = launchScriptsIni = restoredLaunchScriptsIni;
+		path = launchScriptsPath = restoredLaunchScriptsPath;
+		loadExtra = true;
+	}
+	restoredLaunchScriptsIni.clear();
+	restoredLaunchScriptsPath.clear();
 
 	// Reset assigned counter
 	for (auto it = aidata.begin(); it < aidata.end(); ++it)
@@ -592,12 +648,12 @@ void loadMultiScripts()
 				continue;
 			}
 
-			if (NetPlay.players[i].ai >= 0 && myResponsibility(i))
+			if (NetPlay.players[i].ai >= 0 && static_cast<size_t>(NetPlay.players[i].ai) < aidata.size() && myResponsibility(i))
 			{
 				if (aidata[NetPlay.players[i].ai].js[0] != '\0')
 				{
 					debug(LOG_SAVE, "Loading javascript AI for player %d", i);
-					if (!loadPlayerScript(WzString("multiplay/skirmish/") + aidata[NetPlay.players[i].ai].js, i, NetPlay.players[i].difficulty))
+					if (!loadPlayerScript(WzString("multiplay/skirmish/") + aidata[NetPlay.players[i].ai].js, i, NetPlay.players[i].difficulty, wzapi::ScriptBinding::PlayerAI))
 					{
 						debug(LOG_ERROR, "Failed to load AI!: %s", aidata[NetPlay.players[i].ai].js);
 					}
@@ -610,7 +666,7 @@ void loadMultiScripts()
 	if (game.scavengers != NO_SCAVENGERS && myResponsibility(scavengerPlayer()))
 	{
 		debug(LOG_SAVE, "Loading scavenger AI for player %d", scavengerPlayer());
-		loadPlayerScript("multiplay/script/scavengers/init.js", scavengerPlayer(), AIDifficulty::EASY);
+		loadPlayerScript("multiplay/script/scavengers/init.js", scavengerPlayer(), AIDifficulty::EASY, wzapi::ScriptBinding::PlayerAI);
 	}
 
 	// Reset resource path, otherwise things break down the line
@@ -740,7 +796,7 @@ private:
 };
 
 /// Loads the entire map just to show a picture of it
-void loadMapPreview(bool hideInterface)
+static void loadMapPreview(bool hideInterface, std::string mapName, const Sha256& mapHash)
 {
 	std::string		aFileName;
 	Vector2i playerpos[MAX_PLAYERS];	// Will hold player positions
@@ -757,29 +813,25 @@ void loadMapPreview(bool hideInterface)
 	}
 
 	// load the terrain types
-	LEVEL_DATASET *psLevel = levFindDataSet(game.map, &game.hash);
+	LEVEL_DATASET *psLevel = levFindDataSet(mapName.c_str(), &mapHash);
 	if (psLevel == nullptr)
 	{
-		debug(LOG_INFO, "Could not find level dataset \"%s\" %s. We %s waiting for a download.", game.map, game.hash.toString().c_str(), !NET_getDownloadingWzFiles().empty() ? "are" : "aren't");
+		debug(LOG_INFO, "Could not find level dataset \"%s\" %s. We %s waiting for a download.", mapName.c_str(), mapHash.toString().c_str(), !NET_getDownloadingWzFiles().empty() ? "are" : "aren't");
 		loadEmptyMapPreview();
 		return;
 	}
 	if (psLevel->game < 0 || psLevel->game >= LEVEL_MAXFILES)
 	{
-		debug(LOG_ERROR, "apDataFiles index (%" PRIi16 ") is out of bounds for: \"%s\" %s.", psLevel->game, game.map, game.hash.toString().c_str());
+		debug(LOG_ERROR, "apDataFiles index (%" PRIi16 ") is out of bounds for: \"%s\" %s.", psLevel->game, mapName.c_str(), mapHash.toString().c_str());
 		loadEmptyMapPreview();
 		return;
 	}
 	if (psLevel->realFileName == nullptr)
 	{
-		builtInMap = true;
-		useTerrainOverrides = shouldLoadTerrainTypeOverrides(psLevel->pName);
-		debug(LOG_WZ, "Loading map preview: \"%s\" builtin t%d override %d", psLevel->pName.c_str(), psLevel->dataDir, (int)useTerrainOverrides);
+		debug(LOG_WZ, "Loading map preview: \"%s\" builtin t%d", psLevel->pName.c_str(), psLevel->dataDir);
 	}
 	else
 	{
-		builtInMap = false;
-		useTerrainOverrides = false;
 		debug(LOG_WZ, "Loading map preview: \"%s\" in (%s)\"%s\"  %s t%d", psLevel->pName.c_str(), WZ_PHYSFS_getRealDir_String(psLevel->realFileName).c_str(), psLevel->realFileName, psLevel->realFileHash.toString().c_str(), psLevel->dataDir);
 	}
 	rebuildSearchPath(psLevel->dataDir, false);
@@ -886,6 +938,38 @@ void loadMapPreview(bool hideInterface)
 	{
 		hideTime = gameTime;
 	}
+}
+
+static void loadMapPreview(bool hideInterface)
+{
+	loadMapPreview(hideInterface, game.map, game.hash);
+}
+
+namespace
+{
+
+LoadingTask<> mapPreviewLoadTaskImpl(bool hideInterface)
+{
+	loadMapPreview(hideInterface);
+	co_return load_ok();
+}
+
+LoadingTask<> mapPreviewLoadTaskImpl(bool hideInterface, std::string mapName, Sha256 mapHash)
+{
+	loadMapPreview(hideInterface, std::move(mapName), mapHash);
+	co_return load_ok();
+}
+
+} // anonymous namespace
+
+LoadingTask<> mapPreviewLoadTask(ResourceLoadingController &, bool hideInterface)
+{
+	return mapPreviewLoadTaskImpl(hideInterface);
+}
+
+LoadingTask<> mapPreviewLoadTask(ResourceLoadingController &, bool hideInterface, std::string mapName, Sha256 mapHash)
+{
+	return mapPreviewLoadTaskImpl(hideInterface, std::move(mapName), mapHash);
 }
 
 // ////////////////////////////////////////////////////////////////////////////
@@ -1372,7 +1456,7 @@ static int playerBoxHeight(uint32_t rowPosition)
 	bool hasPlayersTabs = widgGetFromID(psWScreen, MULTIOP_PLAYERS_TABS) != nullptr;
 	int playersTop = (hasPlayersTabs) ? MULTIOP_PLAYERS_TABS_H + 1 : 1;
 	int gap = (MULTIOP_PLAYERSH - playersTop) - MULTIOP_TEAMSHEIGHT * numSlotsToBeDisplayed();
-	int gapDiv = numSlotsToBeDisplayed() - 1;
+	int gapDiv = std::max(numSlotsToBeDisplayed() - 1, 1);
 	gap = std::min(gap, 5 * gapDiv);
 	if (hasPlayersTabs)
 	{
@@ -1821,16 +1905,17 @@ public:
 				auto strongTitleUI = titleUI.lock();
 				ASSERT_OR_RETURN(, strongTitleUI != nullptr, "Title UI is gone?");
 
-				std::string playerName = getPlayerName(switcherPlayerIdx, true);
-
-				NETmoveSpectatorToPlayerSlot(switcherPlayerIdx, selectPositionRow->targetPlayerIdx, true);
+				optional<uint32_t> newPlayerIdx = selectPositionRow->targetPlayerIdx;
+				auto result = NETmoveSpectatorToPlayerSlot(switcherPlayerIdx, newPlayerIdx, true);
 				resetReadyStatus(true, isBlindSimpleLobby(game.blindMode));		//reset and send notification to all clients
 				widgScheduleTask([strongTitleUI] {
 					strongTitleUI->closePlayerSlotSwapChooser();
 					strongTitleUI->updatePlayers();
 				});
-				std::string msg = astringf(_("Spectator %s has moved to Players"), playerName.c_str());
-				sendRoomSystemMessage(msg.c_str());
+				if (result == SpectatorToPlayerMoveResult::SUCCESS)
+				{
+					sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::SpectatorMovedToPlayers, 0, newPlayerIdx);
+				}
 			});
 		}
 		else
@@ -2133,9 +2218,8 @@ void WzMultiplayerOptionsTitleUI::openTeamChooser(uint32_t player)
 			auto pStrongPtr = psWeakTitleUI.lock();
 			ASSERT_OR_RETURN(, pStrongPtr.operator bool(), "WzMultiplayerOptionsTitleUI no longer exists");
 
-			std::string msg = astringf(_("The host has kicked %s from the game!"), getPlayerName(player, true));
 			kickPlayer(player, _("The host has kicked you from the game."), ERROR_KICKED, false);
-			sendRoomSystemMessage(msg.c_str());
+			sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::HostKickedPlayer, 0, player);
 			resetReadyStatus(true);		//reset and send notification to all clients
 			widgScheduleTask([pStrongPtr] {
 				pStrongPtr->closeTeamChooser();
@@ -2153,9 +2237,8 @@ void WzMultiplayerOptionsTitleUI::openTeamChooser(uint32_t player)
 			auto pStrongPtr = psWeakTitleUI.lock();
 			ASSERT_OR_RETURN(, pStrongPtr.operator bool(), "WzMultiplayerOptionsTitleUI no longer exists");
 
-			std::string msg = astringf(_("The host has banned %s from the game!"), getPlayerName(player, true));
 			kickPlayer(player, _("The host has banned you from the game."), ERROR_KICKED, true);
-			sendRoomSystemMessage(msg.c_str());
+			sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::HostBannedPlayer, 0, player);
 			resetReadyStatus(true);		//reset and send notification to all clients
 			widgScheduleTask([pStrongPtr] {
 				pStrongPtr->closeTeamChooser();
@@ -2187,15 +2270,15 @@ void WzMultiplayerOptionsTitleUI::openTeamChooser(uint32_t player)
 
 					std::string playerName = getPlayerName(player, true);
 
-					if (!NETmovePlayerToSpectatorOnlySlot(player, true))
+					auto newSpectatorIdx = NETmovePlayerToSpectatorOnlySlot(player, true);
+					if (!newSpectatorIdx.has_value())
 					{
 						std::string msg = astringf(_("Failed to move %s to Spectators"), playerName.c_str());
-						sendRoomSystemMessageToSingleReceiver(msg.c_str(), selectedPlayer);
+						displayRoomSystemMessage(msg.c_str());
 						return;
 					}
 
-					std::string msg = astringf(_("The host has moved %s to Spectators!"), playerName.c_str());
-					sendRoomSystemMessage(msg.c_str());
+					sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::HostMovedPlayerToSpectators, 0, newSpectatorIdx);
 					resetReadyStatus(true);		//reset and send notification to all clients
 					widgScheduleTask([pStrongPtr] {
 						pStrongPtr->closeTeamChooser();
@@ -2531,6 +2614,75 @@ static bool SendTeamRequest(UBYTE player, UBYTE chosenTeam)
 	return true;
 }
 
+class LobbyRequestRateLimit
+{
+public:
+	LobbyRequestRateLimit(size_t maxRequests, std::chrono::milliseconds period)
+	: maxRequests(maxRequests)
+	, period(period)
+	{ }
+
+	bool allow(uint32_t sender)
+	{
+		if (sender >= requestTimes.size())
+		{
+			return false;
+		}
+		const auto now = std::chrono::steady_clock::now();
+		auto &times = requestTimes[sender];
+		while (!times.empty() && now - times.front() >= period)
+		{
+			times.pop_front();
+		}
+		if (times.size() >= maxRequests)
+		{
+			return false;
+		}
+		times.push_back(now);
+		return true;
+	}
+
+	void swap(uint32_t playerA, uint32_t playerB)
+	{
+		ASSERT_OR_RETURN(, playerA < requestTimes.size() && playerB < requestTimes.size(), "Invalid players: %" PRIu32 ", %" PRIu32, playerA, playerB);
+		std::swap(requestTimes[playerA], requestTimes[playerB]);
+	}
+
+	void reset(uint32_t player)
+	{
+		ASSERT_OR_RETURN(, player < requestTimes.size(), "Invalid player: %" PRIu32, player);
+		requestTimes[player].clear();
+	}
+
+private:
+	size_t maxRequests;
+	std::chrono::milliseconds period;
+	std::array<std::deque<std::chrono::steady_clock::time_point>, MAX_CONNECTED_PLAYERS> requestTimes;
+};
+
+static LobbyRequestRateLimit teamRequestLimit(3, std::chrono::seconds(5));
+static LobbyRequestRateLimit slotTypeRequestLimit(1, std::chrono::seconds(5));
+static LobbyRequestRateLimit nameChangeRequestLimit(3, std::chrono::seconds(10));
+
+void lobbyRequestRateLimitsNotifyIndexSwap(uint32_t playerIndexA, uint32_t playerIndexB)
+{
+	teamRequestLimit.swap(playerIndexA, playerIndexB);
+	slotTypeRequestLimit.swap(playerIndexA, playerIndexB);
+	nameChangeRequestLimit.swap(playerIndexA, playerIndexB);
+}
+
+void lobbyRequestRateLimitsReset(uint32_t playerIndex)
+{
+	teamRequestLimit.reset(playerIndex);
+	slotTypeRequestLimit.reset(playerIndex);
+	nameChangeRequestLimit.reset(playerIndex);
+}
+
+bool lobbyNameChangeRequestAllowed(uint32_t sender)
+{
+	return nameChangeRequestLimit.allow(sender);
+}
+
 bool recvTeamRequest(NETQUEUE queue)
 {
 	ASSERT_HOST_ONLY(return true);
@@ -2568,6 +2720,11 @@ bool recvTeamRequest(NETQUEUE queue)
 
 	if (NetPlay.players[player].team != team)
 	{
+		if (queue.index != NetPlay.hostPlayer && player == queue.index && !teamRequestLimit.allow(queue.index))
+		{
+			debug(LOG_NET, "Ignoring NET_TEAMREQUEST from %" PRIu8 ": too many requests", queue.index);
+			return false;
+		}
 		resetReadyStatus(false);
 	}
 	debug(LOG_NET, "%s is now part of team: %d", getPlayerName(player), (int) team);
@@ -3010,10 +3167,18 @@ bool recvPositionRequest(NETQUEUE queue)
 	NETend(r);
 	debug(LOG_NET, "Host received position request from player %d to %d", player, position);
 
-	if (player >= MAX_PLAYERS || position >= MAX_PLAYERS)
+	if (player >= MAX_PLAYERS)
 	{
-		debug(LOG_ERROR, "Invalid NET_POSITIONREQUEST from player %d: Tried to change player %d to %d",
-		      queue.index, (int)player, (int)position);
+		if (recordInvalidMessage(queue.index, NET_POSITIONREQUEST))
+		{
+			debug(LOG_INFO, "Invalid NET_POSITIONREQUEST from player %d: Tried to change player %d to %d - further ones will not be logged",
+			      queue.index, (int)player, (int)position);
+		}
+		return false;
+	}
+	if (position >= game.maxPlayers)
+	{
+		debug(LOG_NET, "NET_POSITIONREQUEST from player %d for position %d, which isn't available", queue.index, (int)position);
 		return false;
 	}
 
@@ -3100,6 +3265,15 @@ static bool recvPlayerSlotTypeRequestAndPop(WzMultiplayerOptionsTitleUI& titleUI
 	if (desiredIsSpectator == NetPlay.players[playerIndex].isSpectator)
 	{
 		// no-op change - this may be a response to a request
+		if (NetPlay.isHost)
+		{
+			if (!desiredIsSpectator || !bHostRequestedMoveToPlayers.at(playerIndex))
+			{
+				debug(LOG_NET, "Ignoring unrequested no-op NET_PLAYER_SLOTTYPE_REQUEST from %" PRIu8, queue.index);
+				return false;
+			}
+			bHostRequestedMoveToPlayers[playerIndex] = false;
+		}
 		std::string playerName = getPlayerName(playerIndex);
 		std::string text;
 		if (NetPlay.isHost)
@@ -3201,20 +3375,26 @@ static bool recvPlayerSlotTypeRequestAndPop(WzMultiplayerOptionsTitleUI& titleUI
 		return false;
 	}
 
-	const char *pPlayerName = getPlayerName(playerIndex, true);
-	std::string playerName = (pPlayerName) ? pPlayerName : (std::string("[p") + std::to_string(playerIndex) + "]");
+	const bool answersHostRequest = !desiredIsSpectator && bHostRequestedMoveToPlayers.at(playerIndex);
+	if (queue.index != NetPlay.hostPlayer && !answersHostRequest && !slotTypeRequestLimit.allow(queue.index))
+	{
+		debug(LOG_NET, "Ignoring NET_PLAYER_SLOTTYPE_REQUEST from %" PRIu8 ": too many requests", queue.index);
+		// Notify the player that the answer is "no" by sending a no-op PlayerSlotTypeRequest
+		SendPlayerSlotTypeRequest(playerIndex, NetPlay.players[playerIndex].isSpectator);
+		return false;
+	}
 
 	if (desiredIsSpectator)
 	{
-		if (!NETmovePlayerToSpectatorOnlySlot(playerIndex, false))
+		auto newSpectatorIdx = NETmovePlayerToSpectatorOnlySlot(playerIndex, false);
+		if (!newSpectatorIdx.has_value())
 		{
 			// Notify the player that the answer is "no" / the move failed by sending a no-op PlayerSlotTypeRequest
 			SendPlayerSlotTypeRequest(playerIndex, NetPlay.players[playerIndex].isSpectator);
 			return false;
 		}
 
-		std::string msg = astringf(_("Player %s has moved to Spectators"), playerName.c_str());
-		sendRoomSystemMessage(msg.c_str());
+		sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::PlayerMovedToSpectators, 0, newSpectatorIdx);
 		resetReadyStatus(true);		//reset and send notification to all clients
 	}
 	else
@@ -3222,15 +3402,15 @@ static bool recvPlayerSlotTypeRequestAndPop(WzMultiplayerOptionsTitleUI& titleUI
 		// Spectator wants to switch to a player slot
 
 		// Try a move to any open player slot
-		auto result = NETmoveSpectatorToPlayerSlot(playerIndex, nullopt, bHostRequestedMoveToPlayers.at(playerIndex));
+		optional<uint32_t> newPlayerIdx;
+		auto result = NETmoveSpectatorToPlayerSlot(playerIndex, newPlayerIdx, bHostRequestedMoveToPlayers.at(playerIndex));
 		bHostRequestedMoveToPlayers[playerIndex] = false;
 		switch (result)
 		{
 			case SpectatorToPlayerMoveResult::SUCCESS:
 			{
 				// Was able to move spectator to an open player slot automatically
-				std::string msg = astringf(_("Spectator %s has moved to Players"), playerName.c_str());
-				sendRoomSystemMessage(msg.c_str());
+				sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::SpectatorMovedToPlayers, 0, newPlayerIdx);
 				resetReadyStatus(true);		//reset and send notification to all clients
 				break;
 			}
@@ -3240,8 +3420,7 @@ static bool recvPlayerSlotTypeRequestAndPop(WzMultiplayerOptionsTitleUI& titleUI
 				{
 					// displaying a UI won't work
 					// so instead, send a room message about the failure
-					std::string msg = astringf(_("Unable to move %s to Players - no available slot"), playerName.c_str());
-					sendRoomSystemMessage(msg.c_str());
+					sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::MoveToPlayersFailedNoSlot, 0, playerIndex);
 					return true; // and immediately return
 				}
 
@@ -3381,7 +3560,11 @@ static SwapPlayerIndexesResult recvSwapPlayerIndexes(NETQUEUE queue, const std::
 	}
 	std::swap(ingame.hostChatPermissions[playerIndexA], ingame.hostChatPermissions[playerIndexB]);
 	std::swap(ingame.muteChat[playerIndexA], ingame.muteChat[playerIndexB]);
+	std::swap(ingame.VerifiedIdentity[playerIndexA], ingame.VerifiedIdentity[playerIndexB]);
+	std::swap(ingame.PingTimes[playerIndexA], ingame.PingTimes[playerIndexB]);
 	playerSpamMuteNotifyIndexSwap(playerIndexA, playerIndexB);
+	invalidMessageLogNotifyIndexSwap(playerIndexA, playerIndexB);
+	lobbyRequestRateLimitsNotifyIndexSwap(playerIndexA, playerIndexB);
 	multiSyncPlayerSwap(playerIndexA, playerIndexB);
 	multiOptionPrefValuesSwap(playerIndexA, playerIndexB);
 
@@ -3802,7 +3985,23 @@ void WzMultiplayerOptionsTitleUI::addPlayerBox(bool players)
  */
 static void SendFireUp()
 {
-	uint32_t randomSeed = rand();  // Pick a random random seed for the synchronised random number generator.
+	// A forced backend from the command line wins over the lobby and config, for
+	// testing a run under a specific planner. Applied here so it is in place
+	// before the first tick.
+	if (cli_pathfinding_backend() >= 0)
+	{
+		game.pathfindingBackend = static_cast<uint16_t>(cli_pathfinding_backend());
+	}
+
+	// Pick a random random seed for the synchronised random number generator.
+	// The movement benchmark pins it instead, so a scenario reproduces exactly.
+	// (So does --gamestate-test-seed.)
+	const auto testSeed = gamestate::harness::testGameSeed();
+	uint32_t randomSeed = movementBenchActive() ? movementBenchSeed() : testSeed.has_value() ? testSeed.value() : rand();
+	if (testSeed.has_value())
+	{
+		debug(LOG_INFO, "Game random seed: %u (--gamestate-test-seed)", randomSeed);
+	}
 
 	debug(LOG_INFO, "Sending NET_FIREUP");
 
@@ -3845,6 +4044,13 @@ void from_json(const nlohmann::json& j, KickRedirectInfo& v)
 void kickPlayer(uint32_t player_id, const char *reason, LOBBY_ERROR_TYPES type, bool banPlayer)
 {
 	ASSERT_HOST_ONLY(return);
+	ASSERT_OR_RETURN(, player_id < MAX_CONNECTED_PLAYERS, "Invalid player_id: %" PRIu32, player_id);
+	ASSERT_OR_RETURN(, player_id != NetPlay.hostPlayer, "Can't kick the host");
+	if (NETplayerWasKicked(player_id))
+	{
+		debug(LOG_NET, "Player %" PRIu32 " was already kicked", player_id);
+		return;
+	}
 
 	debug(LOG_INFO, "Kicking player %u (%s). Reason: %s", (unsigned int)player_id, getPlayerName(player_id), reason);
 
@@ -3855,7 +4061,6 @@ void kickPlayer(uint32_t player_id, const char *reason, LOBBY_ERROR_TYPES type, 
 	NETenum(w, type);
 	NETend(w);
 	NETflush();
-	wzDelay(300);
 
 	ActivityManager::instance().hostKickPlayer(NetPlay.players[player_id], type, reason);
 
@@ -3871,6 +4076,7 @@ bool kickRedirectPlayer(uint32_t player_id, const KickRedirectInfo& redirectInfo
 {
 	ASSERT_HOST_ONLY(return false);
 	ASSERT_OR_RETURN(false, player_id < NetPlay.players.size(), "Invalid player_id: %" PRIu32, player_id);
+	ASSERT_OR_RETURN(false, player_id != NetPlay.hostPlayer, "Can't kick the host");
 	ASSERT_OR_RETURN(false, ingame.localJoiningInProgress, "Only if the game hasn't started yet");
 
 	std::string redirectStr;
@@ -4023,6 +4229,7 @@ void ChatBoxWidget::initialize()
 				displayRoomSystemMessage(_("The host has disabled free chat. Please use Quick Chat."));
 				return;
 			case ChatBoxWidget::ChatBoxSendMode::HOSTMSG_ONLY:
+			case ChatBoxWidget::ChatBoxSendMode::LOCAL_QUICKCHAT_ONLY:
 				// Always ensure sent message starts with /hostmsg
 				if (!str.startsWith(LOBBY_COMMAND_PREFIX "hostmsg"))
 				{
@@ -4135,6 +4342,12 @@ void ChatBoxWidget::setEditBoxDisplay()
 			editBox->setTip(_("The host has disabled free chat. Please use Quick Chat or /hostmsg commands."));
 			editBox->setState(0);
 			break;
+		case ChatBoxSendMode::LOCAL_QUICKCHAT_ONLY:
+			editBox->setPlaceholder(_("Press the Tab key to open Quick Chat."));
+			editBox->setPlaceholderTextColor(WZCOL_TEXT_MEDIUM);
+			editBox->setTip(_("Free chat is set to \"Quick Chat Only\" in your Options. Please use Quick Chat or /hostmsg commands."));
+			editBox->setState(0);
+			break;
 		case ChatBoxSendMode::ENABLED:
 			editBox->setPlaceholder("");
 			editBox->setPlaceholderTextColor(nullopt);
@@ -4150,6 +4363,7 @@ void ChatBoxWidget::setSendMode(ChatBoxSendMode mode)
 	{
 		return;
 	}
+	const auto priorMode = currentMode;
 	currentMode = mode;
 	// Update UI
 	setQuickChatButtonDisplay();
@@ -4164,8 +4378,18 @@ void ChatBoxWidget::setSendMode(ChatBoxSendMode mode)
 		case ChatBoxSendMode::HOSTMSG_ONLY:
 			displayRoomSystemMessage(_("The host has disabled free chat. Please use Quick Chat or /hostmsg commands."));
 			break;
+		case ChatBoxSendMode::LOCAL_QUICKCHAT_ONLY:
+			displayRoomSystemMessage(_("Free chat is set to \"Quick Chat Only\" in your Options. Incoming free chat is hidden. Please use Quick Chat or /hostmsg commands."));
+			break;
 		case ChatBoxSendMode::ENABLED:
-			displayRoomSystemMessage(_("The host has enabled free chat for you."));
+			if (priorMode == ChatBoxSendMode::LOCAL_QUICKCHAT_ONLY)
+			{
+				displayRoomSystemMessage(_("Free chat is enabled."));
+			}
+			else
+			{
+				displayRoomSystemMessage(_("The host has enabled free chat for you."));
+			}
 			break;
 	}
 }
@@ -4444,7 +4668,6 @@ void ChatBoxWidget::initializeMessages(bool preserveOldChat)
 void ChatBoxWidget::displayMessage(RoomMessage const &message)
 {
 	auto paragraph = std::make_shared<Paragraph>();
-	paragraph->setGeometry(0, 0, messages->calculateListViewWidth(), 0);
 
 	switch (message.type)
 	{
@@ -4492,6 +4715,9 @@ void ChatBoxWidget::displayMessage(RoomMessage const &message)
 		// display contextual menu
 		psChatBoxWidget->displayParagraphContextualMenu(msgText, senderCopy);
 	});
+
+	// Sized once it has its text, so it settles on the height that text wraps to
+	paragraph->setGeometry(0, 0, messages->calculateListViewWidth(), 0);
 
 	messages->addItem(paragraph);
 }
@@ -4633,7 +4859,15 @@ static void addChatBox(bool preserveOldChat)
 		return;
 	}
 
-	auto desiredSendMode = (selectedPlayer < MAX_CONNECTED_PLAYERS && ingame.hostChatPermissions[selectedPlayer]) ? ChatBoxWidget::ChatBoxSendMode::ENABLED : ChatBoxWidget::ChatBoxSendMode::HOSTMSG_ONLY;
+	auto desiredSendMode = ChatBoxWidget::ChatBoxSendMode::ENABLED;
+	if (selectedPlayer >= MAX_CONNECTED_PLAYERS || !ingame.hostChatPermissions[selectedPlayer])
+	{
+		desiredSendMode = ChatBoxWidget::ChatBoxSendMode::HOSTMSG_ONLY;
+	}
+	else if (isLocalQuickChatOnlyMode())
+	{
+		desiredSendMode = ChatBoxWidget::ChatBoxSendMode::LOCAL_QUICKCHAT_ONLY;
+	}
 
 	auto psExistingChatBoxWidget = widgGetFromID(psWScreen, MULTIOP_CHATBOX);
 	if (psExistingChatBoxWidget)
@@ -4870,6 +5104,10 @@ static bool loadMapChallengeSettings(WzConfig& ini)
 		{
 			char mapName[256] = {0};
 			sstrcpy(mapName, ini.value("map", game.map).toWzString().toUtf8().c_str());
+			if (corridorDumpActive())
+			{
+				sstrcpy(mapName, corridorDumpMapName());   // dump the map named on the command line, not the config placeholder
+			}
 			Sha256 mapHash = levGetMapNameHash(mapName);
 
 			LEVEL_DATASET* mapData = levFindDataSet(mapName, &mapHash);
@@ -4911,6 +5149,7 @@ static bool loadMapChallengeSettings(WzConfig& ini)
 			game.base = ini.value("bases", game.base + 1).toInt() - 1;		// count from 1 like the humans do
 			sstrcpy(game.name, ini.value("name").toWzString().toUtf8().c_str());
 			game.techLevel = ini.value("techLevel", game.techLevel).toInt();
+			game.pathfindingBackend = static_cast<uint16_t>(ini.value("pathfindingBackend", game.pathfindingBackend).toInt());
 
 			// Allow making the host a spectator (for MP games)
 			spectatorHost = ini.value("spectatorHost", false).toBool();
@@ -5289,12 +5528,13 @@ void multiLobbyRandomizeOptions()
 	// Structure limits are simply 0 or max, only for NO_TANK, NO_CYBORG, NO_VTOL, NO_UPLINK, NO_LASSAT.
 	if (!bLimiterLoaded || !asStructureStats)
 	{
-		initLoadingScreen(true);
-		if (resLoad("wrf/limiter_data.wrf", 503))
+		auto& controller = ResourceLoadingController::instance();
+		ResourceLoadingController::FramePolicy policy;
+		policy.showLoadingScreen = true;
+		if (runBlockingResourceLoad(resLoad(controller, "wrf/limiter_data.wrf", 503), policy))
 		{
 			bLimiterLoaded = true;
 		}
-		closeLoadingScreen();
 	}
 	resetLimits();
 	for (int i = 0; i < static_cast<unsigned>(limitIcons.size()) - 1; ++i)	// skip last item, MPFLAGS_FORCELIMITS
@@ -5529,9 +5769,16 @@ void startMultiplayerGame()
 		{
 			debug(LOG_NET, "limiter was NOT activated, setting defaults");
 
-			if (!resLoad("wrf/limiter_data.wrf", 503))
+			auto& controller = ResourceLoadingController::instance();
+			ResourceLoadingController::FramePolicy policy;
+			policy.showLoadingScreen = true;
+			if (!runBlockingResourceLoad(resLoad(controller, "wrf/limiter_data.wrf", 503), policy))
 			{
 				debug(LOG_INFO, "Unable to load limiter_data.");
+			}
+			else
+			{
+				bLimiterLoaded = true;
 			}
 		}
 		else
@@ -5545,6 +5792,7 @@ void startMultiplayerGame()
 		sendOptions();
 		NEThaltJoining(true);						// stop new players entering.
 		ingame.TimeEveryoneIsInGame = nullopt;
+		ingame.cheatsLocked = getLockedOptions().cheats;
 		ingame.endTime = nullopt;
 		ingame.isAllPlayersDataOK = false;
 		memset(&ingame.DataIntegrity, 0x0, sizeof(ingame.DataIntegrity));	//clear all player's array
@@ -5556,7 +5804,7 @@ void startMultiplayerGame()
 
 	if (NetPlay.isHost)
 	{
-		sendRoomSystemMessage(_("Host is Starting Game"));
+		sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::HostStartingGame);
 	}
 }
 
@@ -5705,8 +5953,7 @@ public:
 			debug(LOG_INFO, "Unable to kick player: %" PRIu32 " - not a connected human player", player);
 			return false;
 		}
-		std::string slotType = (NetPlay.players[player].isSpectator) ? "spectator" : "player";
-		sendRoomSystemMessage((std::string("Kicking ")+slotType+": "+std::string(getPlayerName(player, true))).c_str());
+		sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::KickingPlayer, (NetPlay.players[player].isSpectator) ? 1 : 0, player);
 		::kickPlayer(player, reason, ERROR_KICKED, ban);
 		resetReadyStatus(false, shouldSkipReadyResetOnPlayerJoinLeaveEvent());
 		return true;
@@ -5766,15 +6013,13 @@ public:
 			debug(LOG_INFO, "Unable to move player: %" PRIu32 " - not a connected human player", player);
 			return false;
 		}
-		const char *pPlayerName = getPlayerName(player, true);
-		std::string playerNameStr = (pPlayerName) ? pPlayerName : (std::string("[p") + std::to_string(player) + "]");
-		if (!NETmovePlayerToSpectatorOnlySlot(player, true))
+		auto newSpectatorIdx = NETmovePlayerToSpectatorOnlySlot(player, true);
+		if (!newSpectatorIdx.has_value())
 		{
 			// failure is already logged by NETmovePlayerToSpectatorOnlySlot
 			return false;
 		}
-		std::string msg = astringf(_("Moving %s to Spectators!"), playerNameStr.c_str());
-		sendRoomSystemMessage(msg.c_str());
+		sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::MovingPlayerToSpectators, 0, newSpectatorIdx);
 		resetReadyStatus(true);		//reset and send notification to all clients
 		return true;
 	}
@@ -5795,13 +6040,10 @@ public:
 			return false;
 		}
 
-		const char *pPlayerName = getPlayerName(player, true);
-		std::string playerNameStr = (pPlayerName) ? pPlayerName : (std::string("[p") + std::to_string(player) + "]");
 		// Ask the spectator if they are okay with a move from spectator -> player?
 		SendPlayerSlotTypeRequest(player, false);
 
-		std::string msg = astringf(_("Asking %s to move to Players..."), playerNameStr.c_str());
-		sendRoomSystemMessage(msg.c_str());
+		sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::AskingSpectatorToMoveToPlayers, 0, player);
 		return true;
 	}
 	virtual void quitGame(int exitCode) override
@@ -6043,14 +6285,10 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 			break;
 		}
 
-		case GAME_ALLIANCE:
-			recvAlliance(queue, false);
-			break;
-
 		case NET_COLOURREQUEST:
 			if (multiplayIsStartingGame())
 			{
-				ignoredMessage = true;
+				debug(LOG_NET, "Ignoring %s while the game is starting", messageTypeToString(type));
 				break;
 			}
 			recvColourRequest(queue);
@@ -6059,7 +6297,7 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 		case NET_FACTIONREQUEST:
 			if (multiplayIsStartingGame())
 			{
-				ignoredMessage = true;
+				debug(LOG_NET, "Ignoring %s while the game is starting", messageTypeToString(type));
 				break;
 			}
 			recvFactionRequest(queue);
@@ -6068,7 +6306,7 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 		case NET_POSITIONREQUEST:
 			if (multiplayIsStartingGame())
 			{
-				ignoredMessage = true;
+				debug(LOG_NET, "Ignoring %s while the game is starting", messageTypeToString(type));
 				break;
 			}
 			recvPositionRequest(queue);
@@ -6077,43 +6315,48 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 		case NET_TEAMREQUEST:
 			if (multiplayIsStartingGame())
 			{
-				ignoredMessage = true;
+				debug(LOG_NET, "Ignoring %s while the game is starting", messageTypeToString(type));
 				break;
 			}
 			recvTeamRequest(queue);
 			break;
 
 		case NET_READY_REQUEST:
-			if (multiplayIsStartingGame())
 			{
-				ignoredMessage = true;
-				break;
-			}
-			recvReadyRequest(queue);
-
-			// If hosting and game not yet started, try to start the game if everyone is ready.
-			if (NetPlay.isHost && multiplayPlayersReady())
-			{
-				if (!multiplayLacksEnoughPlayersToAutostart())
+				if (multiplayIsStartingGame())
 				{
-					startMultiplayerGame();
-
-					// Start the game before processing more messages.
-					// (startMultiplayerGame transitions to new TitleUI)
-					NETpop(queue);
-					return MultiMessagesResult::StoppedJoining;
+					debug(LOG_NET, "Ignoring %s while the game is starting", messageTypeToString(type));
+					break;
 				}
-				else
+				const bool readyStatusChanged = recvReadyRequest(queue);
+
+				// If hosting and game not yet started, try to start the game if everyone is ready.
+				if (NetPlay.isHost && multiplayPlayersReady())
 				{
-					int minAutoStartPlayerCount = getBoundedMinAutostartPlayerCount();
-					if (minAutoStartPlayerCount > 0)
+					if (!multiplayLacksEnoughPlayersToAutostart())
 					{
-						std::string msg = astringf("Game will not start until there are %d players.", minAutoStartPlayerCount);
-						sendRoomSystemMessage(msg.c_str());
+						startMultiplayerGame();
+
+						// Start the game before processing more messages.
+						// (startMultiplayerGame transitions to new TitleUI)
+						NETpop(queue);
+						return MultiMessagesResult::StoppedJoining;
+					}
+					else
+					{
+						int minAutoStartPlayerCount = getBoundedMinAutostartPlayerCount();
+						static optional<std::chrono::steady_clock::time_point> lastMinPlayersNotice;
+						const auto now = std::chrono::steady_clock::now();
+						if (minAutoStartPlayerCount > 0 && readyStatusChanged
+							&& (!lastMinPlayersNotice.has_value() || now - lastMinPlayersNotice.value() >= std::chrono::seconds(10)))
+						{
+							lastMinPlayersNotice = now;
+							sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::MinPlayersToStart, minAutoStartPlayerCount);
+						}
 					}
 				}
+				break;
 			}
-			break;
 
 		case NET_PING:						// diagnostic ping msg.
 			recvPing(queue);
@@ -6122,8 +6365,6 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 		case NET_PLAYER_DROPPED:		// remote player got disconnected
 			{
 				uint32_t player_id = MAX_CONNECTED_PLAYERS;
-
-				resetReadyStatus(false, shouldSkipReadyResetOnPlayerJoinLeaveEvent());
 
 				auto r = NETbeginDecode(queue, NET_PLAYER_DROPPED);
 				{
@@ -6137,11 +6378,13 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 					break;
 				}
 
-				if (whosResponsible(player_id) != queue.index && queue.index != NetPlay.hostPlayer)
+				if (queue.index != NetPlay.hostPlayer)
 				{
 					HandleBadParam("NET_PLAYER_DROPPED given incorrect params.", player_id, queue.index);
 					break;
 				}
+
+				resetReadyStatus(false, shouldSkipReadyResetOnPlayerJoinLeaveEvent());
 
 				debug(LOG_INFO, "** player %u has dropped!", player_id);
 
@@ -6159,31 +6402,6 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 					stopJoining(parent, ERROR_NOERROR);
 				}
 				updateGameOptions();
-				break;
-			}
-		case NET_PLAYERRESPONDING:			// remote player is now playing.
-			{
-				uint32_t player_id;
-
-				auto r = NETbeginDecode(queue, NET_PLAYERRESPONDING);
-				// the player that has just responded
-				NETuint32_t(r, player_id);
-				NETend(r);
-
-				if (player_id >= MAX_CONNECTED_PLAYERS)
-				{
-					debug(LOG_ERROR, "Bad NET_PLAYERRESPONDING received, ID is %d", (int)player_id);
-					break;
-				}
-
-				if (whosResponsible(player_id) != queue.index && queue.index != NetPlay.hostPlayer)
-				{
-					HandleBadParam("NET_PLAYERRESPONDING given incorrect params.", player_id, queue.index);
-					break;
-				}
-
-				ingame.JoiningInProgress[player_id] = false;
-				ingame.DataIntegrity[player_id] = false;
 				break;
 			}
 		case NET_FIREUP:					// campaign game started.. can fire the whole shebang up...
@@ -6210,6 +6428,7 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 
 				debug(LOG_NET, "& local Options Received (MP game)");
 				ingame.TimeEveryoneIsInGame = nullopt;			// reset time
+				ingame.cheatsLocked = getLockedOptions().cheats;
 				ingame.endTime = nullopt;
 				resetDataHash();
 				decideWRF();
@@ -6234,16 +6453,19 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 				auto r = NETbeginDecode(queue, NET_KICK);
 				NETuint32_t(r, player_id);
 				NETstring(r, reason, MAX_KICK_REASON);
-				NETenum(r, KICK_TYPE);
+				NETenum(r, KICK_TYPE, ERROR_REDIRECT);
 				NETend(r);
 
 				if (player_id >= MAX_CONNECTED_PLAYERS)
 				{
-					debug(LOG_ERROR, "NET_KICK message with invalid player_id: (%" PRIu32")", player_id);
+					if (recordInvalidMessage(queue.index, NET_KICK))
+					{
+						debug(LOG_INFO, "NET_KICK message from %" PRIu8 " with invalid player_id: (%" PRIu32") - further ones will not be logged", queue.index, player_id);
+					}
 					break;
 				}
 
-				if (player_id < MAX_PLAYERS)
+				if (player_id < MAX_PLAYERS && queue.index == NetPlay.hostPlayer)
 				{
 					resetLobbyChangePlayerVote(player_id);
 				}
@@ -6287,7 +6509,7 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 						return MultiMessagesResult::StoppedJoining;
 					}
 				}
-				else
+				else if (!NetPlay.isHost)
 				{
 					NETplayerKicked(player_id, KICK_TYPE == ERROR_REDIRECT);
 				}
@@ -6297,6 +6519,14 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 		{
 			auto r = NETbeginDecode(queue, NET_HOST_DROPPED);
 			NETend(r);
+			if (queue.index != NetPlay.hostPlayer)
+			{
+				if (recordInvalidMessage(queue.index, NET_HOST_DROPPED))
+				{
+					debug(LOG_INFO, "Ignoring NET_HOST_DROPPED from %d - further ones will not be logged", (int)queue.index);
+				}
+				break;
+			}
 			stopJoining(std::make_shared<WzMsgBoxTitleUI>(WzString(_("Connection lost:")), WzString(_("No connection to host.")), parent), ERROR_HOSTDROPPED);
 			debug(LOG_NET, "The host has quit!");
 			break;
@@ -6307,25 +6537,35 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 				NetworkTextMessage message;
 				if (message.receive(queue)) {
 
+					bool isHostFreeText = (message.sender < 0);
+					if (isHostFreeText)
+					{
+						message.sender = NetPlay.hostPlayer;
+					}
+
 					bool displayedMessage = false;
-					if (message.sender < 0 || (!isPlayerMuted(message.sender) && !playerSpamMutedUntil(message.sender).has_value()))
+					if (isHostFreeText ? !shouldHideHostFreeText() : (!shouldHideFreeChatFrom(message.sender) && !playerSpamMutedUntil(message.sender).has_value()))
 					{
 						displayRoomMessage(buildMessage(message.sender, message.text));
 						audio_PlayTrack(FE_AUDIO_MESSAGEEND);
 						displayedMessage = true;
-
-						if (message.sender >= 0)
+						if (!isHostFreeText)
 						{
 							recordPlayerMessageSent(message.sender);
 						}
 					}
 
 					bool isLobbySlashCommand = false;
-					if (lobby_slashcommands_enabled())
+					const bool senderIsAdmin = isHostFreeText || lobbyCommandSenderHasAdminPrivs(static_cast<uint32_t>(message.sender));
+					if (lobby_slashcommands_enabled() && (senderIsAdmin || !playerSpamMutedUntil(message.sender).has_value()))
 					{
 						isLobbySlashCommand = processChatLobbySlashCommands(message, cmdInterface);
 						if (isLobbySlashCommand && !displayedMessage)
 						{
+							if (!senderIsAdmin)
+							{
+								recordPlayerMessageSent(message.sender);
+							}
 							// display it anyway, even though user is muted, because it was a processed slash command
 							displayRoomMessage(buildMessage(message.sender, message.text));
 							audio_PlayTrack(FE_AUDIO_MESSAGEEND);
@@ -6400,12 +6640,17 @@ WzMultiplayerOptionsTitleUI::MultiMessagesResult WzMultiplayerOptionsTitleUI::fr
 
 		if (ignoredMessage)
 		{
-			debug(LOG_ERROR, "Didn't handle %s message!", messageTypeToString(type));
+			if (recordInvalidMessage(queue.index, type))
+			{
+				debug(LOG_INFO, "Didn't handle %s message from %d - further ones will not be logged", messageTypeToString(type), (int)queue.index);
+			}
 			ignoredMessage = false;
 		}
 
 		NETpop(queue);
 	}
+
+	multiSyncSendPendingPingReplies();
 
 	if (NetPlay.isHost) {
 		static std::chrono::steady_clock::time_point before;
@@ -6465,7 +6710,7 @@ TITLECODE WzMultiplayerOptionsTitleUI::run()
 			}
 
 			addPlayerBox(true);				// update the player box.
-			loadMapPreview(false);
+			requestMapPreviewLoad(false);
 			updateGameOptions();
 		}
 	}
@@ -6560,7 +6805,7 @@ TITLECODE WzMultiplayerOptionsTitleUI::run()
 						game.maxPlayers = mapData->players;
 						game.isMapMod = CheckForMod(mapData->realFileName);
 						game.isRandom = CheckForRandom(mapData->realFileName, mapData->apDataFiles[0].c_str());
-						loadMapPreview(false);
+						requestMapPreviewLoad(false, mapData->pName, game.hash);
 
 						/* Change game info to match the previous selection if hover preview was displayed */
 						sstrcpy(game.map, oldGameMap);
@@ -6593,7 +6838,7 @@ TITLECODE WzMultiplayerOptionsTitleUI::run()
 					uint8_t oldMaxPlayers = game.maxPlayers;
 					updateMapSettings(mapData);
 
-					loadMapPreview(false);
+					requestMapPreviewLoad(false);
 					loadMapChallengeAndPlayerSettings();
 					debug(LOG_INFO, "Switching map: %s (builtin: %d)", (!mapData->pName.empty()) ? mapData->pName.c_str() : "n/a", (int)builtInMap);
 
@@ -6625,7 +6870,7 @@ TITLECODE WzMultiplayerOptionsTitleUI::run()
 				}
 				break;
 			default:
-				loadMapPreview(false);  // Restore the preview of the old map.
+				requestMapPreviewLoad(false);  // Restore the preview of the old map.
 				break;
 			}
 			if (!isHoverPreview)
@@ -6640,7 +6885,7 @@ TITLECODE WzMultiplayerOptionsTitleUI::run()
 		if (hideTime != 0)
 		{
 			// we abort the 'hidetime' on press of a mouse button.
-			if (gameTime - hideTime < MAP_PREVIEW_DISPLAY_TIME && !mousePressed(MOUSE_LMB) && !mousePressed(MOUSE_RMB))
+			if (isFullscreenMapPreviewActive() && !mousePressed(MOUSE_LMB) && !mousePressed(MOUSE_RMB))
 			{
 				return TITLECODE_CONTINUE;
 			}
@@ -6659,13 +6904,6 @@ TITLECODE WzMultiplayerOptionsTitleUI::run()
 		}
 	}
 
-	widgDisplayScreen(psWScreen);									// show the widgets currently running
-
-	if (multiRequestUp)
-	{
-		widgDisplayScreen(psRScreen);								// show the Requester running
-	}
-
 	if (CancelPressed())
 	{
 		processMultiopWidgets(CON_CANCEL);  // "Press" the cancel button to clean up net connections and stuff.
@@ -6681,6 +6919,21 @@ TITLECODE WzMultiplayerOptionsTitleUI::run()
 	}
 
 	return TITLECODE_CONTINUE;
+}
+
+void WzMultiplayerOptionsTitleUI::render()
+{
+	if (isFullscreenMapPreviewActive())
+	{
+		return;
+	}
+
+	widgDisplayScreen(psWScreen);									// show the widgets currently running
+
+	if (multiRequestUp)
+	{
+		widgDisplayScreen(psRScreen);								// show the Requester running
+	}
 }
 
 WzMultiplayerOptionsTitleUI::WzMultiplayerOptionsTitleUI(std::shared_ptr<WzTitleUI> parent)
@@ -6831,7 +7084,7 @@ void WzMultiplayerOptionsTitleUI::start()
 
 		currentMultiOptionsTitleUI = std::dynamic_pointer_cast<WzMultiplayerOptionsTitleUI>(shared_from_this());
 		bRequestedSelfMoveToPlayers = false;
-		bHostRequestedMoveToPlayers.resize(MAX_CONNECTED_PLAYERS, false);
+		bHostRequestedMoveToPlayers.assign(MAX_CONNECTED_PLAYERS, false);
 		playerRows.clear();
 		initKnownPlayers();
 		resetPlayerConfiguration(true);
@@ -6874,6 +7127,31 @@ void WzMultiplayerOptionsTitleUI::start()
 
 		ingame.localOptionsReceived = false;
 
+		if (NetPlay.bComms && ingame.side == InGameSide::HOST_OR_SINGLEPLAYER)
+		{
+			getCoreDataModifiedCheck([](const CoreDataCheckResult& result) {
+				if (!result.checkPerformed || result.modifiedArchives.empty())
+				{
+					return;
+				}
+				std::string archiveNames;
+				for (const auto& name : result.modifiedArchives)
+				{
+					if (!archiveNames.empty())
+					{
+						archiveNames += ", ";
+					}
+					archiveNames += name;
+				}
+				std::string message = astringf(_("WARNING: Your core data files are modified (%s)."), archiveNames.c_str());
+				message += "\n";
+				message += _("These changes are not distributed to other players, and will likely cause desyncs.");
+				message += "\n";
+				message += _("Package changes as a mod instead.");
+				displayRoomSystemMessage(message.c_str());
+			});
+		}
+
 		PLAYERSTATS	playerStats;
 
 		loadMultiStats((char*)sPlayer, &playerStats);
@@ -6890,7 +7168,7 @@ void WzMultiplayerOptionsTitleUI::start()
 		}
 	}
 
-	loadMapPreview(false);
+	requestMapPreviewLoad(false);
 
 	const bool hostOrSingle = ingame.side == InGameSide::HOST_OR_SINGLEPLAYER;
 	/* Re-entering or entering without a challenge */
@@ -7550,7 +7828,9 @@ inline void to_json(nlohmann::json& j, const MULTIPLAYERGAME& p) {
 	j["inactivityMinutes"] = p.inactivityMinutes;
 	j["gameTimeLimitMinutes"] = p.gameTimeLimitMinutes;
 	j["playerLeaveMode"] = p.playerLeaveMode;
+	j["playerReconnectWaitSeconds"] = p.playerReconnectWaitSeconds;
 	j["blindMode"] = p.blindMode;
+	j["pathfindingBackend"] = p.pathfindingBackend;
 }
 
 inline void from_json(const nlohmann::json& j, MULTIPLAYERGAME& p) {
@@ -7597,6 +7877,15 @@ inline void from_json(const nlohmann::json& j, MULTIPLAYERGAME& p) {
 		// default to the old (pre-4.4.0) behavior of destroy resources
 		p.playerLeaveMode = PLAYER_LEAVE_MODE::DESTROY_RESOURCES;
 	}
+	if (j.contains("playerReconnectWaitSeconds"))
+	{
+		p.playerReconnectWaitSeconds = clampPlayerReconnectWaitSeconds(j.at("playerReconnectWaitSeconds").get<uint32_t>());
+	}
+	else
+	{
+		// default to no reconnect wait (prior behavior: a dropped player was declared left immediately)
+		p.playerReconnectWaitSeconds = 0;
+	}
 	if (j.contains("blindMode"))
 	{
 		p.blindMode = j.at("blindMode").get<BLIND_MODE>();
@@ -7606,6 +7895,8 @@ inline void from_json(const nlohmann::json& j, MULTIPLAYERGAME& p) {
 		// default to the old (pre-4.6.0) behavior (no blind mode)
 		p.blindMode = BLIND_MODE::NONE;
 	}
+	// default to the legacy A* planner for replays recorded before this setting existed
+	p.pathfindingBackend = j.value("pathfindingBackend", static_cast<uint16_t>(0));
 }
 
 inline void to_json(nlohmann::json& j, const MULTISTRUCTLIMITS& p) {
@@ -7641,6 +7932,10 @@ inline void to_json(nlohmann::json& j, const MULTIPLAYERINGAME& p) {
 	j["side"] = p.side;
 	j["structureLimits"] = p.lastAppliedStructureLimits; // See applyLimitSet() for why we save `lastAppliedStructureLimits` as `structureLimits`
 	j["flags"] = p.flags;
+	if (p.cheatsLocked.has_value())
+	{
+		j["cheatsLocked"] = p.cheatsLocked.value();
+	}
 }
 
 inline void from_json(const nlohmann::json& j, MULTIPLAYERINGAME& p) {
@@ -7658,6 +7953,10 @@ inline void from_json(const nlohmann::json& j, MULTIPLAYERINGAME& p) {
 	p.side = j.at("side").get<InGameSide>();
 	p.structureLimits = j.at("structureLimits").get<std::vector<MULTISTRUCTLIMITS>>();
 	p.flags = j.at("flags").get<uint8_t>();
+	if (j.contains("cheatsLocked"))
+	{
+		p.cheatsLocked = j.at("cheatsLocked").get<bool>();
+	}
 }
 
 inline void to_json(nlohmann::json& j, const PLAYER& p) {
@@ -7707,7 +8006,7 @@ inline void from_json(const nlohmann::json& j, PLAYER& p) {
 	}
 	// Do not persist IPtextAddress
 	auto factionUint = j.at("faction").get<uint8_t>();
-	p.faction = static_cast<FactionID>(factionUint); // TODO CHECK
+	p.faction = uintToFactionID(factionUint).value_or(FACTION_NORMAL);
 	p.isSpectator = j.at("isSpectator").get<bool>();
 	if (j.contains("isAdmin"))
 	{
@@ -7755,7 +8054,7 @@ bool WZGameReplayOptionsHandler::saveOptions(nlohmann::json& object) const
 	object["randSeed"] = gameRand_GetSeed();
 
 	// Save versionString
-	object["versionString"] = version_getVersionString_net();
+	object["versionString"] = version_getVersionString();
 
 	// Save DataHash here, so we can provide a warning on load (after all data / the game is loaded) in the future
 	object["dataHash"] = DataHashToJSON();
@@ -7917,7 +8216,7 @@ bool WZGameReplayOptionsHandler::restoreOptions(const nlohmann::json& object, Em
 
 	// compare version_string and throw a pop-up warning if not equal
 	auto replayVersionStr = object.at("versionString").get<std::string>();
-	auto expectedVersionStr = version_getVersionString_net();
+	auto expectedVersionStr = version_getVersionString();
 	bool nonMatchingVersionString = replayVersionStr != expectedVersionStr;
 	bool nonMatchingNetcodeVersion = !NETisCorrectVersion(replay_netcodeMajor, replay_netcodeMinor);
 	if (nonMatchingVersionString || nonMatchingNetcodeVersion)
@@ -7949,7 +8248,13 @@ bool WZGameReplayOptionsHandler::restoreOptions(const nlohmann::json& object, Em
 	}
 
 	// restore `game`
-	game = object.at("game").get<MULTIPLAYERGAME>();
+	auto replayGame = object.at("game").get<MULTIPLAYERGAME>();
+	if (replayGame.maxPlayers == 0 || replayGame.maxPlayers > MAX_PLAYERS)
+	{
+		debug(LOG_ERROR, "Invalid maxPlayers (%u)", static_cast<unsigned>(replayGame.maxPlayers));
+		return false;
+	}
+	game = std::move(replayGame);
 
 	// restore `ingame`
 	ingame = object.at("ingame").get<MULTIPLAYERINGAME>();
@@ -8002,13 +8307,29 @@ bool WZGameReplayOptionsHandler::restoreOptions(const nlohmann::json& object, Em
 		debug(LOG_ERROR, "Unsupported netplay.players size (%zu)", netPlayers.size());
 		return false;
 	}
+	std::vector<PLAYER> restoredPlayers;
+	restoredPlayers.reserve(netPlayers.size());
 	for (size_t i = 0; i < netPlayers.size(); ++i)
 	{
-		from_json(netPlayers.at(i), NetPlay.players[i]);
+		PLAYER player = NetPlay.players[i];
+		from_json(netPlayers.at(i), player);
+		if (player.position < 0 || player.position >= MAX_CONNECTED_PLAYERS)
+		{
+			debug(LOG_ERROR, "Invalid position (%" PRIi32 ") for player %zu", player.position, i);
+			return false;
+		}
+		restoredPlayers.push_back(std::move(player));
 	}
 
 	// restore NetPlay.hostPlayer
-	NetPlay.hostPlayer = object.at("netplay.hostPlayer").get<uint32_t>();
+	const uint32_t hostPlayer = object.at("netplay.hostPlayer").get<uint32_t>();
+	if (hostPlayer >= MAX_CONNECTED_PLAYERS)
+	{
+		debug(LOG_ERROR, "Invalid netplay.hostPlayer (%" PRIu32 ")", hostPlayer);
+		return false;
+	}
+	std::move(restoredPlayers.begin(), restoredPlayers.end(), NetPlay.players.begin());
+	NetPlay.hostPlayer = hostPlayer;
 
 	// restore `NetPlay.bComms` (?)
 	NetPlay.bComms = object.at("netplay.bComms").get<bool>();
@@ -8056,10 +8377,6 @@ bool WZGameReplayOptionsHandler::restoreOptions(const nlohmann::json& object, Em
 		debug(LOG_POPUP, "Missing map used for replay: \"%s\" (hash: %s)", game.map, game.hash.toString().c_str());
 		return false;
 	}
-	// Must restore `useTerrainOverrides` (this matters for re-loading the map!) - see loadMapPreview() in multiint.cpp
-	builtInMap = (mapData->realFileName == nullptr);
-	useTerrainOverrides = builtInMap && shouldLoadTerrainTypeOverrides(mapData->pName);
-
 	for (Sha256 &hash : game.modHashes)
 	{
 		// TODO: Actually check the loaded mods??

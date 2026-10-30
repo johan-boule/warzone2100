@@ -29,8 +29,25 @@ extern bool allowDesign;
 extern bool includeRedundantDesigns;
 extern bool playerBuiltHQ;
 
-bool designableTemplate(const DROID_TEMPLATE *psTempl, int player);
+bool designableTemplate(const DROID_TEMPLATE *psTempl, int player, bool quiet = false);
+
+/// True if both templates have the same droid type, parts and weapons (the name is not compared)
+bool templatesHaveSameComponents(const DROID_TEMPLATE &a, const DROID_TEMPLATE &b);
+
+/// Maximum length of a template name, in UTF-8 bytes
+constexpr size_t MAX_TEMPLATE_NAME_LENGTH = MAX_STR_LENGTH - 1;
+
+/// Shortens a name to at most MAX_TEMPLATE_NAME_LENGTH bytes, without splitting a character. Returns true if it was shortened.
+bool truncateTemplateName(WzString &name);
+
 bool initTemplates();
+/// Load the local player's template store without adding its designs to the game: for a GameState load, whose
+/// templates are the saved game's. Designs made afterwards are still stored.
+bool initTemplateStore();
+
+/// Refill the UI template list (localTemplates) from droidTemplates[player]
+/// NOTE: this invalidates every pointer into localTemplates, so it is only safe before any UI or pending production order exists
+void rebuildLocalTemplates(unsigned player);
 
 /// Take ownership of template given by pointer.
 /// Returns a new usable DROID_TEMPLATE *
@@ -41,11 +58,22 @@ DROID_TEMPLATE *copyTemplate(int player, DROID_TEMPLATE *psTemplate);
 
 void enumerateTemplates(int player, const std::function<bool (DROID_TEMPLATE* psTemplate)>& func);
 DROID_TEMPLATE* findPlayerTemplateById(int player, UDWORD templateId);
+
+/// Keep a template that is no longer in the player's template list alive (like the template addTemplate() replaces),
+/// for factories and production runs that still refer to it. Used when restoring a saved game.
+DROID_TEMPLATE *addReplacedTemplate(int player, std::unique_ptr<DROID_TEMPLATE> psTemplate);
 size_t templateCount(int player);
 
 void clearTemplates(int player);
 bool shutdownTemplates();
 bool storeTemplates();
+
+/// Add or replace a design in the cross-match design store
+void templateStoreUpsert(const DROID_TEMPLATE &psTemplate);
+/// Remove a design, given the entry saveTemplateCommon produced for it before it was edited or deleted
+void templateStoreRemove(const nlohmann::json &entry);
+/// True if the entry describes the same design as the template (an in-place edit changes this)
+bool templateStoreEntryMatches(const nlohmann::json &entry, const DROID_TEMPLATE &psTemplate);
 
 bool loadDroidTemplates(const char *filename);
 

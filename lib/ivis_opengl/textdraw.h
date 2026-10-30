@@ -44,6 +44,10 @@ enum iV_fonts
 	font_scaled,
 	font_regular_bold,
 	font_medium_bold,
+	font_video_1, // video text: sized by iV_BindVideoFont
+	font_video_2,
+	font_video_3,
+	font_video_4,
 	font_count
 };
 
@@ -91,6 +95,7 @@ private:
 	float mRenderingHorizScaleFactor = 0.f;
 	float mRenderingVertScaleFactor = 0.f;
 	iV_fonts mFontID = font_count;
+	uint32_t mFontGeneration = 0;
 	Vector2i layoutMetrics = Vector2i(0, 0);
 };
 
@@ -135,6 +140,11 @@ void iV_TextInit(unsigned int horizScalePercentage, unsigned int vertScalePercen
 void iV_TextUpdateScaleFactor(unsigned int horizScalePercentage, unsigned int vertScalePercentage);
 void iV_TextShutdown();
 void iV_font(const char *fontName, const char *fontFace, const char *fontFaceBold);
+
+/// Sets the size (in points) of a video text font (font_video_1 ... font_video_4). Text in it re-renders at the new size.
+bool iV_BindVideoFont(iV_fonts fontID, float pointSize);
+/// Unbinds all video text fonts and frees their faces.
+void iV_UnbindVideoFonts();
 
 int iV_GetEllipsisWidth(iV_fonts fontID);
 void iV_DrawEllipsis(iV_fonts fontID, Vector2f position, PIELIGHT colour, float rotation = 0.0f);

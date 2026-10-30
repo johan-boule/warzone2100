@@ -33,6 +33,7 @@
 		"libogg",
 		"libtheora",
 		"libvorbis",
+		"libvpx",
 		"opus",
 		{
 			"name": "libpng",
@@ -100,7 +101,8 @@
 		}
 	],
 	"overrides": [
-		{ "name": "sqlite3", "version": "3.49.2" }
+		{ "name": "sqlite3", "version": "3.49.2" },
+		{ "name": "libiconv", "version": "1.18", "port-version": 3 }
 	],
 	"default-features": [
 		"vulkan"

@@ -33,6 +33,9 @@ namespace gfx_api
 		FORMAT_RGB8_UNORM_PACK8,
 		FORMAT_RG8_UNORM,			// not guaranteed support
 		FORMAT_R8_UNORM,
+		FORMAT_R16_UNORM,			// desktop only (not supported on GLES)
+		FORMAT_RG16_UNORM,			// desktop only (not supported on GLES)
+		FORMAT_D24_UNORM_S8,		// depth/stencil attachment
 
 		// [COMPRESSED FORMATS]
 
@@ -56,8 +59,91 @@ namespace gfx_api
 
 		// ASTC (LDR) - requires an extension
 		FORMAT_ASTC_4x4_UNORM,
+
+		// Additional uncompressed / depth formats (appended to preserve prior enumerant values)
+		FORMAT_A2B10G10R10_UNORM_PACK32, // 10-bit RGB + 2-bit A (e.g. VK scene color)
+		FORMAT_D32_SFLOAT_S8_UINT,       // depth/stencil attachment
+		FORMAT_D32_SFLOAT,               // depth-only (e.g. shadow maps)
+
+		// Floating point color, render targets only (nothing loads a texture in these)
+		FORMAT_R16G16B16A16_SFLOAT,      // half float RGBA
+		FORMAT_B10G11R11_UFLOAT_PACK32,  // packed unsigned float, same size as RGBA8 but no alpha
+
+		// sRGB counterparts (for color formats)
+		FORMAT_RGBA8_SRGB_PACK8,
+		FORMAT_RGB8_SRGB_PACK8,
+		FORMAT_RGB_BC1_SRGB,
+		FORMAT_RGBA_BC2_SRGB,
+		FORMAT_RGBA_BC3_SRGB,
+		FORMAT_RGBA_BPTC_SRGB,
+		FORMAT_RGB8_ETC2_SRGB,
+		FORMAT_RGBA8_ETC2_EAC_SRGB,
+		FORMAT_ASTC_4x4_SRGB,
 	};
-	constexpr pixel_format MAX_PIXEL_FORMAT = pixel_format::FORMAT_ASTC_4x4_UNORM;
+	constexpr pixel_format MAX_PIXEL_FORMAT = pixel_format::FORMAT_ASTC_4x4_SRGB;
+
+	/// The sRGB counterpart of a color format, or `invalid` where the format has none
+	static inline pixel_format srgb_format_for(const pixel_format& format)
+	{
+		switch (format)
+		{
+			case pixel_format::FORMAT_RGBA8_UNORM_PACK8: return pixel_format::FORMAT_RGBA8_SRGB_PACK8;
+			case pixel_format::FORMAT_RGB8_UNORM_PACK8:  return pixel_format::FORMAT_RGB8_SRGB_PACK8;
+			case pixel_format::FORMAT_RGB_BC1_UNORM:     return pixel_format::FORMAT_RGB_BC1_SRGB;
+			case pixel_format::FORMAT_RGBA_BC2_UNORM:    return pixel_format::FORMAT_RGBA_BC2_SRGB;
+			case pixel_format::FORMAT_RGBA_BC3_UNORM:    return pixel_format::FORMAT_RGBA_BC3_SRGB;
+			case pixel_format::FORMAT_RGBA_BPTC_UNORM:   return pixel_format::FORMAT_RGBA_BPTC_SRGB;
+			case pixel_format::FORMAT_RGB8_ETC2:         return pixel_format::FORMAT_RGB8_ETC2_SRGB;
+			case pixel_format::FORMAT_RGBA8_ETC2_EAC:    return pixel_format::FORMAT_RGBA8_ETC2_EAC_SRGB;
+			case pixel_format::FORMAT_ASTC_4x4_UNORM:    return pixel_format::FORMAT_ASTC_4x4_SRGB;
+			default: return pixel_format::invalid;
+		}
+	}
+
+	/// The UNORM counterpart of an sRGB format, or the format itself where it is not sRGB.
+	/// The bytes are identical either way, so encoders and transcoders work in these terms.
+	static inline pixel_format unorm_format_for(const pixel_format& format)
+	{
+		switch (format)
+		{
+			case pixel_format::FORMAT_RGBA8_SRGB_PACK8:      return pixel_format::FORMAT_RGBA8_UNORM_PACK8;
+			case pixel_format::FORMAT_RGB8_SRGB_PACK8:       return pixel_format::FORMAT_RGB8_UNORM_PACK8;
+			case pixel_format::FORMAT_RGB_BC1_SRGB:          return pixel_format::FORMAT_RGB_BC1_UNORM;
+			case pixel_format::FORMAT_RGBA_BC2_SRGB:         return pixel_format::FORMAT_RGBA_BC2_UNORM;
+			case pixel_format::FORMAT_RGBA_BC3_SRGB:         return pixel_format::FORMAT_RGBA_BC3_UNORM;
+			case pixel_format::FORMAT_RGBA_BPTC_SRGB:        return pixel_format::FORMAT_RGBA_BPTC_UNORM;
+			case pixel_format::FORMAT_RGB8_ETC2_SRGB:        return pixel_format::FORMAT_RGB8_ETC2;
+			case pixel_format::FORMAT_RGBA8_ETC2_EAC_SRGB:   return pixel_format::FORMAT_RGBA8_ETC2_EAC;
+			case pixel_format::FORMAT_ASTC_4x4_SRGB:         return pixel_format::FORMAT_ASTC_4x4_UNORM;
+			default: return format;
+		}
+	}
+
+	/// True for the sRGB color formats (the sampler converts them to linear)
+	static inline bool is_srgb_format(const pixel_format& format)
+	{
+		return unorm_format_for(format) != format;
+	}
+
+	/// True where an image's bytes can be uploaded to a texture created with `textureFormat`
+	/// (an sRGB format and its UNORM counterpart hold identical bytes)
+	static inline bool format_bytes_compatible(const pixel_format& imageFormat, const pixel_format& textureFormat)
+	{
+		return unorm_format_for(imageFormat) == unorm_format_for(textureFormat);
+	}
+
+	/// True for the floating point color formats
+	static inline bool is_float_format(const pixel_format& format)
+	{
+		switch (format)
+		{
+			case pixel_format::FORMAT_R16G16B16A16_SFLOAT:
+			case pixel_format::FORMAT_B10G11R11_UFLOAT_PACK32:
+				return true;
+			default:
+				return false;
+		}
+	}
 
 	static inline bool is_uncompressed_format(const pixel_format& format)
 	{
@@ -69,6 +155,13 @@ namespace gfx_api
 			case gfx_api::pixel_format::FORMAT_RGB8_UNORM_PACK8:
 			case gfx_api::pixel_format::FORMAT_RG8_UNORM:
 			case gfx_api::pixel_format::FORMAT_R8_UNORM:
+			case gfx_api::pixel_format::FORMAT_A2B10G10R10_UNORM_PACK32:
+			case gfx_api::pixel_format::FORMAT_R16_UNORM:
+			case gfx_api::pixel_format::FORMAT_RG16_UNORM:
+			case gfx_api::pixel_format::FORMAT_R16G16B16A16_SFLOAT:
+			case gfx_api::pixel_format::FORMAT_B10G11R11_UFLOAT_PACK32:
+			case gfx_api::pixel_format::FORMAT_RGBA8_SRGB_PACK8:
+			case gfx_api::pixel_format::FORMAT_RGB8_SRGB_PACK8:
 				return true;
 			default:
 				return false;
@@ -78,7 +171,6 @@ namespace gfx_api
 
 	const char* format_to_str(gfx_api::pixel_format format);
 	unsigned int format_channels(gfx_api::pixel_format format);
-	size_t format_texel_block_width(gfx_api::pixel_format format);
 	size_t format_memory_size(gfx_api::pixel_format format, size_t width, size_t height);
 
 	namespace pixel_format_usage
@@ -121,7 +213,7 @@ namespace gfx_api
 		specular_map, // a single-channel texture, containing the specular / luma value
 		height_map, // a single-channel texture, containing the height values
 	};
-	constexpr texture_type MAX_TEXTURE_TYPE = texture_type::specular_map;
+	constexpr texture_type MAX_TEXTURE_TYPE = texture_type::height_map;
 	constexpr size_t TEXTURE_TYPE_COUNT = static_cast<size_t>(MAX_TEXTURE_TYPE) + 1;
 
 	enum class max_texture_compression_level: uint8_t {

@@ -44,6 +44,7 @@
 #include "multiplay.h"
 #include "research.h"
 #include "stats.h"
+#include "effectlights.h"
 #include "template.h"
 #include "text.h"
 #include "texture.h"
@@ -130,9 +131,30 @@ void dataClearSaveFlag()
 	saveFlag = false;
 }
 
+// Each stats type can only be loaded from one file
+static bool statsNotYetLoaded(bool alreadyLoaded, const char *type, const char *fileName)
+{
+	if (alreadyLoaded)
+	{
+		debug(LOG_ERROR, "%s stats were already loaded from another file, can't also load %s", type, fileName);
+		return false;
+	}
+	return true;
+}
+
 /* Load the body stats */
 static bool bufferSBODYLoad(const char *fileName, void **ppData)
 {
+	if (!statsNotYetLoaded(!asBodyStats.empty(), "Body", fileName))
+	{
+		return false;
+	}
+	// Bodies hold an IMD per propulsion
+	if (asPropulsionStats.empty())
+	{
+		debug(LOG_ERROR, "Propulsion stats must be loaded before body stats (%s)", fileName);
+		return false;
+	}
 	WzConfig ini(fileName, WzConfig::ReadOnlyAndRequired);
 	calcDataHash(ini, DATA_SBODY);
 
@@ -155,6 +177,10 @@ static void dataReleaseStats(WZ_DECL_UNUSED void *pData)
 /* Load the weapon stats */
 static bool bufferSWEAPONLoad(const char *fileName, void **ppData)
 {
+	if (!statsNotYetLoaded(!asWeaponStats.empty(), "Weapon", fileName))
+	{
+		return false;
+	}
 	WzConfig ini(fileName, WzConfig::ReadOnlyAndRequired);
 	calcDataHash(ini, DATA_SWEAPON);
 
@@ -164,6 +190,9 @@ static bool bufferSWEAPONLoad(const char *fileName, void **ppData)
 		return false;
 	}
 
+	// A dataset that never loads SEFFECTLIGHTS still resolves its lights against the weapon stats
+	effectLightsWeaponStatsLoaded();
+
 	// not interested in this value
 	*ppData = nullptr;
 	return true;
@@ -172,6 +201,10 @@ static bool bufferSWEAPONLoad(const char *fileName, void **ppData)
 /* Load the constructor stats */
 static bool bufferSCONSTRLoad(const char *fileName, void **ppData)
 {
+	if (!statsNotYetLoaded(!asConstructStats.empty(), "Construct", fileName))
+	{
+		return false;
+	}
 	WzConfig ini(fileName, WzConfig::ReadOnlyAndRequired);
 	calcDataHash(ini, DATA_SCONSTR);
 
@@ -189,6 +222,10 @@ static bool bufferSCONSTRLoad(const char *fileName, void **ppData)
 /* Load the ECM stats */
 static bool bufferSECMLoad(const char *fileName, void **ppData)
 {
+	if (!statsNotYetLoaded(!asECMStats.empty(), "ECM", fileName))
+	{
+		return false;
+	}
 	WzConfig ini(fileName, WzConfig::ReadOnlyAndRequired);
 	calcDataHash(ini, DATA_SECM);
 
@@ -206,6 +243,10 @@ static bool bufferSECMLoad(const char *fileName, void **ppData)
 /* Load the Propulsion stats */
 static bool bufferSPROPLoad(const char *fileName, void **ppData)
 {
+	if (!statsNotYetLoaded(!asPropulsionStats.empty(), "Propulsion", fileName))
+	{
+		return false;
+	}
 	WzConfig ini(fileName, WzConfig::ReadOnlyAndRequired);
 	calcDataHash(ini, DATA_SPROP);
 
@@ -221,6 +262,10 @@ static bool bufferSPROPLoad(const char *fileName, void **ppData)
 
 static bool bufferSSENSORLoad(const char *fileName, void **ppData)
 {
+	if (!statsNotYetLoaded(!asSensorStats.empty(), "Sensor", fileName))
+	{
+		return false;
+	}
 	WzConfig ini(fileName, WzConfig::ReadOnlyAndRequired);
 	calcDataHash(ini, DATA_SSENSOR);
 
@@ -238,6 +283,10 @@ static bool bufferSSENSORLoad(const char *fileName, void **ppData)
 /* Load the Repair stats */
 static bool bufferSREPAIRLoad(const char *fileName, void **ppData)
 {
+	if (!statsNotYetLoaded(!asRepairStats.empty(), "Repair", fileName))
+	{
+		return false;
+	}
 	WzConfig ini(fileName, WzConfig::ReadOnlyAndRequired);
 	calcDataHash(ini, DATA_SREPAIR);
 
@@ -254,6 +303,10 @@ static bool bufferSREPAIRLoad(const char *fileName, void **ppData)
 /* Load the Brain stats */
 static bool bufferSBRAINLoad(const char *fileName, void **ppData)
 {
+	if (!statsNotYetLoaded(!asBrainStats.empty(), "Brain", fileName))
+	{
+		return false;
+	}
 	WzConfig ini(fileName, WzConfig::ReadOnlyAndRequired);
 	calcDataHash(ini, DATA_SBRAIN);
 
@@ -293,6 +346,24 @@ static bool bufferSPROPSNDLoad(const char *fileName, void **ppData)
 	//not interested in this value
 	*ppData = nullptr;
 	return true;
+}
+
+/* Load the effect light settings */
+static bool bufferSEFFECTLIGHTSLoad(const char *fileName, void **ppData)
+{
+	if (!loadEffectLights(fileName))
+	{
+		return false;
+	}
+
+	//not interested in this value
+	*ppData = nullptr;
+	return true;
+}
+
+static void dataReleaseEffectLights(WZ_DECL_UNUSED void *pData)
+{
+	effectLightsShutDown();
 }
 
 /* Load the STERRTABLE stats */
@@ -359,6 +430,10 @@ static void dataSTEMPLRelease(WZ_DECL_UNUSED void *pData)
 /* Load the Structure stats */
 static bool bufferSSTRUCTLoad(const char *fileName, void **ppData)
 {
+	if (!statsNotYetLoaded(numStructureStats != 0, "Structure", fileName))
+	{
+		return false;
+	}
 	WzConfig ini(fileName, WzConfig::ReadOnlyAndRequired);
 	calcDataHash(ini, DATA_SSTRUCT);
 
@@ -403,6 +478,10 @@ static bool bufferSSTRMODLoad(const char *fileName, void **ppData)
 /* Load the Feature stats */
 static bool bufferSFEATLoad(const char *fileName, void **ppData)
 {
+	if (!statsNotYetLoaded(!asFeatureStats.empty(), "Feature", fileName))
+	{
+		return false;
+	}
 	WzConfig ini(fileName, WzConfig::ReadOnlyAndRequired);
 	calcDataHash(ini, DATA_SFEAT);
 
@@ -696,6 +775,7 @@ static const RES_TYPE_MIN_FILE FileResourceTypes[] =
 	{"SBODY", bufferSBODYLoad, dataReleaseStats},
 	{"SWEAPMOD", bufferSWEAPMODLoad, dataReleaseStats},
 	{"SPROPSND", bufferSPROPSNDLoad, dataReleaseStats},
+	{"SEFFECTLIGHTS", bufferSEFFECTLIGHTSLoad, dataReleaseEffectLights},
 	{"AUDIOCFG", dataAudioCfgLoad, nullptr},
 	{"IMGPAGE", dataImageLoad, dataImageRelease},
 	{"TERTILES", dataTERTILESLoad, nullptr},

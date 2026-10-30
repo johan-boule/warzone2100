@@ -3,15 +3,15 @@
 
 //#pragma debug(on)
 
+#include "tcmask_instanced.glsl"
+
 // constants overridden by WZ when loading shaders (do not modify here in the shader source!)
-#define WZ_MIP_LOAD_BIAS 0.f
 #define WZ_SHADOW_MODE 1
 #define WZ_SHADOW_FILTER_SIZE 3
 #define WZ_SHADOW_CASCADES_COUNT 3
 #define WZ_POINT_LIGHT_ENABLED 0
 //
 
-#define WZ_MAX_SHADOW_CASCADES 3
 
 uniform sampler2D Texture; // diffuse map
 uniform sampler2D TextureTcmask; // tcmask
@@ -20,30 +20,11 @@ uniform sampler2D TextureSpecular; // specular map
 uniform sampler2DArrayShadow shadowMap; // shadow map
 uniform sampler2D lightmap_tex;
 
-uniform mat4 ViewMatrix;
 
-uniform int tcmask; // whether a tcmask texture exists for the model
-uniform int normalmap; // whether a normal map exists for the model
-uniform int specularmap; // whether a specular map exists for the model
-uniform int hasTangents; // whether tangents were calculated for model
-uniform int shieldEffect;
-uniform float graphicsCycle; // a periodically cycling value for special effects
 
-uniform vec4 cameraPos; // in modelSpace
 
-uniform vec4 sceneColor; //emissive light
-uniform vec4 ambient;
-uniform vec4 diffuse;
-uniform vec4 specular;
 
-uniform mat4 ShadowMapMVPMatrix[WZ_MAX_SHADOW_CASCADES];
-uniform vec4 ShadowMapCascadeSplits;
-uniform int ShadowMapSize;
 
-uniform int fogEnabled; // whether fog is enabled
-uniform float fogEnd;
-uniform float fogStart;
-uniform vec4 fogColor;
 
 #if (!defined(GL_ES) && (__VERSION__ >= 130)) || (defined(GL_ES) && (__VERSION__ >= 300))
 #define NEWGL
@@ -78,6 +59,9 @@ out vec4 FragColor;
 #endif
 #include "shadow_mapping.glsl"
 #include "light.glsl"
+#include "tangentspace.glsl"
+#include "distance_fog.glsl"
+#include "srgb.glsl"
 
 float random(vec2 uv)
 {
@@ -117,21 +101,11 @@ void main()
 	{
 		vec3 normalFromMap = texture(TextureNormal, texCoord, WZ_MIP_LOAD_BIAS).xyz;
 
-		// transform tangent-space normal map into world space
-		N = normalFromMap.xzy * 2.0 - 1.0;
-		N = TangentSpaceMatrix * N;
-
-		if (hasTangents == 0)
-		{
-			// transform object-space normal map into world space
-			N = normalFromMap.xzy * 2.0 - 1.0;
-			N = NormalMatrix * vec3(-N.x, N.y, -N.z); 
-		}
+		N = wzDecodeNormalMap(normalFromMap, hasTangents, TangentSpaceMatrix, NormalMatrix);
 	}
 	N = normalize(N);
 
 	// Сalculate and combine final lightning
-	vec4 light = sceneColor;
 	vec3 L = normalize(lightDir);
 	float diffuseFactor = lambertTerm(N, L); //diffuse light
 	float visibility = getShadowVisibility(posModelSpace, posViewSpace, diffuseFactor, 0.0002f);
@@ -140,38 +114,54 @@ void main()
 	vec4 lightmap_vec4 = texture(lightmap_tex, uvLightmap.xy, 0.f);
 	float distanceAboveTerrain = uvLightmap.z;
 	float lightmapFactor = 1.0f - (clamp(distanceAboveTerrain, 0.f, 300.f) / 300.f);
+	// ambient light maxed for classic models to keep results similar to original
+	float ambientBoost = 1.0 + (1.0 - float(specularmap));
 
 	float specularMapValue = 0.f;
-
-	if (diffuseFactor > 0.0)
+	float gaussianTerm = 0.f;
+	float vanillaFactor = 0.0; // Classic models shouldn't use diffuse light
+	if (diffuseFactor > 0.0 && specularmap != 0)
 	{
-		float vanillaFactor = 0.0; // Classic models shouldn't use diffuse light
+		specularMapValue = texture(TextureSpecular, texCoord, WZ_MIP_LOAD_BIAS).r;
 
-		if (specularmap != 0)
-		{
-			specularMapValue = texture(TextureSpecular, texCoord, WZ_MIP_LOAD_BIAS).r;
-			vec4 specularFromMap = vec4(specularMapValue, specularMapValue, specularMapValue, 1.0);
+		// Gaussian specular term computation
+		vec3 H = normalize(halfVec);
+		float exponent = acos(dot(H, N)) / 0.33; //0.33 is shininess
+		gaussianTerm = exp(-(exponent * exponent));
 
-			// Gaussian specular term computation
-			vec3 H = normalize(halfVec);
-			float exponent = acos(dot(H, N)) / 0.33; //0.33 is shininess
-			float gaussianTerm = exp(-(exponent * exponent));
-
-			light += specular * gaussianTerm * diffuseFactor * specularFromMap;
-
-			vanillaFactor = 1.0; // Neutralize factor for spec map
-		}
-
-		light += diffuse * diffuseFactor * diffuseMap * vanillaFactor;
+		vanillaFactor = 1.0; // Neutralize factor for spec map
 	}
 
-	vec4 ambientLight = vec4(blendAddEffectLighting(ambient.rgb, ((lightmap_vec4.rgb * lightmapFactor) / 3.f)), ambient.a) * diffuseMap;
-	// ambient light maxed for classic models to keep results similar to original
-	light += ambientLight * (1.0 + (1.0 - float(specularmap))) * visibility;
+	// Calculate and combine final lighting
+	vec4 light;
+	float pointLightSpecularMap = specularMapValue;
+	if (linearLighting != 0)
+	{
+		// The model lighting was tuned for display values, so it is evaluated in display space
+		vec3 albedoD = wzLinearToSrgb(diffuseMap.rgb);
+		vec3 lightD = wzLinearToSrgb(sceneColor.rgb);
+		lightD += wzLinearToSrgb(specular.rgb) * gaussianTerm * diffuseFactor * specularMapValue;
+		lightD += wzLinearToSrgb(diffuse.rgb) * diffuseFactor * albedoD * vanillaFactor;
+		vec3 ambientTermD = blendAddEffectLighting(wzLinearToSrgb(ambient.rgb), ((lightmap_vec4.rgb * lightmapFactor) / 3.f));
+		lightD += ambientTermD * albedoD * ambientBoost * visibility;
+		light = vec4(wzSrgbToLinear(lightD), 1.0);
+		// Like the albedo, the specular map scales display values, so convert it to linear the same way
+		pointLightSpecularMap = wzSrgbToLinear(vec3(specularMapValue)).r;
+	}
+	else
+	{
+		light = sceneColor;
+		light += specular * gaussianTerm * diffuseFactor * vec4(vec3(specularMapValue), 1.0);
+		light += diffuse * diffuseFactor * diffuseMap * vanillaFactor;
+		vec3 ambientTerm = blendAddEffectLighting(ambient.rgb, ((lightmap_vec4.rgb * lightmapFactor) / 3.f));
+		vec4 boostedAmbient = vec4(ambientTerm, ambient.a) * diffuseMap;
+		boostedAmbient.rgb *= ambientBoost;
+		light += boostedAmbient * visibility;
+	}
 
 #if WZ_POINT_LIGHT_ENABLED == 1
 	vec2 clipSpaceCoord = gl_FragCoord.xy / vec2(float(viewportWidth), float(viewportHeight));
-	light += iterateOverAllPointLights(clipSpaceCoord, posModelSpace, N, normalize(halfVec - lightDir), diffuseMap, specularMapValue, mat3(1.f));
+	light += iterateOverAllPointLights(clipSpaceCoord, posModelSpace, N, normalize(normal), normalize(halfVec - lightDir), diffuseMap, pointLightSpecularMap);
 #endif
 
 	light.a = 1.0f;
@@ -183,30 +173,38 @@ void main()
 		float maskAlpha = texture(TextureTcmask, texCoord, WZ_MIP_LOAD_BIAS).r;
 
 		// Apply color using grain merge with tcmask
-		fragColour = (light + (teamcolour - 0.5) * maskAlpha) * colour;
+		if (linearLighting != 0)
+		{
+			// Grain merge (neutral at 0.5) and the color multiply also run in display space, as tuned
+			vec4 blended = vec4(wzLinearToSrgb(light.rgb), light.a) + (teamcolour - 0.5) * maskAlpha;
+			fragColour = vec4(wzSrgbToLinear(max(blended.rgb, vec3(0.0)) * wzLinearToSrgb(colour.rgb)), blended.a * colour.a);
+		}
+		else
+		{
+			vec4 blended = light + (teamcolour - 0.5) * maskAlpha;
+			fragColour = blended * colour;
+		}
 	}
 	else
 	{
-		fragColour = light * colour;
+		fragColour = (linearLighting != 0)
+			? vec4(wzSrgbToLinear(wzLinearToSrgb(light.rgb) * wzLinearToSrgb(colour.rgb)), light.a * colour.a)
+			: light * colour;
 	}
 
 	if (ecmEffect)
 	{
 		fragColour.a = 0.66 + 0.66 * graphicsCycle;
 	}
-	
-	if (fogEnabled > 0)
-	{
-		// Calculate linear fog
-		float fogFactor = (fogEnd - length(posViewSpace)) / (fogEnd - fogStart);
-
-		// Return fragment color
-		fragColour = mix(fragColour, vec4(fogColor.xyz, fragColour.w), clamp(fogFactor, 0.0, 1.0));
-	}
 
 	if (shieldEffect != 0)
 	{
 		fragColour = applyShieldFuzzEffect(fragColour);
+	}
+	if (fogRange.z > 0.5 && fogOutput != WZ_FOG_OUTPUT_DISABLED)
+	{
+		float fogAmount = wzDistanceFogAmount(length(posViewSpace), fogRange.x, fogRange.y);
+		fragColour.rgb = wzApplyForwardFog(fragColour.rgb, fragColour.a, fogAmount, fogColor.rgb, fogOutput, int(fogRange.w));
 	}
 
 	#ifdef NEWGL

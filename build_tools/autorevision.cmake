@@ -8,7 +8,7 @@ cmake_minimum_required(VERSION 3.16...3.31)
 # COPYING.md for licence terms.
 #
 # autorevision.CMake:
-# Copyright © 2018-2023 pastdue ( https://github.com/past-due/ ) and contributors
+# Copyright © 2018-2026 pastdue ( https://github.com/past-due/ ) and contributors
 # License: MIT License ( https://opensource.org/licenses/MIT )
 #
 #
@@ -65,9 +65,13 @@ macro(_hOutput _outputFile _quiet)
 	string(CONCAT _hContents ${_hContents} "\n")
 	string(CONCAT _hContents ${_hContents} "#define VCS_TYPE			\"${VCS_TYPE}\"\n")
 	string(CONCAT _hContents ${_hContents} "#define VCS_BASENAME		\"${VCS_BASENAME}\"\n")
+	string(CONCAT _hContents ${_hContents} "#define VCS_ORIGIN			\"${VCS_ORIGIN}\"\n")
+	string(CONCAT _hContents ${_hContents} "#define VCS_HTTP_USER_AGENT	\"${VCS_HTTP_USER_AGENT}\"\n")
+	string(CONCAT _hContents ${_hContents} "#define VCS_HTTP_ORIGIN		\"${VCS_HTTP_ORIGIN}\"\n")
+	string(CONCAT _hContents ${_hContents} "#define VCS_HTTP_REFERER	\"${VCS_HTTP_REFERER}\"\n")
 	string(CONCAT _hContents ${_hContents} "#define VCS_BRANCH			\"${VCS_BRANCH}\"\n")
-	string(CONCAT _hContents ${_hContents} "#define VCS_TAG_NET			\"${VCS_TAG_NET}\"\n")
 	string(CONCAT _hContents ${_hContents} "#define VCS_TAG				\"${VCS_TAG}\"\n")
+	string(CONCAT _hContents ${_hContents} "#define VCS_TAG_DISPLAY		\"${VCS_TAG_DISPLAY}\"\n")
 	if (VCS_TAG_TAG_COUNT)
 		string(CONCAT _hContents ${_hContents} "#define VCS_TAG_TAG_COUNT	${VCS_TAG_TAG_COUNT}\n")
 	else()
@@ -112,9 +116,13 @@ macro(_shOutput _outputFile _quiet)
 	string(CONCAT _hContents ${_hContents} "\n")
 	string(CONCAT _hContents ${_hContents} "VCS_TYPE=\"${VCS_TYPE}\"\n")
 	string(CONCAT _hContents ${_hContents} "VCS_BASENAME=\"${VCS_BASENAME}\"\n")
+	string(CONCAT _hContents ${_hContents} "VCS_ORIGIN=\"${VCS_ORIGIN}\"\n")
+	string(CONCAT _hContents ${_hContents} "VCS_HTTP_USER_AGENT=\"${VCS_HTTP_USER_AGENT}\"\n")
+	string(CONCAT _hContents ${_hContents} "VCS_HTTP_ORIGIN=\"${VCS_HTTP_ORIGIN}\"\n")
+	string(CONCAT _hContents ${_hContents} "VCS_HTTP_REFERER=\"${VCS_HTTP_REFERER}\"\n")
 	string(CONCAT _hContents ${_hContents} "VCS_BRANCH=\"${VCS_BRANCH}\"\n")
-	string(CONCAT _hContents ${_hContents} "VCS_TAG_NET=\"${VCS_TAG_NET}\"\n")
 	string(CONCAT _hContents ${_hContents} "VCS_TAG=\"${VCS_TAG}\"\n")
+	string(CONCAT _hContents ${_hContents} "VCS_TAG_DISPLAY=\"${VCS_TAG_DISPLAY}\"\n")
 	string(CONCAT _hContents ${_hContents} "VCS_TAG_TAG_COUNT=${VCS_TAG_TAG_COUNT}\n")
 	string(CONCAT _hContents ${_hContents} "VCS_EXTRA=\"${VCS_EXTRA}\"\n")
 	string(CONCAT _hContents ${_hContents} "\n")
@@ -162,6 +170,57 @@ macro(_importCache _cacheFile _quiet)
 	endforeach()
 endmacro()
 
+function(get_clean_git_remote_url remote_name output_variable)
+	# Get the current Git remote URL
+	execute_process(
+			COMMAND ${GIT_EXECUTABLE} remote get-url "${remote_name}"
+			OUTPUT_VARIABLE RAW_GIT_URL
+			OUTPUT_STRIP_TRAILING_WHITESPACE
+			ERROR_QUIET
+	)
+
+	set(CLEANED_RESULT "")
+
+	if(RAW_GIT_URL)
+		# Force explicit whitespace stripping
+		string(STRIP "${RAW_GIT_URL}" WORKING_URL)
+
+		# Handle formal URL protocols
+		# (Matches http://, https://, ssh://, git://, etc. regardless of case)
+		if(WORKING_URL MATCHES "^[a-zA-Z0-9+-.]+://")
+				
+				# Strip the protocol prefix and any embedded credentials (anything up to the @ if present)
+				string(REGEX REPLACE "^[a-zA-Z0-9+-.]+://([^@]+@)?" "" WORKING_URL "${WORKING_URL}")
+				
+				# Eliminate anything passed as query strings or fragments (?v=xyz or #hash)
+				string(REGEX REPLACE "[?#].*$" "" WORKING_URL "${WORKING_URL}")
+
+				set(CLEANED_RESULT "${WORKING_URL}")
+
+		# Handle standard SCP-like SSH URLs (e.g., git@github.com:owner/repo.git)
+		elseif(WORKING_URL MATCHES "^[^@:]+@[^:]+:")
+				
+				# Strip the 'username@' prefix
+				string(REGEX REPLACE "^[^@:]+@" "" CLEANED_RESULT "${WORKING_URL}")
+
+		# Fallback: Ignore anything else
+		else()
+				set(CLEANED_RESULT "")
+		endif()
+
+		# Post-Processing Cleanup
+		if(NOT CLEANED_RESULT STREQUAL "")
+				# Strip trailing .git suffix regardless of case
+				string(REGEX REPLACE "\\.[gG][iI][tT]$" "" CLEANED_RESULT "${CLEANED_RESULT}")
+
+				# Strip any trailing slashes to normalize the directory path
+				string(REGEX REPLACE "/+$" "" CLEANED_RESULT "${CLEANED_RESULT}")
+		endif()
+	endif()
+
+	set(${output_variable} "${CLEANED_RESULT}" PARENT_SCOPE)
+endfunction()
+
 function(extractVersionNumberFromGitTag _gitTag)
 	set(version_tag ${_gitTag})
 
@@ -197,6 +256,8 @@ macro(_gitRepo)
 	set(VCS_TYPE "git")
 	# VCS_BASENAME="$(basename "${PWD}")")
 	get_filename_component(VCS_BASENAME "${_repo_top_directory}" NAME)
+
+	get_clean_git_remote_url("origin" VCS_ORIGIN)
 
 	# Determine whether Git repo is shallow
 	set(VCS_REPO_IS_SHALLOW 0)
@@ -380,80 +441,6 @@ macro(_gitRepo)
 	unset(_repo_top_directory)
 endmacro()
 
-macro(_travisCIBuild)
-	# Information must be extracted from a combination of Travis-set environment
-	# variables and other sources
-
-	# Start by calling gitRepo, since certain values should be obtained directly from git
-	# IMPORTANT: Since Travis uses a shallow clone by default, unshallow must be performed before
-	#            this script is run so that the correct values can be obtained by gitRepo().
-	_gitRepo()
-
-	# The full revision hash
-	set(VCS_FULL_HASH "$ENV{TRAVIS_COMMIT}")
-
-	# The short hash
-	string(SUBSTRING ${VCS_FULL_HASH} 0 7 VCS_SHORT_HASH)
-
-	# Current branch
-	set(VCS_BRANCH "$ENV{TRAVIS_BRANCH}")
-	if (DEFINED ENV{TRAVIS_PULL_REQUEST_BRANCH} AND NOT "$ENV{TRAVIS_PULL_REQUEST_BRANCH}" STREQUAL "")
-		# When triggered by a pull request, TRAVIS_BRANCH is set to the *target* branch name
-		# But we want the source branch name, so use TRAVIS_PULL_REQUEST_BRANCH
-		set(VCS_BRANCH "$ENV{TRAVIS_PULL_REQUEST_BRANCH}")
-	endif()
-
-	# Check if we are on a tag
-	set(VCS_TAG "")
-	if (DEFINED ENV{TRAVIS_TAG} AND NOT "$ENV{TRAVIS_TAG}" STREQUAL "")
-		set(VCS_TAG "$ENV{TRAVIS_TAG}")
-
-		# When on a tag, clear VCS_BRANCH
-		set(VCS_BRANCH "")
-	endif()
-
-	set(VCS_EXTRA "")
-
-endmacro()
-
-macro(_appVeyorBuild)
-	# Extract most symbols from the Git repo first
-	_gitRepo()
-
-	# Get remaining symbols from the AppVeyor environment variables
-	# See: https://www.appveyor.com/docs/environment-variables/
-
-	# Determine VCS_BRANCH
-	if (DEFINED ENV{APPVEYOR_PULL_REQUEST_HEAD_REPO_BRANCH} AND NOT "$ENV{APPVEYOR_PULL_REQUEST_HEAD_REPO_BRANCH}" STREQUAL "")
-		# On a PR build, APPVEYOR_REPO_BRANCH is set to the *base* branch that's being merged into
-		# Use APPVEYOR_PULL_REQUEST_HEAD_REPO_BRANCH to get the source branch
-		set(VCS_BRANCH "$ENV{APPVEYOR_PULL_REQUEST_HEAD_REPO_BRANCH}")
-	else()
-		# In the normal case, use APPVEYOR_REPO_BRANCH
-		if (DEFINED ENV{APPVEYOR_REPO_BRANCH} AND NOT "$ENV{APPVEYOR_REPO_BRANCH}" STREQUAL "")
-			set(VCS_BRANCH "$ENV{APPVEYOR_REPO_BRANCH}")
-		else()
-			if(NOT LOGGING_QUIET)
-				message( WARNING "APPVEYOR_REPO_BRANCH is empty; VCS_BRANCH may be empty" )
-			endif()
-		endif()
-	endif()
-
-	# Determine VCS_TAG
-	if (DEFINED ENV{APPVEYOR_REPO_TAG_NAME} AND NOT "$ENV{APPVEYOR_REPO_TAG_NAME}" STREQUAL "")
-		if(DEFINED VCS_TAG AND NOT "${VCS_TAG}" STREQUAL "")
-			if(NOT LOGGING_QUIET)
-				message( STATUS "VCS_TAG is already set to '${VCS_TAG}'; overwriting it with ENV:APPVEYOR_REPO_TAG_NAME ('$ENV{APPVEYOR_REPO_TAG_NAME}')" )
-			endif()
-		endif()
-		set(VCS_TAG "$ENV{APPVEYOR_REPO_TAG_NAME}")
-
-		# When on a tag, clear VCS_BRANCH
-		set(VCS_BRANCH "")
-	endif()
-
-endmacro()
-
 macro(_githubActionsCIBuild)
 	# Extract most symbols from the Git repo first
 	_gitRepo()
@@ -596,19 +583,7 @@ if(CACHEFORCE)
 		message( FATAL_ERROR "Option CACHEFORCE declared, but the specified CACHEFILE does not exist at: ${CACHEFILE}" )
 	endif()
 elseif(Git_FOUND AND _currentDirectoryIsInGitRepo)
-	if(DEFINED ENV{CI} AND "$ENV{CI}" STREQUAL "True" AND DEFINED ENV{APPVEYOR} AND "$ENV{APPVEYOR}" STREQUAL "True")
-		# On AppVeyor
-		_appVeyorBuild()
-		if(NOT LOGGING_QUIET)
-			message( STATUS "Gathered revision data from Git + AppVeyor environment" )
-		endif()
-	elseif(DEFINED ENV{CI} AND "$ENV{CI}" STREQUAL "true" AND DEFINED ENV{TRAVIS} AND "$ENV{TRAVIS}" STREQUAL "true")
-		# On Travis-CI
-		_travisCIBuild()
-		if(NOT LOGGING_QUIET)
-			message( STATUS "Gathered revision data from Git + Travis-CI environment" )
-		endif()
-	elseif(DEFINED ENV{GITHUB_ACTIONS} AND "$ENV{GITHUB_ACTIONS}" STREQUAL "true")
+	if(DEFINED ENV{GITHUB_ACTIONS} AND "$ENV{GITHUB_ACTIONS}" STREQUAL "true")
 		# On GitHub Actions
 		_githubActionsCIBuild()
 		if(NOT LOGGING_QUIET)
@@ -702,6 +677,7 @@ endif()
 if(DEFINED VAROUT)
 	message( STATUS "VCS_TYPE=${VCS_TYPE}" )
 	message( STATUS "VCS_BASENAME=${VCS_BASENAME}" )
+	message( STATUS "VCS_ORIGIN=${VCS_ORIGIN}" )
 	message( STATUS "VCS_BRANCH=${VCS_BRANCH}" )
 	message( STATUS "VCS_TAG=${VCS_TAG}" )
 	message( STATUS "VCS_TAG_TAG_COUNT=${VCS_TAG_TAG_COUNT}" )
@@ -721,29 +697,34 @@ if(DEFINED VAROUT)
 endif()
 
 if(true)
+	# TODO Welcome to the psychiatric asylum.
 	# TODO It makes no sense to spew all kind of random statistical information about the Git repository.
 	# TODO Particularly, the use of VCS_TAG_TAG_COUNT as the NetCode version is broken logic and perfect design to make everything fail out of the lab.
-	set(warzone2100_version_abi 4.7.0)
-	set(warzone2100_version_impl ${warzone2100_version_abi}-jb21)
-	set(VCS_TAG_NET ${warzone2100_version_abi})
-	set(VCS_TAG ${warzone2100_version_impl})
-	set(VCS_MOST_RECENT_TAGGED_VERSION ${warzone2100_version_impl})
-	set(VCS_EXTRA ${warzone2100_version_impl})
-	set(VCS_TAG_TAG_COUNT 104)
-	set(VCS_MOST_RECENT_TAGGED_VERSION_TAG_COUNT 104)
-	set(VCS_FULL_HASH  7d3d8e51a61ceee89e6bf672a41337e1a9cd7392)
-	set(VCS_SHORT_HASH 7d3d8e5)
-	set(VCS_MOST_RECENT_COMMIT_YEAR 2026)
-	set(VCS_MOST_RECENT_COMMIT_DATE 2026-04-07)
-	set(VCS_COMMIT_COUNT 0)
-	set(VCS_COMMIT_COUNT_ON_MASTER_UNTIL_BRANCH 0)
-	set(VCS_BRANCH_COMMIT_COUNT 0)
-	set(VCS_COMMIT_COUNT_SINCE_MOST_RECENT_TAGGED_VERSION 0)
-	set(VCS_TYPE git)
-	set(VCS_BASENAME warzone2100)
-	set(VCS_BRANCH "")
-	set(VCS_REPO_IS_SHALLOW 0)
-	set(VCS_WC_MODIFIED 0)
+	set(warzone2100_version_abi 4.8.0)
+	set(warzone2100_version_impl ${warzone2100_version_abi}-jb1)
+	set(VCS_TAG ${warzone2100_version_abi}) # do not disturb sect ceremonial
+	set(VCS_TAG_DISPLAY ${warzone2100_version_impl}) # safe to change without sect going nuts, only used for displaying the version with --version command line option, log, and GUI
+	set(VCS_MOST_RECENT_TAGGED_VERSION ${warzone2100_version_abi}) # do not disturb sect ceremonial
+	set(VCS_EXTRA ${warzone2100_version_impl}) # safe to change without sect going nuts? we don't know!
+	set(VCS_TAG_TAG_COUNT 104) # do not disturb sect ceremonial
+	set(VCS_MOST_RECENT_TAGGED_VERSION_TAG_COUNT 104) # do not disturb sect ceremonial
+	set(VCS_FULL_HASH  7d3d8e51a61ceee89e6bf672a41337e1a9cd7392) # do not disturb sect ceremonial
+	set(VCS_SHORT_HASH 7d3d8e5) # do not disturb sect ceremonial
+	set(VCS_MOST_RECENT_COMMIT_YEAR 2026) # do not disturb sect ceremonial
+	set(VCS_MOST_RECENT_COMMIT_DATE 2026-04-07) # do not disturb sect ceremonial
+	set(VCS_COMMIT_COUNT 0) # do not disturb sect ceremonial
+	set(VCS_COMMIT_COUNT_ON_MASTER_UNTIL_BRANCH 0) # do not disturb sect ceremonial
+	set(VCS_BRANCH_COMMIT_COUNT 0) # do not disturb sect ceremonial
+	set(VCS_COMMIT_COUNT_SINCE_MOST_RECENT_TAGGED_VERSION 0) # do not disturb sect ceremonial
+	set(VCS_TYPE git) # do not disturb sect ceremonial
+	set(VCS_BASENAME src) # do not disturb sect ceremonial
+	set(VCS_ORIGIN github.com/Warzone2100/warzone2100) # do not disturb sect ceremonial
+	set(VCS_HTTP_USER_AGENT https://github.com/Warzone2100/warzone2100) # do not disturb sect ceremonial
+	set(VCS_HTTP_ORIGIN wz2100://wz2100.net) # do not disturb sect ceremonial
+	set(VCS_HTTP_REFERER https://github.com/Warzone2100/warzone2100) # do not disturb sect ceremonial
+	set(VCS_BRANCH "") # do not disturb sect ceremonial
+	set(VCS_REPO_IS_SHALLOW 0) # do not disturb sect ceremonial
+	set(VCS_WC_MODIFIED 0) # do not disturb sect ceremonial
 endif()
 
 # Detect requested output type and use it.

@@ -29,6 +29,8 @@
 
 #include "orderdef.h"
 
+struct WorldObjectState;
+
 /** Find some droid to repair, starting at (x, y) within some radius, given a player, or return nullptr.
  * Droids having full HP with order = DORDER_RTR or RTR_SPECIFIED will automatically
  * be sent to delivery point, or back to commander
@@ -57,6 +59,10 @@ bool validOrderForLoc(DROID_ORDER order);
 
 /** \brief Checks if an order is valid for an object. */
 bool validOrderForObj(DROID_ORDER order);
+
+/** \brief Checks that \c psObj is a target of the type \c order needs (orders that need no target accept any, or none). */
+bool validTargetForOrder(DROID_ORDER order, BASE_OBJECT const *psObj);
+bool validTargetForRestoredOrder(DroidOrder const &order);
 
 /** \brief Sends an order with a location to a droid. */
 void orderDroidLoc(DROID *psDroid, DROID_ORDER order, UDWORD x, UDWORD y, QUEUE_MODE mode);
@@ -114,7 +120,8 @@ bool secondarySupported(const DROID *psDroid, SECONDARY_ORDER sec);
 SECONDARY_STATE secondaryGetState(const DROID *psDroid, SECONDARY_ORDER sec, QUEUE_MODE mode = ModeImmediate);
 
 /** \brief Sets the state of a secondary order, return false if failed. */
-bool secondarySetState(DROID *psDroid, SECONDARY_ORDER sec, SECONDARY_STATE State, QUEUE_MODE mode = ModeQueue);
+bool secondarySetState(DROID *psDroid, WorldObjectState& objState, SECONDARY_ORDER sec, SECONDARY_STATE State, QUEUE_MODE mode = ModeQueue);
+bool secondarySetStateWithoutMessage(DROID *psDroid, WorldObjectState& objState, SECONDARY_ORDER sec, SECONDARY_STATE State);
 
 /** \brief Checks the damage level of a droid against it's secondary state. */
 void secondaryCheckDamageLevel(DROID *psDroid);

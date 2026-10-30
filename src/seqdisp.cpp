@@ -26,6 +26,7 @@
 
 #include "lib/framework/frame.h"
 
+#include <array>
 #include <sstream>
 #include <string.h>
 #include <physfs.h>
@@ -37,10 +38,13 @@
 #include "lib/ivis_opengl/screen.h"
 #include "lib/ivis_opengl/piepalette.h"
 #include "lib/sequence/sequence.h"
+#include "lib/sequence/video_decoder.h"
+#include "lib/sequence/video_edits.h"
 #include "lib/sound/audio.h"
 #include "lib/sound/cdaudio.h"
 
 #include "seqdisp.h"
+#include "seqsubtitles.h"
 
 #include "warzoneconfig.h"
 #include "hci.h"//for font
@@ -56,8 +60,7 @@
  *	local Definitions
  */
 /***************************************************************************/
-#define MAX_TEXT_OVERLAYS 32
-#define MAX_SEQ_LIST	  6
+constexpr size_t MAX_TEXT_OVERLAYS = 128;
 #define SUBTITLE_BOX_MIN 430
 #define SUBTITLE_BOX_MAX 480
 
@@ -82,19 +85,15 @@ struct SEQLIST
 {
 	WzString         pSeq;					//name of the sequence to play
 	WzString         pAudio;				//name of the wav to play
-	bool		bSeqLoop;					//loop this sequence
-	int             currentText;			// current number of text messages for this seq
-	SEQTEXT		aText[MAX_TEXT_OVERLAYS];	//text data to display for this sequence
+	bool		bSeqLoop = false;			//loop this sequence
+	std::vector<SEQTEXT> aText;				//text data to display for this sequence, at most MAX_TEXT_OVERLAYS lines
+	std::shared_ptr<SeqSubtitles> areaSubtitles;	// text in areas of the video, if its subtitle file is a JSON one
 
-	SEQLIST() : bSeqLoop(false), currentText(0)
-	{
-		memset(aText, 0, sizeof(aText));
-	}
 	void reset()
 	{
 		bSeqLoop = false;
-		currentText = 0;
-		memset(aText, 0, sizeof(aText));
+		aText.clear();
+		areaSubtitles.reset();
 		pSeq.clear();
 		pAudio.clear();
 	}
@@ -111,13 +110,22 @@ static bool bSeqSubtitles = true;
 static bool bSeqPlaying = false;
 static WzString currVideoName;
 static WzString currAudioName;
+static WzString currFetchName;	// the candidate name currently being downloaded (for progress display)
 static std::shared_ptr<VideoProvider> aVideoProvider;
-static SEQLIST aSeqList[MAX_SEQ_LIST];
+static std::shared_ptr<const WZVideoEditList> aVideoEdits;	// the playing video's edit list, if it has one
+static WzString aVideoLanguage;	// the edit-list language whose "own" (language-specific) video is playing (empty = the shared video)
+static std::array<SEQLIST, MAX_SEQ_LIST> aSeqList;
 static SDWORD currentSeq = -1;
 static SDWORD currentPlaySeq = -1;
 
 // local rendered text cache
 static std::vector<WzText> wzCachedSeqText;
+
+// the full-screen video's rectangle on screen
+static int videoRectX = 0;
+static int videoRectY = 0;
+static int videoRectWidth = 0;
+static int videoRectHeight = 0;
 
 /***************************************************************************/
 /*
@@ -139,10 +147,11 @@ public:
 	// Allows queueing requests for video data
 	// Returns true if the request was queued (either with the current call or previously)
 	// Returns false if an error with a prior request for this video data occurred, or the request cannot be satisfied
-	bool requestVideoData(const WzString& videoName);
+	// quietFailure: the file is optional (ex. an edit list), so a failed download is only logged at LOG_VIDEO
+	bool requestVideoData(const WzString& videoName, bool quietFailure = false);
 
 	// Obtains a pointer to the video data (if available), queues a download if not (unless an error has occurred previously trying to obtain it - see getVideoDataError)
-	std::shared_ptr<const std::vector<char>> getVideoData(const WzString& videoName);
+	std::shared_ptr<const std::vector<char>> getVideoData(const WzString& videoName, bool quietFailure = false);
 
 	uint32_t getVideoDataRequestProgress(const WzString& videoName);
 
@@ -183,7 +192,7 @@ private:
 		uint32_t progressPercentage = 0;
 	private:
 		AsyncURLRequestHandle requestHandle;
-		friend bool OnDemandVideoDownloader::requestVideoData(const WzString& videoName);
+		friend bool OnDemandVideoDownloader::requestVideoData(const WzString& videoName, bool quietFailure);
 		friend bool OnDemandVideoDownloader::cancelDownloadRequest(const WzString& videoName);
 	};
 	std::unordered_map<WzString, std::shared_ptr<RequestDetails>> priorRequests;
@@ -207,7 +216,7 @@ static WzString urlEncodeVideoPathComponents(const WzString& partialPath)
 	return result;
 }
 
-bool OnDemandVideoDownloader::requestVideoData(const WzString& videoName)
+bool OnDemandVideoDownloader::requestVideoData(const WzString& videoName, bool quietFailure)
 {
 	auto it = priorRequests.find(videoName);
 	if (it != priorRequests.end())
@@ -229,9 +238,17 @@ bool OnDemandVideoDownloader::requestVideoData(const WzString& videoName)
 
 	URLDataRequest urlRequest;
 	urlRequest.url = baseURLPath.value().toUtf8() + urlEncodeVideoPathComponents(videoName).toUtf8();
-	urlRequest.onResponse = [requestDetails](const std::string& url, const HTTPResponseDetails& responseDetails, const std::shared_ptr<MemoryStruct>& data) -> URLRequestHandlingBehavior {
+	urlRequest.onResponse = [requestDetails, quietFailure](const std::string& url, const HTTPResponseDetails& responseDetails, const std::shared_ptr<MemoryStruct>& data) -> URLRequestHandlingBehavior {
 		std::string urlCopy = url;
 		long httpStatusCode = responseDetails.httpStatusCode();
+		if (httpStatusCode >= 400)
+		{
+			wzAsyncExecOnMainThread([requestDetails, urlCopy, httpStatusCode, quietFailure]{
+				debug(quietFailure ? LOG_VIDEO : LOG_WARNING, "Query for %s returned HTTP status code: %ld", urlCopy.c_str(), httpStatusCode);
+				requestDetails->status = RequestDetails::RequestStatus::Failure;
+			});
+			return URLRequestHandlingBehavior::Done();
+		}
 		if (httpStatusCode != 200)
 		{
 			wzAsyncExecOnMainThread([httpStatusCode]{
@@ -242,8 +259,8 @@ bool OnDemandVideoDownloader::requestVideoData(const WzString& videoName)
 		if (!data || data->memory == nullptr || data->size == 0)
 		{
 			// Invalid data response
-			wzAsyncExecOnMainThread([requestDetails, urlCopy]{
-				debug(LOG_INFO, "Failed to load video: %s (no data)", urlCopy.c_str());
+			wzAsyncExecOnMainThread([requestDetails, urlCopy, quietFailure]{
+				debug(quietFailure ? LOG_VIDEO : LOG_INFO, "Failed to load video: %s (no data)", urlCopy.c_str());
 				requestDetails->status = RequestDetails::RequestStatus::Failure;
 			});
 			return URLRequestHandlingBehavior::Done();
@@ -257,21 +274,26 @@ bool OnDemandVideoDownloader::requestVideoData(const WzString& videoName)
 		});
 		return URLRequestHandlingBehavior::Done();
 	};
-	urlRequest.onFailure = [requestDetails](const std::string& url, URLRequestFailureType type, std::shared_ptr<HTTPResponseDetails> transferDetails) {
+	urlRequest.onFailure = [requestDetails, quietFailure](const std::string& url, URLRequestFailureType type, std::shared_ptr<HTTPResponseDetails> transferDetails) {
 		std::string urlCopy = url;
-		wzAsyncExecOnMainThread([requestDetails, urlCopy]{
-			debug(LOG_INFO, "Failed to load video: %s", urlCopy.c_str());
+		wzAsyncExecOnMainThread([requestDetails, urlCopy, quietFailure]{
+			debug(quietFailure ? LOG_VIDEO : LOG_INFO, "Failed to load video: %s", urlCopy.c_str());
 			requestDetails->status = RequestDetails::RequestStatus::Failure;
 		});
 	};
 	urlRequest.progressCallback = [requestDetails](const std::string& url, int64_t dltotal, int64_t dlnow) {
 		std::string urlCopy = url;
-		float progress = static_cast<float>(dlnow) / static_cast<float>(dltotal);
-		wzAsyncExecOnMainThread([requestDetails, urlCopy, progress]{
-			requestDetails->progressPercentage = std::min<uint32_t>(static_cast<uint32_t>(progress * 100.f), 100);
+		uint32_t percentage = 0;
+		if (dltotal > 0 && dlnow > 0)
+		{
+			double ratio = static_cast<double>(std::min(dlnow, dltotal)) / static_cast<double>(dltotal);
+			percentage = static_cast<uint32_t>(ratio * 100.0);
+		}
+		wzAsyncExecOnMainThread([requestDetails, urlCopy, percentage]{
+			requestDetails->progressPercentage = percentage;
 		});
 	};
-	urlRequest.maxDownloadSizeLimit = 200 * 1024 * 1024; // response should never be > 200 MB
+	urlRequest.maxDownloadSizeLimit = videoName.endsWith(".edits.json") ? 1024 * 1024 : 200 * 1024 * 1024; // response should never be > 200 MB
 	auto requestHandle = urlRequestData(urlRequest);
 	if (!requestHandle)
 	{
@@ -285,7 +307,7 @@ bool OnDemandVideoDownloader::requestVideoData(const WzString& videoName)
 	return true;
 }
 
-std::shared_ptr<const std::vector<char>> OnDemandVideoDownloader::getVideoData(const WzString& videoName)
+std::shared_ptr<const std::vector<char>> OnDemandVideoDownloader::getVideoData(const WzString& videoName, bool quietFailure)
 {
 	auto it = priorRequests.find(videoName);
 	if (it != priorRequests.end())
@@ -301,7 +323,7 @@ std::shared_ptr<const std::vector<char>> OnDemandVideoDownloader::getVideoData(c
 		}
 	}
 
-	requestVideoData(videoName);
+	requestVideoData(videoName, quietFailure);
 	return nullptr;
 }
 
@@ -370,7 +392,9 @@ static OnDemandVideoDownloader onDemandVideoProvider;
 
 bool seq_hasVideos()
 {
-	return PHYSFS_exists("sequences/devastation.ogg") || onDemandVideoProvider.hasBaseURLPath();
+	return PHYSFS_exists("sequences/devastation.ogg")
+		|| (videoDecoderWebmSupported() && PHYSFS_exists("sequences/devastation.webm"))
+		|| onDemandVideoProvider.hasBaseURLPath();
 }
 
 void seq_setOnDemandVideoURL(const WzString& videoBaseURL)
@@ -465,21 +489,114 @@ static void seq_SetUserResolution()
 	const int x = (screenWidth - video_size.x) / 2;
 	const int y = (screenHeight - video_size.y) / 2;
 	seq_SetDisplaySize(video_size.x, video_size.y, x, y);
+	videoRectX = x;
+	videoRectY = y;
+	videoRectWidth = static_cast<int>(video_size.x);
+	videoRectHeight = static_cast<int>(video_size.y);
+}
+
+// The list of names to try for a video, in priority order: when this build has
+// WebM support, a ".webm" variant of the data-specified name is preferred (so a
+// WebM sequences package can be dropped in without touching the data JSON).
+static std::vector<WzString> videoNameCandidates(const WzString& videoName)
+{
+	std::vector<WzString> candidates;
+	if (videoDecoderWebmSupported() && videoName.endsWith(".ogg"))
+	{
+		WzString webmName = videoName;
+		webmName.truncate(webmName.length() - 4);
+		webmName += ".webm";
+		candidates.push_back(std::move(webmName));
+	}
+	candidates.push_back(videoName);
+	return candidates;
+}
+
+// The edit list of a WebM video: "<name>.webm" -> "<name>.edits.json" (empty for other videos)
+static WzString videoEditListName(const WzString& videoName)
+{
+	if (!videoName.endsWith(".webm"))
+	{
+		return WzString();
+	}
+	WzString editsName = videoName;
+	editsName.truncate(editsName.length() - 5);
+	return editsName + ".edits.json";
+}
+
+static WzString siblingVideoName(const WzString& videoName, const WzString& fileName)
+{
+	const std::string name = videoName.toUtf8();
+	const size_t slash = name.rfind('/');
+	return WzString::fromUtf8((slash != std::string::npos) ? name.substr(0, slash + 1) : std::string()) + fileName;
+}
+
+// The edit list next to a local WebM video, if there is one
+static std::shared_ptr<const WZVideoEditList> loadVideoEdits(const WzString& videoName)
+{
+	const WzString listName = videoEditListName(videoName);
+	if (listName.isEmpty())
+	{
+		return nullptr;
+	}
+	const WzString editsName = "sequences/" + listName;
+	if (!PHYSFS_exists(editsName.toUtf8().c_str()))
+	{
+		return nullptr;
+	}
+	std::vector<char> data;
+	if (!loadFileToBufferVector(editsName.toUtf8().c_str(), data, false, false))
+	{
+		return nullptr;
+	}
+	return videoEditListParse(data.data(), data.size(), editsName);
 }
 
 static bool seqPlayOrQueueFetch(const WzString& videoName, const WzString& audioName)
 {
 	aVideoProvider.reset();
+	aVideoEdits.reset();
+	aVideoLanguage.clear();
 	currVideoName = videoName;
 	currAudioName = audioName;
 
+	const auto candidates = videoNameCandidates(videoName);
+
 	// Try to find local sequences
-	WzString aVideoName = WzString("sequences/" + videoName);
-	PHYSFS_file *fpInfile = PHYSFS_openRead(aVideoName.toUtf8().c_str());
+	PHYSFS_file *fpInfile = nullptr;
+	WzString openedName;
+	for (const auto& name : candidates)
+	{
+		WzString aVideoName = WzString("sequences/" + name);
+		fpInfile = PHYSFS_openRead(aVideoName.toUtf8().c_str());
+		if (fpInfile != nullptr)
+		{
+			openedName = name;
+			break;
+		}
+	}
 
 	if (fpInfile != nullptr)
 	{
-		aVideoProvider = makeVideoProvider(fpInfile, videoName);
+		aVideoProvider = makeVideoProvider(fpInfile, openedName);
+		aVideoEdits = loadVideoEdits(openedName);
+
+		// the preferred language may have its own video, next to the shared one
+		const WZVideoEditTrack *editTrack = aVideoEdits ? aVideoEdits->findTrack(seq_GetPreferredAudioLanguage()) : nullptr;
+		if (editTrack && !editTrack->videoName.isEmpty())
+		{
+			const WzString languageVideoName = siblingVideoName(openedName, editTrack->videoName);
+			PHYSFS_file *languageFile = PHYSFS_openRead(("sequences/" + languageVideoName).toUtf8().c_str());
+			if (languageFile != nullptr)
+			{
+				aVideoProvider = makeVideoProvider(languageFile, languageVideoName);
+				aVideoLanguage = editTrack->languageCode;
+			}
+			else
+			{
+				debug(LOG_WARNING, "unable to open 'sequences/%s' - playing the shared video", languageVideoName.toUtf8().c_str());
+			}
+		}
 	}
 	else
 	{
@@ -494,31 +611,85 @@ static bool seqPlayOrQueueFetch(const WzString& videoName, const WzString& audio
 				// in these special cases, don't clutter the logs with LOG_INFO level events
 				log_part = LOG_VIDEO;
 			}
-			debug(log_part, "unable to open '%s' for playback", aVideoName.toUtf8().c_str());
+			debug(log_part, "unable to open 'sequences/%s' for playback", videoName.toUtf8().c_str());
 
 			seq_Shutdown();
 			return false;
 		}
 
-		// Try to download video from on-demand provider
-		auto videoData = onDemandVideoProvider.getVideoData(videoName);
+		// Try to download video from on-demand provider, walking the candidate list
+		// (a failed download of a preferred variant falls back to the next)
+		//
+		// A WebM video's edit list is requested along with it, and playback waits until the edit list has arrived (or failed).
+		// If it names the preferred language's own video, that video is fetched instead (falling back to the shared one on failure).
+		std::shared_ptr<const std::vector<char>> videoData;
+		WzString fetchedName;
+		bool requestPending = false;
+		for (const auto& name : candidates)
+		{
+			std::shared_ptr<const WZVideoEditList> edits;
+			bool editsPending = false;
+			const WzString editsName = videoEditListName(name);
+			if (!editsName.isEmpty())
+			{
+				auto editsData = onDemandVideoProvider.getVideoData(editsName, true);
+				if (editsData)
+				{
+					edits = videoEditListParse(editsData->data(), editsData->size(), editsName);
+				}
+				else
+				{
+					editsPending = !onDemandVideoProvider.getVideoDataError(editsName);
+				}
+			}
+
+			WzString wantedName = name;
+			WzString wantedLanguage;
+			const WZVideoEditTrack *editTrack = edits ? edits->findTrack(seq_GetPreferredAudioLanguage()) : nullptr;
+			if (editTrack && !editTrack->videoName.isEmpty())
+			{
+				const WzString languageVideoName = siblingVideoName(name, editTrack->videoName);
+				if (!onDemandVideoProvider.getVideoDataError(languageVideoName))
+				{
+					wantedName = languageVideoName;
+					wantedLanguage = editTrack->languageCode;
+				}
+			}
+
+			videoData = onDemandVideoProvider.getVideoData(wantedName);
+			if (videoData && !editsPending)
+			{
+				fetchedName = wantedName;
+				aVideoEdits = edits;
+				aVideoLanguage = wantedLanguage;
+				break;
+			}
+			if (videoData || !onDemandVideoProvider.getVideoDataError(wantedName))
+			{
+				// Request is queued
+				// Return true and handle waiting inside seq_UpdateFullScreenVideo
+				// (Each later call to seq_UpdateFullScreenVideo will check if still waiting, and then display the download progress before itself kicking off seq_Play once the buffer is ready)
+				videoData.reset();
+				currFetchName = wantedName;
+				requestPending = true;
+				break;
+			}
+			// this candidate failed to download - try the next one
+		}
 		if (!videoData)
 		{
-			if (onDemandVideoProvider.getVideoDataError(videoName))
+			if (requestPending)
 			{
-				seq_Shutdown();
-				return false;
+				return true;
 			}
-			// Otherwise, request is queued
-			// Return true and handle waiting inside seq_UpdateFullScreenVideo
-			// (Each later call to seq_UpdateFullScreenVideo will check if still waiting, and then dispkay the download progress before itself kicking off seq_Play once the buffer is ready)
-			return true;
+			seq_Shutdown();
+			return false;
 		}
 
-		aVideoProvider = makeVideoProvider(videoData, videoName);
+		aVideoProvider = makeVideoProvider(videoData, fetchedName);
 	}
 
-	if (!seq_Play(aVideoProvider))
+	if (!seq_Play(aVideoProvider, aVideoEdits, aVideoLanguage))
 	{
 		seq_Shutdown();
 		return false;
@@ -561,24 +732,30 @@ static bool seq_StartFullScreenVideo(const WzString& videoName, const WzString& 
 		seq_SetUserResolution();
 	}
 
+	// We do not want to enter loop_SetVideoPlaybackMode() when we are doing intelligence videos.
+	const bool enterVideoMode = (resolution == VIDEO_USER_CHOSEN_RESOLUTION) && (loop_GetVideoMode() == 0);
+
+	// Silence the music *before* opening the video:
+	// - opening can take enough time when parsing large files that the music could later cut off abruptly with an audible click
+	if (enterVideoMode)
+	{
+		cdAudio_Pause();
+	}
+
 	if (!seqPlayOrQueueFetch(videoName, audioName))
 	{
+		if (enterVideoMode)
+		{
+			cdAudio_Resume();
+		}
 		return false;
 	}
 
-	/* We do not want to enter loop_SetVideoPlaybackMode() when we are
-	 * doing intelligence videos.
-	 */
-	if (resolution == VIDEO_USER_CHOSEN_RESOLUTION)
+	if (enterVideoMode)
 	{
 		//start video mode
-		if (loop_GetVideoMode() == 0)
-		{
-			// check to see if we need to pause, and set font each time
-			cdAudio_Pause();
-			loop_SetVideoPlaybackMode();
-			iV_SetTextColour(WZCOL_TEXT_BRIGHT);
-		}
+		loop_SetVideoPlaybackMode();
+		iV_SetTextColour(WZCOL_TEXT_BRIGHT);
 	}
 
 	return true;
@@ -615,7 +792,7 @@ bool seq_UpdateFullScreenVideo()
 			{
 				wzCachedSeqText.resize(2);
 			}
-			wzCachedSeqText[0].setText(WzString::format("%s (%" PRIu32 "%%)...", _("Loading video"), onDemandVideoProvider.getVideoDataRequestProgress(currVideoName)), font_scaled);
+			wzCachedSeqText[0].setText(WzString::format("%s (%" PRIu32 "%%)...", _("Loading video"), onDemandVideoProvider.getVideoDataRequestProgress(currFetchName)), font_scaled);
 			wzCachedSeqText[0].render((pie_GetVideoBufferWidth() - wzCachedSeqText[0].width()) / 2, (pie_GetVideoBufferHeight() - wzCachedSeqText[0].height()) / 2, WZCOL_WHITE);
 			return true;
 		}
@@ -623,7 +800,6 @@ bool seq_UpdateFullScreenVideo()
 		// otherwise, we have the data - continue
 	}
 
-	int i;
 	bool bMoreThanOneSequenceLine = false;
 	bool stillPlaying;
 
@@ -632,9 +808,8 @@ bool seq_UpdateFullScreenVideo()
 
 	//get any text lines over bottom of the video
 	double frameTime = seq_GetFrameTime();
-	for (i = 0; i < MAX_TEXT_OVERLAYS; i++)
+	for (const SEQTEXT &seqtext : aSeqList[currentPlaySeq].aText)
 	{
-		SEQTEXT seqtext = aSeqList[currentPlaySeq].aText[i];
 		if (seqtext.pText[0] != '\0')
 		{
 			if (seqtext.bSubtitle)
@@ -651,14 +826,6 @@ bool seq_UpdateFullScreenVideo()
 						subMax = seqtext.y;
 					}
 				}
-			}
-
-			if (frameTime >= seqtext.endTime && frameTime < seqtext.endTime)
-			{
-//				if (pbClear != nullptr)
-//				{
-//					*pbClear = CLEAR_BLACK;
-//				}
 			}
 		}
 	}
@@ -685,7 +852,7 @@ bool seq_UpdateFullScreenVideo()
 	//print any text over the video
 	frameTime = seq_GetFrameTime();
 
-	for (i = 0; i < MAX_TEXT_OVERLAYS; i++)
+	for (size_t i = 0; i < aSeqList[currentPlaySeq].aText.size(); i++)
 	{
 		SEQTEXT currentText = aSeqList[currentPlaySeq].aText[i];
 		if (currentText.pText[0] != '\0')
@@ -710,6 +877,10 @@ bool seq_UpdateFullScreenVideo()
 			}
 		}
 	}
+	if (aSeqList[currentPlaySeq].areaSubtitles)
+	{
+		seqSubtitles_Draw(*aSeqList[currentPlaySeq].areaSubtitles, frameTime, bSeqSubtitles, videoRectX, videoRectY, videoRectWidth, videoRectHeight);
+	}
 	if (!stillPlaying || bHoldSeqForAudio)
 	{
 		if (bAudioPlaying)
@@ -718,7 +889,7 @@ bool seq_UpdateFullScreenVideo()
 			{
 				seq_Shutdown();
 
-				if (!seq_Play(aVideoProvider))
+				if (!seq_Play(aVideoProvider, aVideoEdits, aVideoLanguage))
 				{
 					bHoldSeqForAudio = true;
 				}
@@ -742,7 +913,10 @@ void seqReleaseAll()
 {
 	seq_Shutdown();
 	aVideoProvider.reset();
+	aVideoEdits.reset();
+	aVideoLanguage.clear();
 	wzCachedSeqText.clear();
+	seqSubtitles_ReleaseLayout();
 }
 
 bool seq_StopFullScreenVideo()
@@ -757,7 +931,10 @@ bool seq_StopFullScreenVideo()
 	seq_Shutdown();
 
 	aVideoProvider.reset();
+	aVideoEdits.reset();
+	aVideoLanguage.clear();
 	wzCachedSeqText.clear();
+	seqSubtitles_ReleaseLayout();
 
 	return true;
 }
@@ -765,88 +942,112 @@ bool seq_StopFullScreenVideo()
 // add a string at x,y or add string below last line if x and y are 0
 bool seq_AddTextForVideo(const char *pText, SDWORD xOffset, SDWORD yOffset, double startTime, double endTime, SEQ_TEXT_POSITIONING textJustification)
 {
-	SDWORD sourceLength, currentLength;
-	char *currentText;
 	static SDWORD lastX;
-	// make sure we take xOffset into account, we don't always start at 0
-	const unsigned int buffer_width = pie_GetVideoBufferWidth() - xOffset;
 
-	ASSERT_OR_RETURN(false, aSeqList[currentSeq].currentText < MAX_TEXT_OVERLAYS, "too many text lines");
+	ASSERT_OR_RETURN(false, currentSeq >= 0 && currentSeq < static_cast<SDWORD>(MAX_SEQ_LIST), "No sequence to add text to");
+	SEQLIST &seq = aSeqList[currentSeq];
+	auto isContinuationByte = [pText](size_t i) { return (static_cast<unsigned char>(pText[i]) & 0xC0) == 0x80; };
 
-	sourceLength = strlen(pText);
-	currentLength = sourceLength;
-	currentText = &(aSeqList[currentSeq].aText[aSeqList[currentSeq].currentText].pText[0]);
-
-	//if the string is bigger than the buffer get the last end of the last fullword in the buffer
-	if (currentLength >= MAX_STR_LENGTH)
+	while (seq.aText.size() < MAX_TEXT_OVERLAYS)
 	{
-		currentLength = MAX_STR_LENGTH - 1;
-		//get end of the last word
-		while ((pText[currentLength] != ' ') && (currentLength > 0))
+		// make sure we take xOffset into account, we don't always start at 0
+		const unsigned int buffer_width = pie_GetVideoBufferWidth() - xOffset;
+		const size_t sourceLength = strlen(pText);
+		size_t currentLength = sourceLength;
+		size_t separatorLength = 1;
+
+		//if the string is bigger than the buffer get the last end of the last fullword in the buffer
+		if (currentLength >= MAX_STR_LENGTH)
+		{
+			currentLength = MAX_STR_LENGTH - 1;
+			//get end of the last word
+			while ((pText[currentLength] != ' ') && (currentLength > 0))
+			{
+				currentLength--;
+			}
+		}
+		std::string line(pText, currentLength);
+
+		//check the string is shortenough to print
+		//if not take a word of the end and try again
+		while ((currentLength > 0) && iV_GetTextWidth(line.c_str(), font_scaled) > buffer_width)
 		{
 			currentLength--;
+			while ((pText[currentLength] != ' ') && (currentLength > 0))
+			{
+				currentLength--;
+			}
+			line.resize(currentLength);
 		}
-	}
 
-	memcpy(currentText, pText, currentLength);
-	currentText[currentLength] = 0;//terminate the string what ever
-
-	//check the string is shortenough to print
-	//if not take a word of the end and try again
-	while ((currentLength > 0) && iV_GetTextWidth(currentText, font_scaled) > buffer_width)
-	{
-		currentLength--;
-		while ((pText[currentLength] != ' ') && (currentLength > 0))
+		if (currentLength == 0 && sourceLength > 0)
 		{
-			currentLength--;
+			size_t minLength = 1;
+			while (minLength < sourceLength && isContinuationByte(minLength))
+			{
+				minLength++;
+			}
+			currentLength = std::max<size_t>(std::min<size_t>(sourceLength, MAX_STR_LENGTH - 1), minLength);
+			while (currentLength > minLength && isContinuationByte(currentLength))
+			{
+				currentLength--;
+			}
+			line.assign(pText, currentLength);
+			while (currentLength > minLength && iV_GetTextWidth(line.c_str(), font_scaled) > buffer_width)
+			{
+				do
+				{
+					currentLength--;
+				} while (currentLength > minLength && isContinuationByte(currentLength));
+				line.resize(currentLength);
+			}
+			separatorLength = 0;
 		}
-		currentText[currentLength] = 0;//terminate the string what ever
-	}
-	currentText[currentLength] = 0;//terminate the string what ever
 
-	//check if x and y are 0 and put text on next line
-	if (((xOffset == 0) && (yOffset == 0)) && (currentLength > 0))
-	{
-		aSeqList[currentSeq].aText[aSeqList[currentSeq].currentText].x = lastX;
-		aSeqList[currentSeq].aText[aSeqList[currentSeq].currentText].y =
-		    aSeqList[currentSeq].aText[aSeqList[currentSeq].currentText - 1].y + iV_GetTextLineSize(font_scaled);
-	}
-	else
-	{
-		aSeqList[currentSeq].aText[aSeqList[currentSeq].currentText].x = xOffset + D_W2;
-		aSeqList[currentSeq].aText[aSeqList[currentSeq].currentText].y = yOffset + D_H2;
-	}
-	lastX = aSeqList[currentSeq].aText[aSeqList[currentSeq].currentText].x;
+		seq.aText.emplace_back();
+		SEQTEXT &entry = seq.aText.back();
+		sstrcpy(entry.pText, line.c_str());
 
-	const int MIN_JUSTIFICATION = 40;
-	const int justification = buffer_width - iV_GetTextWidth(currentText, font_scaled);
-	if (textJustification == SEQ_TEXT_JUSTIFY && currentLength == sourceLength && justification > MIN_JUSTIFICATION)
-	{
-		aSeqList[currentSeq].aText[aSeqList[currentSeq].currentText].x += (justification / 2);
-	}
+		//check if x and y are 0 and put text on next line
+		if (((xOffset == 0) && (yOffset == 0)) && (currentLength > 0))
+		{
+			entry.x = lastX;
+			entry.y = ((seq.aText.size() > 1) ? seq.aText[seq.aText.size() - 2].y : D_H2) + iV_GetTextLineSize(font_scaled);
+		}
+		else
+		{
+			entry.x = xOffset + D_W2;
+			entry.y = yOffset + D_H2;
+		}
+		lastX = entry.x;
 
-	//set start and finish times for the objects
-	aSeqList[currentSeq].aText[aSeqList[currentSeq].currentText].startTime = startTime;
-	aSeqList[currentSeq].aText[aSeqList[currentSeq].currentText].endTime = endTime;
-	aSeqList[currentSeq].aText[aSeqList[currentSeq].currentText].bSubtitle = textJustification;
+		const int MIN_JUSTIFICATION = 40;
+		const int justification = buffer_width - iV_GetTextWidth(line.c_str(), font_scaled);
+		if (textJustification == SEQ_TEXT_JUSTIFY && currentLength == sourceLength && justification > MIN_JUSTIFICATION)
+		{
+			entry.x += (justification / 2);
+		}
 
-	aSeqList[currentSeq].currentText++;
-	if (aSeqList[currentSeq].currentText >= MAX_TEXT_OVERLAYS)
-	{
-		aSeqList[currentSeq].currentText = 0;
-	}
+		//set start and finish times for the objects
+		entry.startTime = startTime;
+		entry.endTime = endTime;
+		entry.bSubtitle = textJustification;
 
-	//check text is okay on the screen
-	if (currentLength < sourceLength)
-	{
-		//RECURSE x= 0 y = 0 for nextLine
+		if (currentLength >= sourceLength)
+		{
+			return true;
+		}
+
+		// put the rest on the next line
+		pText += currentLength + separatorLength;
+		xOffset = 0;
+		yOffset = 0;
 		if (textJustification == SEQ_TEXT_JUSTIFY)
 		{
 			textJustification = SEQ_TEXT_POSITION;
 		}
-		seq_AddTextForVideo(&pText[currentLength + 1], 0, 0, startTime, endTime, textJustification);
 	}
-	return true;
+	return false;
 }
 
 static bool seq_AddTextFromFile(const char *pTextName, SEQ_TEXT_POSITIONING textJustification)
@@ -909,19 +1110,19 @@ void seq_ClearSeqList()
 {
 	currentSeq = -1;
 	currentPlaySeq = -1;
-	for (int i = 0; i < MAX_SEQ_LIST; ++i)
+	seqSubtitles_ReleaseLayout();
+	for (SEQLIST &seq : aSeqList)
 	{
-		aSeqList[i].reset();
+		seq.reset();
 	}
 	onDemandVideoProvider.clear();
 }
 
 //add a sequence to the list to be played
-void seq_AddSeqToList(const WzString &pSeqName, const WzString &audioName, const char *pTextName, bool bLoop)
+bool seq_AddSeqToList(const WzString &pSeqName, const WzString &audioName, const char *pTextName, bool bLoop, const WzString &subtitleName)
 {
+	ASSERT_OR_RETURN(false, currentSeq + 1 < static_cast<SDWORD>(MAX_SEQ_LIST), "too many sequences");
 	currentSeq++;
-
-	ASSERT_OR_RETURN(, currentSeq < MAX_SEQ_LIST, "too many sequences");
 
 	if (onDemandVideoProvider.hasBaseURLPath())
 	{
@@ -938,22 +1139,30 @@ void seq_AddSeqToList(const WzString &pSeqName, const WzString &audioName, const
 		seq_AddTextFromFile(pTextName, SEQ_TEXT_POSITION);
 	}
 
-	if (bSeqSubtitles)
+	// The subtitle file: named, or the video's name with .json (if present) or .txt. A JSON file is loaded
+	// whatever the subtitles setting (its areas can always show), a text file only with subtitles on.
+	WzString subtitleFile = subtitleName;
+	if (subtitleFile.isEmpty())
 	{
-		char aSubtitleName[MAX_STR_LENGTH];
-		sstrcpy(aSubtitleName, pSeqName.toUtf8().c_str());
-
-		// check for a subtitle file
-		char *extension = strrchr(aSubtitleName, '.');
-		if (extension)
+		std::string baseName = pSeqName.toUtf8();
+		const size_t extension = baseName.rfind('.');
+		if (extension != std::string::npos)
 		{
-			*extension = '\0';
+			baseName.resize(extension);
 		}
-		sstrcat(aSubtitleName, ".txt");
-
-		// Subtitles should be center justified
-		seq_AddTextFromFile(aSubtitleName, SEQ_TEXT_JUSTIFY);
+		const bool haveJson = PHYSFS_exists(("sequenceaudio/" + baseName + ".json").c_str());
+		subtitleFile = WzString::fromUtf8(baseName + (haveJson ? ".json" : ".txt"));
 	}
+	if (subtitleFile.endsWith(".json"))
+	{
+		aSeqList[currentSeq].areaSubtitles = seqSubtitles_Load(subtitleFile);
+	}
+	else if (bSeqSubtitles)
+	{
+		// Subtitles should be center justified
+		seq_AddTextFromFile(subtitleFile.toUtf8().c_str(), SEQ_TEXT_JUSTIFY);
+	}
+	return true;
 }
 
 /*checks to see if there are any sequences left in the list to play*/
@@ -962,7 +1171,7 @@ bool seq_AnySeqLeft()
 	int nextSeq = currentPlaySeq + 1;
 
 	//check haven't reached end
-	if (nextSeq >= MAX_SEQ_LIST)
+	if (nextSeq >= static_cast<int>(MAX_SEQ_LIST))
 	{
 		return false;
 	}
@@ -974,7 +1183,7 @@ bool seq_StartNextFullScreenVideo()
 	bool	bPlayedOK;
 
 	currentPlaySeq++;
-	if (currentPlaySeq >= MAX_SEQ_LIST)
+	if (currentPlaySeq >= static_cast<SDWORD>(MAX_SEQ_LIST))
 	{
 		bPlayedOK = false;
 	}

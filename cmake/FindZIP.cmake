@@ -12,13 +12,13 @@
 # specifying various options. COMPRESS_ZIP supports all of the above detected ZIP_EXECUTABLE possibilities.
 #
 #
-# Copyright © 2018-2025 pastdue ( https://github.com/past-due/ ) and contributors
+# Copyright © 2018-2026 pastdue ( https://github.com/past-due/ ) and contributors
 # License: MIT License ( https://opensource.org/licenses/MIT )
 #
-# Script Version: 2025-10-24a
+# Script Version: 2026-09-27a
 #
 
-cmake_minimum_required(VERSION 3.16...3.31)
+cmake_minimum_required(VERSION 3.16...4.3)
 
 set(_PF32BIT "ProgramFiles(x86)")
 
@@ -31,6 +31,17 @@ set(_PF32BIT "ProgramFiles(x86)")
 # Search for 7-Zip
 find_program(ZIP_EXECUTABLE NAMES 7zz 7z 7za PATHS "$ENV{ProgramFiles}/7-Zip" "$ENV{${_PF32BIT}}/7-Zip" "$ENV{ProgramW6432}/7-Zip")
 if(ZIP_EXECUTABLE MATCHES "7zz|7z|7za")
+
+	# Fedora's 7zip package fails if executed with the full path - extract just the 7zip executable name on Fedora
+	if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+		if(EXISTS "/etc/fedora-release")
+			# Get just the name (e.g., '7z')
+			get_filename_component(TMP_NAME "${ZIP_EXECUTABLE}" NAME)
+			message(STATUS "Using \"${TMP_NAME}\" instead of full path: ${ZIP_EXECUTABLE}")
+			set(ZIP_EXECUTABLE "${TMP_NAME}" CACHE FILEPATH "7zip executable name" FORCE)
+		endif()
+  endif()
+
 	# Test whether 7-Zip supports the "-bb0" option to disable log output
 	execute_process(COMMAND ${ZIP_EXECUTABLE} i -bb0
 					RESULT_VARIABLE 7z_bb_result
@@ -46,6 +57,26 @@ if(ZIP_EXECUTABLE MATCHES "7zz|7z|7za")
 		set(7Z_SUPPORTS_SWITCH_BB0 OFF CACHE BOOL "7z supports switch: -bb0")
 	endif()
 	MARK_AS_ADVANCED(7Z_SUPPORTS_SWITCH_BB0)
+
+	# Test whether 7-Zip supports "-mtm=off" (7-Zip 22.00+) to omit modification times from ZIP entries
+	set(_7z_mtm_probe_dir "${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/FindZIP_7z_mtm_probe")
+	file(REMOVE_RECURSE "${_7z_mtm_probe_dir}")
+	file(WRITE "${_7z_mtm_probe_dir}/probe.txt" "")
+	execute_process(COMMAND ${ZIP_EXECUTABLE} a -tzip -mtm=off probe.zip probe.txt
+					WORKING_DIRECTORY "${_7z_mtm_probe_dir}"
+					RESULT_VARIABLE 7z_mtm_result
+					OUTPUT_QUIET
+					ERROR_QUIET
+	)
+	file(REMOVE_RECURSE "${_7z_mtm_probe_dir}")
+	if (7z_mtm_result EQUAL 0)
+		message( STATUS "7z supports switch: -mtm=off ... YES" )
+		set(7Z_SUPPORTS_SWITCH_MTM_OFF ON CACHE BOOL "7z supports switch: -mtm=off")
+	else()
+		message( STATUS "7z supports switch: -mtm=off ... no" )
+		set(7Z_SUPPORTS_SWITCH_MTM_OFF OFF CACHE BOOL "7z supports switch: -mtm=off")
+	endif()
+	MARK_AS_ADVANCED(7Z_SUPPORTS_SWITCH_MTM_OFF)
 endif()
 
 if(NOT ZIP_EXECUTABLE)
@@ -115,6 +146,9 @@ function(COMPRESS_ZIP)
 
 	if(ZIP_EXECUTABLE MATCHES "7zz|7z|7za")
 		set(_zipExecutableOptions a -tzip -mtc=off)
+		if(7Z_SUPPORTS_SWITCH_MTM_OFF)
+			list(APPEND _zipExecutableOptions "-mtm=off")
+		endif()
 		if(DEFINED _parsedArguments_COMPRESSION_LEVEL)
 			# 7z command-line option for compression level (when in ZIP mode) is: "-mx=#"
 			# only supports compression levels: 0, 1, 3, 5, 7, 9

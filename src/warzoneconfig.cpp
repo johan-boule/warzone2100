@@ -29,12 +29,16 @@
 #include "lib/ivis_opengl/piepalette.h"
 #include "lib/sound/sounddefs.h"
 #include "lib/netplay/connection_provider_registry.h"
+#include "lib/sequence/video_decoder.h"
 #include "advvis.h"
 #include "component.h"
 #include "display.h"
 #include "keybind.h"
 #include "radar.h"
 #include "activity.h"
+#include "terrain.h"
+
+#include <algorithm>
 
 #define MAX_REPLAY_FILES 36
 constexpr int MAX_OLD_LOGS = 50;
@@ -61,6 +65,16 @@ struct WARZONE_GLOBALS
 	WINDOW_MODE Fullscreen = WINDOW_MODE::windowed; // Leave this to windowed, some system will fail and they can't see the system popup dialog!
 	bool soundEnabled = true;
 	TrapCursorMode trapCursor = TrapCursorMode::Automatic;
+	GamepadMode gamepadMode = GamepadMode::Automatic;
+	int gamepadCursorSpeed = GAMEPAD_CURSOR_SPEED_DEFAULT;
+	int gamepadStickDeadzone = GAMEPAD_DEADZONE_DEFAULT;
+	int gamepadTriggerThreshold = GAMEPAD_TRIGGER_THRESHOLD_DEFAULT;
+	int gamepadCursorMagnetism = GAMEPAD_MAGNETISM_DEFAULT;
+	bool gamepadInvertRightStick = false;
+	bool gamepadSwapSticks = false;
+	bool gamepadRumble = true;
+	bool gamepadShowLayoutOnConnect = true;
+	std::string gamepadLayoutSeenDevices;
 	int vsync = 1;
 	bool pauseOnFocusLoss = false;
 	bool ColouredCursor = true;
@@ -72,6 +86,7 @@ struct WARZONE_GLOBALS
 	int cameraSpeed = CAMERASPEED_DEFAULT;
 	bool radarJump = false;
 	video_backend gfxBackend = video_backend::opengl; // the actual default value is determined in loadConfig()
+	WzString videoDecoderBackend = "auto";
 	JS_BACKEND jsBackend = (JS_BACKEND)0;
 	bool autoAdjustDisplayScale = true;
 	int autoLagKickSeconds = 60;
@@ -79,12 +94,15 @@ struct WARZONE_GLOBALS
 	int autoDesyncKickSeconds = 10;
 	int autoNotReadyKickSeconds = 0;
 	bool disableReplayRecording = false;
+	bool devForceOldSavegameLoad = false;
 	int maxReplaysSaved = MAX_REPLAY_FILES;
 	int oldLogsLimit = MAX_OLD_LOGS;
 	uint32_t MPinactivityMinutes = 5;
 	uint32_t MPgameTimeLimitMinutes = 0; // default to unlimited
 	uint8_t MPopenSpectatorSlots = 0;
 	PLAYER_LEAVE_MODE MPplayerLeaveMode = PLAYER_LEAVE_MODE_DEFAULT;
+	uint16_t MPplayerReconnectWaitSeconds = PLAYER_RECONNECT_WAIT_SECONDS_DEFAULT;
+	MP_CHAT_MODE MPchatMode = MP_CHAT_MODE::ON;
 	std::string lastIPConnectServerName;
 	int fogStart = 4000;
 	int fogEnd = 8000;
@@ -103,6 +121,15 @@ struct WARZONE_GLOBALS
 	uint32_t shadowFilterSize = 5;
 	uint32_t shadowMapResolution = 0; // this defaults to 0, which causes the gfx backend to figure out a recommended default based on the system properties
 	bool pointLightLighting = false;
+	bool muzzleFlashLighting = true;
+	bool projectileLighting = true;
+	HDR_LIGHTING_MODE hdrLightingMode = HDR_LIGHTING_MODE::AUTO; // floating point scene color and linear space lighting
+	uint32_t renderResolutionPercent = 100; // percentage of the display resolution the 3D scene is rendered at
+	SCENE_UPSCALING_MODE sceneUpscalingMode = SCENE_UPSCALING_MODE::BILINEAR;
+	int upscalingSharpness = 25; // RCAS sharpness in hundredths of stops
+	SMAA_MODE smaaMode = SMAA_MODE::OFF;
+	SSAO_MODE ssaoMode = SSAO_MODE::OFF; // screen-space ambient occlusion (default off)
+	SSR_MODE ssrMode = SSR_MODE::OFF; // screen-space reflections (default off)
 	// UI config
 	bool groupsMenuEnabled = true;
 	uint8_t optionsButtonVisibility = 100;
@@ -222,6 +249,107 @@ TrapCursorMode war_GetTrapCursor()
 	return warGlobs.trapCursor;
 }
 
+void war_SetGamepadMode(GamepadMode v)
+{
+	warGlobs.gamepadMode = v;
+	ActivityManager::instance().changedSetting("gamepadMode", std::to_string(static_cast<int>(v)));
+}
+
+GamepadMode war_GetGamepadMode()
+{
+	return warGlobs.gamepadMode;
+}
+
+void war_SetGamepadCursorSpeed(int speed)
+{
+	warGlobs.gamepadCursorSpeed = MAX(GAMEPAD_CURSOR_SPEED_MIN, MIN(GAMEPAD_CURSOR_SPEED_MAX, speed));
+}
+
+int war_GetGamepadCursorSpeed()
+{
+	return warGlobs.gamepadCursorSpeed;
+}
+
+void war_SetGamepadStickDeadzone(int percent)
+{
+	warGlobs.gamepadStickDeadzone = MAX(GAMEPAD_DEADZONE_MIN, MIN(GAMEPAD_DEADZONE_MAX, percent));
+}
+
+int war_GetGamepadStickDeadzone()
+{
+	return warGlobs.gamepadStickDeadzone;
+}
+
+void war_SetGamepadTriggerThreshold(int percent)
+{
+	warGlobs.gamepadTriggerThreshold = MAX(GAMEPAD_TRIGGER_THRESHOLD_MIN, MIN(GAMEPAD_TRIGGER_THRESHOLD_MAX, percent));
+}
+
+int war_GetGamepadTriggerThreshold()
+{
+	return warGlobs.gamepadTriggerThreshold;
+}
+
+void war_SetGamepadCursorMagnetism(int percent)
+{
+	warGlobs.gamepadCursorMagnetism = MAX(0, MIN(GAMEPAD_MAGNETISM_MAX, percent));
+}
+
+int war_GetGamepadCursorMagnetism()
+{
+	return warGlobs.gamepadCursorMagnetism;
+}
+
+void war_SetGamepadInvertRightStick(bool inverted)
+{
+	warGlobs.gamepadInvertRightStick = inverted;
+}
+
+bool war_GetGamepadInvertRightStick()
+{
+	return warGlobs.gamepadInvertRightStick;
+}
+
+void war_SetGamepadSwapSticks(bool swapped)
+{
+	warGlobs.gamepadSwapSticks = swapped;
+}
+
+bool war_GetGamepadSwapSticks()
+{
+	return warGlobs.gamepadSwapSticks;
+}
+
+void war_SetGamepadRumble(bool enabled)
+{
+	warGlobs.gamepadRumble = enabled;
+}
+
+bool war_GetGamepadRumble()
+{
+	return warGlobs.gamepadRumble;
+}
+
+void war_SetGamepadShowLayoutOnConnect(bool enabled)
+{
+	warGlobs.gamepadShowLayoutOnConnect = enabled;
+}
+
+bool war_GetGamepadShowLayoutOnConnect()
+{
+	return warGlobs.gamepadShowLayoutOnConnect;
+}
+
+void war_SetGamepadLayoutSeenDevices(const std::string& deviceGUIDs)
+{
+	warGlobs.gamepadLayoutSeenDevices = deviceGUIDs;
+}
+
+const std::string& war_GetGamepadLayoutSeenDevices()
+{
+	return warGlobs.gamepadLayoutSeenDevices;
+}
+
 void war_SetVsync(int value)
 {
 	warGlobs.vsync = value;
@@ -313,6 +441,16 @@ SCANLINE_MODE war_getScanlineMode()
 {
 	debug(LOG_VIDEO, "%d", seq_getScanlineMode());
 	return seq_getScanlineMode();
+}
+
+void war_setFMVGamma(float gamma)
+{
+	seq_setDisplayGamma(gamma);
+}
+
+float war_getFMVGamma()
+{
+	return seq_getDisplayGamma();
 }
 
 void war_SetPauseOnFocusLoss(bool enabled)
@@ -469,6 +607,21 @@ void war_setGfxBackend(video_backend backend)
 	warGlobs.gfxBackend = backend;
 }
 
+WzString war_getVideoDecoderBackend()
+{
+	return warGlobs.videoDecoderBackend;
+}
+
+bool war_setVideoDecoderBackend(const WzString& backend)
+{
+	if (!videoDecoderSetPreferredBackend(backend))
+	{
+		return false;
+	}
+	warGlobs.videoDecoderBackend = backend;
+	return true;
+}
+
 JS_BACKEND war_getJSBackend()
 {
 	return warGlobs.jsBackend;
@@ -556,6 +709,16 @@ void war_setDisableReplayRecording(bool disable)
 	warGlobs.disableReplayRecording = disable;
 }
 
+bool war_getDevForceOldSavegameLoad()
+{
+	return warGlobs.devForceOldSavegameLoad;
+}
+
+void war_setDevForceOldSavegameLoad(bool force)
+{
+	warGlobs.devForceOldSavegameLoad = force;
+}
+
 int war_getMaxReplaysSaved()
 {
 	return warGlobs.maxReplaysSaved;
@@ -623,6 +786,31 @@ PLAYER_LEAVE_MODE war_getMPPlayerLeaveMode()
 void war_setMPPlayerLeaveMode(PLAYER_LEAVE_MODE mode)
 {
 	warGlobs.MPplayerLeaveMode = mode;
+}
+
+uint16_t war_getMPPlayerReconnectWaitSeconds()
+{
+	return warGlobs.MPplayerReconnectWaitSeconds;
+}
+
+void war_setMPPlayerReconnectWaitSeconds(uint16_t seconds)
+{
+	warGlobs.MPplayerReconnectWaitSeconds = clampPlayerReconnectWaitSeconds(seconds);
+}
+
+MP_CHAT_MODE war_getMPChatMode()
+{
+	return warGlobs.MPchatMode;
+}
+
+void war_setMPChatMode(MP_CHAT_MODE mode)
+{
+	if (mode != MP_CHAT_MODE::ON && mode != MP_CHAT_MODE::QUICK_CHAT_ONLY)
+	{
+		debug(LOG_WARNING, "Invalid MP chat mode: %u - resetting to default", static_cast<unsigned>(mode));
+		mode = MP_CHAT_MODE::ON;
+	}
+	warGlobs.MPchatMode = mode;
 }
 
 void war_setLastIpServerConnect(const std::string& serverName)
@@ -747,6 +935,52 @@ void war_setShadowMapResolution(uint32_t resolution)
 	warGlobs.shadowMapResolution = resolution;
 }
 
+uint32_t war_getRenderResolutionPercent()
+{
+	return warGlobs.renderResolutionPercent;
+}
+
+void war_setRenderResolutionPercent(uint32_t percent)
+{
+	// 0 selects dynamic resolution
+	if (percent != 0 && (percent < 10 || percent > 100))
+	{
+		debug(LOG_INFO, "Render resolution %" PRIu32 "%% is out of range (10-100), clamping", percent);
+		percent = std::clamp<uint32_t>(percent, 10, 100);
+	}
+	warGlobs.renderResolutionPercent = percent;
+}
+
+SCENE_UPSCALING_MODE war_getSceneUpscalingMode()
+{
+	return warGlobs.sceneUpscalingMode;
+}
+
+void war_setSceneUpscalingMode(SCENE_UPSCALING_MODE mode)
+{
+	warGlobs.sceneUpscalingMode = mode;
+}
+
+int war_getUpscalingSharpness()
+{
+	return warGlobs.upscalingSharpness;
+}
+
+void war_setUpscalingSharpness(int hundredthsOfStops)
+{
+	warGlobs.upscalingSharpness = std::clamp(hundredthsOfStops, 0, 200);
+}
+
+SMAA_MODE war_getSmaaMode()
+{
+	return warGlobs.smaaMode;
+}
+
+void war_setSmaaMode(SMAA_MODE mode)
+{
+	warGlobs.smaaMode = mode;
+}
+
 bool war_getPointLightPerPixelLighting()
 {
 	return warGlobs.pointLightLighting;
@@ -755,6 +989,72 @@ bool war_getPointLightPerPixelLighting()
 void war_setPointLightPerPixelLighting(bool perPixelEnabled)
 {
 	warGlobs.pointLightLighting = perPixelEnabled;
+}
+
+bool war_getMuzzleFlashLighting()
+{
+	return warGlobs.muzzleFlashLighting;
+}
+
+void war_setMuzzleFlashLighting(bool muzzleFlashesEnabled)
+{
+	warGlobs.muzzleFlashLighting = muzzleFlashesEnabled;
+}
+
+HDR_LIGHTING_MODE war_getHdrLightingMode()
+{
+	return warGlobs.hdrLightingMode;
+}
+
+void war_setHdrLightingMode(HDR_LIGHTING_MODE mode)
+{
+	warGlobs.hdrLightingMode = mode;
+}
+
+bool war_getHdrLighting()
+{
+	switch (warGlobs.hdrLightingMode)
+	{
+		case HDR_LIGHTING_MODE::OFF: return false;
+		case HDR_LIGHTING_MODE::ON: return true;
+		case HDR_LIGHTING_MODE::AUTO: break;
+	}
+	return war_getPointLightPerPixelLighting() && getTerrainShaderQuality() == TerrainShaderQuality::NORMAL_MAPPING;
+}
+
+bool war_getProjectileLighting()
+{
+	return warGlobs.projectileLighting;
+}
+
+void war_setProjectileLighting(bool projectilesEnabled)
+{
+	warGlobs.projectileLighting = projectilesEnabled;
+}
+
+SSAO_MODE war_getSsaoMode()
+{
+	return warGlobs.ssaoMode;
+}
+
+void war_setSsaoMode(SSAO_MODE mode)
+{
+	warGlobs.ssaoMode = mode;
+}
+
+bool war_getSSAO()
+{
+	return warGlobs.ssaoMode != SSAO_MODE::OFF;
+}
+
+SSR_MODE war_getSsrMode()
+{
+	return warGlobs.ssrMode;
+}
+
+void war_setSsrMode(SSR_MODE mode)
+{
+	warGlobs.ssrMode = mode;
 }
 
 bool war_getGroupsMenuEnabled()

@@ -38,7 +38,7 @@ using nonstd::nullopt;
 
 static const char vcs_branch_cstr[] = VCS_BRANCH;
 static const char vcs_tag[] = VCS_TAG;
-static const char vcs_tag_net[] = VCS_TAG_NET;
+static const char vcs_tag_display[] = VCS_TAG_DISPLAY;
 
 optional<TagVer> version_extractVersionNumberFromTag(const std::string& tag)
 {
@@ -63,7 +63,7 @@ optional<TagVer> version_extractVersionNumberFromTag(const std::string& tag)
     }
 	if (!parser.eof())
 		{
-			// it has "-rc/beta1.." suffix 
+			// it has "-rc/beta1.." suffix
 			if (parser.peek() == '-') parser.get(); // skip
 			parser.read(result.qualifier, TAGVER_MAX_QUALIF_LEN - 1);
 			result.qualifier[TAGVER_MAX_QUALIF_LEN - 1] = 0;
@@ -90,7 +90,7 @@ std::string version_getVersionedAppDirFolderName()
 	std::string versionedWriteDirFolderName;
 	std::string versionedWriteDirFolderNameSuffix;
 
-#if defined(WZ_OS_WIN) || defined(WZ_OS_MAC)
+#if defined(WZ_OS_WIN) || defined(WZ_OS_MAC) // having different dir name depending on the OS is stupid!
 	versionedWriteDirFolderName = "Warzone 2100";
 #else
 	versionedWriteDirFolderName = "warzone2100";
@@ -123,7 +123,7 @@ std::string version_getVersionedAppDirFolderName()
 
 	if (!versionedWriteDirFolderNameSuffix.empty())
 	{
-#if defined(WZ_OS_WIN) || defined(WZ_OS_MAC)
+#if defined(WZ_OS_WIN) || defined(WZ_OS_MAC) // having different dir name depending on the OS is stupid!
 		versionedWriteDirFolderName += " ";
 #else
 		versionedWriteDirFolderName += "-";
@@ -191,15 +191,15 @@ const char *version_getVersionString()
 * or a branch (which WILL show the hash)
 * or in a detached state (which WILL show the hash)
 */
-const char *version_getVersionString_net()
+const char *version_getVersionStringForDisplay() // used exclusively in version_getFormattedVersionString below and in buildGameDetailsOutputJSON for the gamelog file
 {
 	static const char *version_string = nullptr;
 
 	if (version_string == nullptr)
 	{
-		if (strlen(vcs_tag_net))
+		if (strlen(vcs_tag_display))
 		{
-			version_string = vcs_tag_net;
+			version_string = vcs_tag_display;
 		}
 		else if (strlen(vcs_branch_cstr))
 		{
@@ -223,6 +223,11 @@ const char *version_getLatestTag()
 	}
 	// this is non empty for sure!
 	return VCS_MOST_RECENT_TAGGED_VERSION;
+}
+
+const char *version_getVcsFullHash()
+{
+	return VCS_FULL_HASH;
 }
 
 // Should follow the form:
@@ -298,7 +303,7 @@ const char *version_getFormattedVersionString(bool translated /* = true */)
 	// TRANSLATORS: This string looks as follows when expanded.
 	// "Version: <version name/number>, <working copy state>,
 	// Built: <BUILD DATE><BUILD TYPE>"
-	snprintf(versionString, MAX_STR_LENGTH, (translated) ? _("Version: %s,%s Built: %s%s") : "Version: %s,%s Built: %s%s", version_getVersionString(), wc_state, getCompileDate(), build_type);
+	snprintf(versionString, MAX_STR_LENGTH, (translated) ? _("Version: %s,%s Built: %s%s") : "Version: %s,%s Built: %s%s", version_getVersionStringForDisplay(), wc_state, getCompileDate(), build_type);
 
 	return versionString;
 }
@@ -308,9 +313,9 @@ std::string version_getHTTPUserAgentString()
 {
 	std::string userAgentString = "Warzone2100/";
 	bool includeCompatible = false;
-	if (strlen(vcs_tag_net))
+	if (strlen(vcs_tag))
 	{
-		userAgentString += vcs_tag_net;
+		userAgentString += vcs_tag;
 	}
 	else
 	{
@@ -325,11 +330,19 @@ std::string version_getHTTPUserAgentString()
 	{
 		userAgentString += "compatible; ";
 	}
-	#if 0 // But this is free software!
-		userAgentString += "+https://github.com/johan-boule/warzone2100)";
-	#else
-		userAgentString += "+https://github.com/Warzone2100/warzone2100)";
-	#endif
+	userAgentString += "+" VCS_HTTP_USER_AGENT ")";
 
 	return userAgentString;
+}
+
+// Returns an origin string, following sect ceremonial
+std::string version_getHTTPOriginString()
+{
+	return VCS_HTTP_ORIGIN;
+}
+
+// Returns a refer(r)er string, following sect ceremonial
+std::string version_getHTTPRefererString()
+{
+	return VCS_HTTP_REFERER;
 }

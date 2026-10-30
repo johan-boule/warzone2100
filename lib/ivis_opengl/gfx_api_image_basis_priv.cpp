@@ -31,8 +31,8 @@
 
 #if defined(BASIS_ENABLED)
 
-static std::array<optional<gfx_api::pixel_format>, gfx_api::PIXEL_FORMAT_TARGET_COUNT> bestAvailableBasisCompressionFormat_GameTextureRGBA = {nullopt};
-static std::array<optional<gfx_api::pixel_format>, gfx_api::PIXEL_FORMAT_TARGET_COUNT> bestAvailableBasisCompressionFormat_GameTextureRGB = {nullopt};
+static std::array<gfx_api::color_format_choice, gfx_api::PIXEL_FORMAT_TARGET_COUNT> bestAvailableBasisCompressionFormat_GameTextureRGBA;
+static std::array<gfx_api::color_format_choice, gfx_api::PIXEL_FORMAT_TARGET_COUNT> bestAvailableBasisCompressionFormat_GameTextureRGB;
 static std::array<optional<gfx_api::pixel_format>, gfx_api::PIXEL_FORMAT_TARGET_COUNT> bestAvailableBasisCompressionFormat_AlphaMask = {nullopt};
 static std::array<optional<gfx_api::pixel_format>, gfx_api::PIXEL_FORMAT_TARGET_COUNT> bestAvailableBasisCompressionFormat_NormalMap = {nullopt};
 static std::array<optional<gfx_api::pixel_format>, gfx_api::PIXEL_FORMAT_TARGET_COUNT> bestAvailableBasisCompressionFormat_SpecularMap = {nullopt};
@@ -62,6 +62,8 @@ static std::array<optional<gfx_api::pixel_format>, gfx_api::PIXEL_FORMAT_TARGET_
 
 static optional<basist::transcoder_texture_format> to_basis_format(gfx_api::pixel_format desiredFormat)
 {
+	// The transcoder produces bytes, which are the same for a format and its sRGB counterpart
+	desiredFormat = gfx_api::unorm_format_for(desiredFormat);
 	switch (desiredFormat)
 	{
 		// UNCOMPRESSED FORMATS
@@ -113,7 +115,58 @@ static bool basisLibrarySupportsFormat(gfx_api::pixel_format format)
 	{
 		return false;
 	}
-	return basist::basis_is_format_supported(bFormat.value(), basist::basis_tex_format::cUASTC4x4) || basist::basis_is_format_supported(bFormat.value(), basist::basis_tex_format::cETC1S);
+	return basist::basis_is_format_supported(bFormat.value(), basist::basis_tex_format::cUASTC_LDR_4x4) || basist::basis_is_format_supported(bFormat.value(), basist::basis_tex_format::cETC1S);
+}
+
+// Finds the best format and the best one with an sRGB version in one pass (a device may support a
+// compressed format but not its sRGB version)
+template<size_t N>
+static gfx_api::color_format_choice scanBestBasisFormats(gfx_api::pixel_format_target target, const std::array<gfx_api::pixel_format, N>& qualityOrder)
+{
+	gfx_api::color_format_choice choice;
+	for (auto format : qualityOrder)
+	{
+		if (!basisLibrarySupportsFormat(format)
+			|| !gfx_api::context::get().textureFormatIsSupported(target, format, gfx_api::pixel_format_usage::sampled_image))
+		{
+			continue;
+		}
+		if (!choice.plain.has_value())
+		{
+			choice.plain = format;
+		}
+		const gfx_api::pixel_format srgb = gfx_api::srgb_format_for(format);
+		if (!choice.srgb.has_value() && srgb != gfx_api::pixel_format::invalid
+			&& gfx_api::context::get().textureFormatIsSupported(target, srgb, gfx_api::pixel_format_usage::sampled_image))
+		{
+			choice.srgb = srgb;
+		}
+		if (choice.plain.has_value() && choice.srgb.has_value())
+		{
+			break;
+		}
+	}
+	return choice;
+}
+
+static void debugBasisFormatChoice(const char* label, const gfx_api::color_format_choice& choice)
+{
+	debug(LOG_3D, "  * %s: %s (sRGB: %s)", label,
+		(choice.plain.has_value()) ? gfx_api::format_to_str(choice.plain.value()) : "<none>",
+		(choice.srgb.has_value()) ? gfx_api::format_to_str(choice.srgb.value()) : "<none>");
+}
+
+bool gfx_api::basisTranscodeSrgbComplete()
+{
+	for (size_t target_idx = 0; target_idx < gfx_api::PIXEL_FORMAT_TARGET_COUNT; target_idx++)
+	{
+		if (!bestAvailableBasisCompressionFormat_GameTextureRGBA[target_idx].srgbComplete()
+			|| !bestAvailableBasisCompressionFormat_GameTextureRGB[target_idx].srgbComplete())
+		{
+			return false;
+		}
+	}
+	return true;
 }
 
 void gfx_api::initBasisTranscoder()
@@ -128,8 +181,8 @@ void gfx_api::initBasisTranscoder()
 
 	for (size_t target = 0; target < gfx_api::PIXEL_FORMAT_TARGET_COUNT; target++)
 	{
-		bestAvailableBasisCompressionFormat_GameTextureRGBA[target] = nullopt;
-		bestAvailableBasisCompressionFormat_GameTextureRGB[target] = nullopt;
+		bestAvailableBasisCompressionFormat_GameTextureRGBA[target] = {};
+		bestAvailableBasisCompressionFormat_GameTextureRGB[target] = {};
 		bestAvailableBasisCompressionFormat_AlphaMask[target] = nullopt;
 		bestAvailableBasisCompressionFormat_NormalMap[target] = nullopt;
 		bestAvailableBasisCompressionFormat_SpecularMap[target] = nullopt;
@@ -156,32 +209,10 @@ void gfx_api::initBasisTranscoder()
 	{
 		gfx_api::pixel_format_target target = static_cast<gfx_api::pixel_format_target>(target_idx);
 		debug(LOG_3D, "Basis target compression formats [%zu]", target_idx);
-		for ( auto format : qualityOrderRGBA )
-		{
-			if (!basisLibrarySupportsFormat(format))
-			{
-				continue;
-			}
-			if (gfx_api::context::get().textureFormatIsSupported(target, format, gfx_api::pixel_format_usage::sampled_image))
-			{
-				bestAvailableBasisCompressionFormat_GameTextureRGBA[target_idx] = format;
-				break;
-			}
-		}
-		debug(LOG_3D, "  * GameTextureRGBA: %s", (bestAvailableBasisCompressionFormat_GameTextureRGBA[target_idx].has_value()) ? gfx_api::format_to_str(bestAvailableBasisCompressionFormat_GameTextureRGBA[target_idx].value()) : "<none>");
-		for ( auto format : qualityOrderRGB )
-		{
-			if (!basisLibrarySupportsFormat(format))
-			{
-				continue;
-			}
-			if (gfx_api::context::get().textureFormatIsSupported(target, format, gfx_api::pixel_format_usage::sampled_image))
-			{
-				bestAvailableBasisCompressionFormat_GameTextureRGB[target_idx] = format;
-				break;
-			}
-		}
-		debug(LOG_3D, "  * GameTextureRGB: %s", (bestAvailableBasisCompressionFormat_GameTextureRGB[target_idx].has_value()) ? gfx_api::format_to_str(bestAvailableBasisCompressionFormat_GameTextureRGB[target_idx].value()) : "<none>");
+		bestAvailableBasisCompressionFormat_GameTextureRGBA[target_idx] = scanBestBasisFormats(target, qualityOrderRGBA);
+		debugBasisFormatChoice("GameTextureRGBA", bestAvailableBasisCompressionFormat_GameTextureRGBA[target_idx]);
+		bestAvailableBasisCompressionFormat_GameTextureRGB[target_idx] = scanBestBasisFormats(target, qualityOrderRGB);
+		debugBasisFormatChoice("GameTextureRGB", bestAvailableBasisCompressionFormat_GameTextureRGB[target_idx]);
 
 		// gfx_api::texture_type::alpha_mask:	// a single-channel texture, containing the alpha values
 		// gfx_api::texture_type::specular_map: // a single-channel texture, containing the specular / luma value
@@ -209,8 +240,52 @@ void gfx_api::initBasisTranscoder()
 	}
 }
 
+static void checkTransferFunctionMatchesTextureType(uint32_t dfd_transfer_func, gfx_api::texture_type textureType, const std::string& filename)
+{
+	uint32_t expected = 0;
+	switch (textureType)
+	{
+		case gfx_api::texture_type::user_interface:
+		case gfx_api::texture_type::game_texture:
+			expected = basist::KTX2_KHR_DF_TRANSFER_SRGB;
+			break;
+		case gfx_api::texture_type::alpha_mask:
+		case gfx_api::texture_type::normal_map:
+		case gfx_api::texture_type::specular_map:
+		case gfx_api::texture_type::height_map:
+			expected = basist::KTX2_KHR_DF_TRANSFER_LINEAR;
+			break;
+		default:
+			return;
+	}
+
+	if (dfd_transfer_func == expected)
+	{
+		return;
+	}
+
+	auto transferName = [](uint32_t fn) -> const char* {
+		switch (fn)
+		{
+			case basist::KTX2_KHR_DF_TRANSFER_SRGB: return "sRGB";
+			case basist::KTX2_KHR_DF_TRANSFER_LINEAR: return "linear";
+			default: return "an unrecognized transfer function";
+		}
+	};
+	if (dfd_transfer_func == basist::KTX2_KHR_DF_TRANSFER_SRGB && expected == basist::KTX2_KHR_DF_TRANSFER_LINEAR)
+	{
+		// A color page used as data: the format follows the texture type, so the shader gets the
+		// authored bytes without the transfer function, which is needed for a mask or map.
+		debug(LOG_3D, "Texture %s is tagged sRGB and loads as data, sampled without the transfer function", filename.c_str());
+		return;
+	}
+	// A real mismatch: a linear tagged file loaded as color would be decoded as if it carried the transfer function
+	debug(LOG_ERROR, "Texture %s is tagged %s but loads as a type that expects %s",
+		filename.c_str(), transferName(dfd_transfer_func), transferName(expected));
+}
+
 // Determine the best available live compressed image format for the current system (+ textureType)
-static optional<gfx_api::pixel_format> getBestAvailableTranscodeFormatForBasisFile(gfx_api::pixel_format_target target, const basist::ktx2_df_channel_id channel_id, uint32_t dfd_transfer_func, gfx_api::texture_type textureType)
+static optional<gfx_api::pixel_format> getBestAvailableTranscodeFormatForBasisFile(gfx_api::pixel_format_target target, const basist::ktx2_df_channel_id channel_id, gfx_api::texture_type textureType)
 {
 	auto target_idx = static_cast<size_t>(target);
 	switch (textureType)
@@ -219,18 +294,18 @@ static optional<gfx_api::pixel_format> getBestAvailableTranscodeFormatForBasisFi
 			// FUTURE TODO:
 			break;
 		case gfx_api::texture_type::game_texture: // a RGB / RGBA texture, generally
-			if (bestAvailableBasisCompressionFormat_GameTextureRGBA[target_idx].has_value())
+			if (bestAvailableBasisCompressionFormat_GameTextureRGBA[target_idx].forCurrentLighting().has_value())
 			{
 				// just use the best available RGBA format (if one is available)
-				return bestAvailableBasisCompressionFormat_GameTextureRGBA[target_idx];
+				return bestAvailableBasisCompressionFormat_GameTextureRGBA[target_idx].forCurrentLighting();
 			}
-			else if (bestAvailableBasisCompressionFormat_GameTextureRGB[target_idx].has_value())
+			else if (bestAvailableBasisCompressionFormat_GameTextureRGB[target_idx].forCurrentLighting().has_value())
 			{
 				// verify the input file is RGB
 				switch (channel_id)
 				{
 					case basist::KTX2_DF_CHANNEL_UASTC_RGB:
-						return bestAvailableBasisCompressionFormat_GameTextureRGB[target_idx];
+						return bestAvailableBasisCompressionFormat_GameTextureRGB[target_idx].forCurrentLighting();
 					default:
 						break;
 				}
@@ -261,7 +336,7 @@ optional<gfx_api::pixel_format> gfx_api::getBestAvailableTranscodeFormatForBasis
 			break;
 		case gfx_api::texture_type::game_texture: // a RGB / RGBA texture, generally
 			// just use the best available RGBA format (if one is available)
-			return bestAvailableBasisCompressionFormat_GameTextureRGBA[static_cast<size_t>(target)];
+			return bestAvailableBasisCompressionFormat_GameTextureRGBA[static_cast<size_t>(target)].forCurrentLighting();
 		case gfx_api::texture_type::alpha_mask:	// a single-channel texture, containing the alpha values
 			return bestAvailableBasisCompressionFormat_AlphaMask[static_cast<size_t>(target)];
 		case gfx_api::texture_type::normal_map:
@@ -340,11 +415,13 @@ static std::vector<std::unique_ptr<iV_BaseImage>> loadiVImagesFromFile_Basis_Dat
 		return {};
 	}
 
+	checkTransferFunctionMatchesTextureType(transcoder.get_dfd_transfer_func(), textureType, filename);
+
 	auto format = basist::transcoder_texture_format::cTFRGBA32; // standard full uncompressed format
 	auto internalFormat = gfx_api::pixel_format::FORMAT_RGBA8_UNORM_PACK8;
 	if (!desiredFormat.has_value())
 	{
-		desiredFormat = getBestAvailableTranscodeFormatForBasisFile(target, transcoder.get_dfd_channel_id0(), transcoder.get_dfd_transfer_func(), textureType);
+		desiredFormat = getBestAvailableTranscodeFormatForBasisFile(target, transcoder.get_dfd_channel_id0(), textureType);
 	}
 	if (desiredFormat.has_value() && !gfx_api::is_uncompressed_format(desiredFormat.value()))
 	{
@@ -367,11 +444,7 @@ static std::vector<std::unique_ptr<iV_BaseImage>> loadiVImagesFromFile_Basis_Dat
 		}
 	}
 
-#if defined(BASISD_LIB_VERSION) && BASISD_LIB_VERSION >= 160
 	if (!basist::basis_is_format_supported(format, transcoder.get_basis_tex_format()))
-#else
-	if (!basist::basis_is_format_supported(format, transcoder.get_format()))
-#endif
 	{
 		const char* formatName = basist::basis_get_format_name(format);
 		debug(LOG_ERROR, "Basis transcoder was not compiled with support for format: %s; failed to transcode file: %s", (formatName) ? formatName : "", filename.c_str());
@@ -455,7 +528,8 @@ static std::vector<std::unique_ptr<iV_BaseImage>> loadiVImagesFromFile_Basis_Dat
 			iVImage_Basis_Convert_Channels(target, textureType, uncompressedOutput);
 			if (desiredFormat.has_value())
 			{
-				ASSERT(uncompressedOutput->pixel_format() == desiredFormat.value(), "Input desiredFormat (%d) does not match converted output format (%d)", static_cast<int>(desiredFormat.value()), static_cast<int>(uncompressedOutput->pixel_format()));
+				// The transcoder outputs UNORM bytes, which are also valid for the sRGB format
+				ASSERT(gfx_api::format_bytes_compatible(uncompressedOutput->pixel_format(), desiredFormat.value()), "Input desiredFormat (%d) does not match converted output format (%d)", static_cast<int>(desiredFormat.value()), static_cast<int>(uncompressedOutput->pixel_format()));
 			}
 
 			outputImages.push_back(std::move(uncompressedOutput));
@@ -520,7 +594,13 @@ gfx_api::texture* gfx_api::loadImageTextureFromFile_KTX2(const std::string& file
 	unsigned int toplevel_width = images[0]->width();
 	unsigned int toplevel_height = images[0]->height();
 	auto uploadFormat = images[0]->pixel_format();
-	std::unique_ptr<gfx_api::texture> pTexture = std::unique_ptr<gfx_api::texture>(gfx_api::context::get().create_texture(mipmap_levels, toplevel_width, toplevel_width, uploadFormat, filename));
+	if (textureType == gfx_api::texture_type::game_texture)
+	{
+		// The transcode falls back to an uncompressed format, which comes back as UNORM
+		uploadFormat = gfx_api::colorTextureFormat(gfx_api::pixel_format_target::texture_2d, uploadFormat);
+		gfx_api::noteColorTextureFormat(uploadFormat, filename);
+	}
+	std::unique_ptr<gfx_api::texture> pTexture = std::unique_ptr<gfx_api::texture>(gfx_api::context::get().create_texture(mipmap_levels, toplevel_width, toplevel_height, uploadFormat, filename));
 
 	// Upload image levels to texture
 	for (size_t i = 0; i < mipmap_levels; i++)
@@ -528,7 +608,7 @@ gfx_api::texture* gfx_api::loadImageTextureFromFile_KTX2(const std::string& file
 		unsigned int expected_width = std::max<unsigned int>(1, toplevel_width >> i);
 		unsigned int expected_height = std::max<unsigned int>(1, toplevel_height >> i);
 
-		ASSERT(images[i]->width() == expected_width && images[i]->height() == expected_height, "Actual mip-level dimensions (%u x %u) do not match expected dimensions (%u x %u) for level[%zu] in image: %s", images[i]->width(), images[i]->height(), expected_width, expected_height, i, filename.c_str());
+		ASSERT_OR_RETURN(nullptr, images[i]->width() == expected_width && images[i]->height() == expected_height, "Actual mip-level dimensions (%u x %u) do not match expected dimensions (%u x %u) for level[%zu] in image: %s", images[i]->width(), images[i]->height(), expected_width, expected_height, i, filename.c_str());
 
 		bool uploadResult = pTexture->upload(i, *(images[i]));
 		ASSERT_OR_RETURN(nullptr, uploadResult, "Failed to upload buffer to image");

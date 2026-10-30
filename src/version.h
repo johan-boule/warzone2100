@@ -29,16 +29,19 @@
 #include <algorithm>
 
 const char *version_getVersionString();
-const char *version_getVersionString_net();
+const char *version_getVersionStringForDisplay();
 const char *version_getFormattedVersionString(bool translated = true); // not thread-safe
 std::string version_getVersionedAppDirFolderName();
 std::string version_getVersionedModsFolderPath(std::string subFolders = "");
 const char* WZ_DECL_PURE version_getLatestTag();
+const char* WZ_DECL_PURE version_getVcsFullHash();
 
 std::string version_getBuildIdentifierReleaseString();
 std::string version_getBuildIdentifierReleaseEnvironment();
 
 std::string version_getHTTPUserAgentString();
+std::string version_getHTTPOriginString();
+std::string version_getHTTPRefererString();
 
 #define TAGVER_MAX_QUALIF_LEN 16
 struct TagVer
@@ -54,7 +57,8 @@ struct TagVer
         qualifier[TAGVER_MAX_QUALIF_LEN - 1] = 0;
     }
 
-	TagVer(const std::vector<uint16_t> &v, const char *qualifier_) : version {v[0], v[1], v[2]}
+	TagVer(const std::vector<uint16_t> &v, const char *qualifier_)
+		: version {v.size() > 0 ? v[0] : uint16_t(0), v.size() > 1 ? v[1] : uint16_t(0), v.size() > 2 ? v[2] : uint16_t(0)}
 	{
 		strncpy(qualifier, qualifier_, TAGVER_MAX_QUALIF_LEN - 1);
         qualifier[TAGVER_MAX_QUALIF_LEN - 1] = 0;

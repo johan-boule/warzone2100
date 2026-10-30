@@ -45,16 +45,30 @@
 /** How long to display a single electronic warfare shimmmer. */
 #define ELEC_DAMAGE_DURATION    (GAME_TICKS_PER_SEC/5)
 
+#define PROJ_PENETRATE_SLOT -1731
+
 bool	proj_InitSystem();	///< Initialize projectiles subsystem.
 void	proj_UpdateAll();	///< Frame update for projectiles.
 bool	proj_Shutdown();	///< Shut down projectile subsystem.
 
 PROJECTILE *proj_GetFirst();	///< Get first projectile in the list.
 PROJECTILE *proj_GetNext();		///< Get next projectile in the list.
+size_t	proj_Count();		///< Number of projectiles currently in flight.
 
 void proj_AddActiveProjectile(PROJECTILE* p); ///< Add allocated projectile `p` to the list of active projectiles
 
+/// Allocate a projectile in the global storage for restoration from a saved match state.
+/// Caller fills in the remaining fields and then calls proj_AddActiveProjectile().
+PROJECTILE* proj_AllocForRestore(uint32_t id, unsigned player);
+/// The counter new projectile ids are made from (GameState save / restore).
+uint32_t proj_GetIdCounter();
+void proj_SetIdCounter(uint32_t counter);
+
 void	proj_FreeAllProjectiles();	///< Free all projectiles in the list.
+/// Take back the expected damage of every projectile in flight (see aiObjectAddExpectedDamage). Call before
+/// proj_FreeAllProjectiles() while the projectiles' targets still exist, where they outlive the projectiles
+/// (ex. at the end of a mission).
+void	proj_ReleaseExpectedDamage();
 
 void setExpGain(int player, int gain);
 int getExpGain(int player);

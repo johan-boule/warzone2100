@@ -270,6 +270,7 @@ lib/framework/lexer_input.cpp
 lib/framework/mac_wrapper.cpp
 lib/framework/memory_pool.cpp
 lib/framework/physfs_ext.cpp
+lib/framework/resource_loading_controller.cpp
 lib/framework/stdio_ext.cpp
 lib/framework/stringsearch.cpp
 lib/framework/strres.cpp
@@ -354,8 +355,11 @@ lib/sdl/gfx_api_sdl.cpp
 lib/sdl/gfx_api_vk_sdl.cpp
 lib/sdl/main_sdl.cpp
 lib/sdl/resume_init_helpers.cpp
+lib/sequence/ogg_decoder.cpp
 lib/sequence/sequence.cpp
-lib/sequence/timer.cpp
+lib/sequence/video_decoder.cpp
+lib/sequence/video_provider.cpp
+lib/sequence/webm_decoder.cpp
 lib/sound/audio.cpp
 lib/sound/audio_id.cpp
 lib/sound/cdaudio.cpp
@@ -364,8 +368,10 @@ lib/sound/oggvorbis.cpp
 lib/sound/openal_error.cpp
 lib/sound/openal_info.cpp
 lib/sound/openal_track.cpp
+lib/sound/opus_packet.cpp
 lib/sound/playlist.cpp
 lib/sound/track.cpp
+lib/sound/vorbis_packet.cpp
 lib/widget/alignment.cpp
 lib/widget/bar.cpp
 lib/widget/button.cpp
@@ -521,6 +527,11 @@ src/radar.cpp
 src/random.cpp
 src/raycast.cpp
 src/research.cpp
+src/researchtree/researchdetailpopover.cpp
+src/researchtree/researchtracks.cpp
+src/researchtree/researcheffecttext.cpp
+src/researchtree/researchtreecanvas.cpp
+src/researchtree/researchtreeview.cpp
 src/scores.cpp
 src/screens/chatscreen.cpp
 src/screens/guidescreen.cpp
@@ -528,6 +539,7 @@ src/screens/helpscreen.cpp
 src/screens/ingameopscreen.cpp
 src/screens/joiningscreen.cpp
 src/screens/netpregamescreen.cpp
+src/screens/researchtreescreen.cpp
 src/selection.cpp
 src/seqdisp.cpp
 src/shadowcascades.cpp

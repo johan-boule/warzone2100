@@ -30,6 +30,7 @@
 #include "featuredef.h"
 #include "power.h"
 #include "gateway.h"
+#include "game_world.h"
 
 //mission types
 
@@ -49,37 +50,30 @@ struct LANDING_ZONE
 	uint8_t y2;
 };
 
+// How the mission timer behaves
+// IMPORTANT: values are exposed to scripts as the TIMER_* constants and stored in savegames - do not renumber!
+enum MISSION_TIMER_MODE
+{
+	TIMER_NONE = -1,		// no mission timer (internal and savegames only, not settable from scripts)
+	TIMER_COUNTDOWN = 0,	// counts down from mission.time and triggers a timeout when it expires (default)
+	TIMER_COUNTUP = 1,		// counts up (elapsed time since startTime) and never expires
+	TIMER_PAUSE = 2,		// frozen at mission.time and never expires
+};
+
 //storage structure for values that need to be kept between missions
 struct MISSION
 {
 	LEVEL_TYPE			type;							//defines which start and end functions to use - see levels_type in levels.h
-	std::unique_ptr<MAPTILE[]>		psMapTiles;					//the original mapTiles
-	int32_t                         mapWidth;                       //the original mapWidth
-	int32_t                         mapHeight;                      //the original mapHeight
-	std::unique_ptr<uint8_t[]>      psBlockMap[AUX_MAX];
-	std::unique_ptr<uint8_t[]>		psAuxMap[MAX_PLAYERS + AUX_MAX];
-	GATEWAY_LIST                    psGateways;                     //the gateway list
-	int32_t                         scrollMinX;                     //scroll coords for original map
-	int32_t                         scrollMinY;
-	int32_t                         scrollMaxX;
-	int32_t                         scrollMaxY;
-	//original object lists
-	PerPlayerStructureLists apsStructLists;
-	PerPlayerExtractorLists apsExtractorLists;
+	GameWorld gameWorld;
 
-	PerPlayerDroidLists              apsDroidLists;
-	GlobalFeatureList               apsFeatureList;
-	GlobalSensorList                apsSensorList;
-	GlobalOilList                   apsOilList;
-	PerPlayerFlagPositionLists      apsFlagPosLists;
 	int32_t                         asCurrentPower[MAX_PLAYERS];
 
 	UDWORD				startTime;			//time the mission started
-	SDWORD				time;				//how long the mission can last
-	// < 0 = no limit
+	SDWORD				time;				//countdown limit, or the frozen time for TIMER_PAUSE
+	// unused for TIMER_COUNTUP/TIMER_NONE
+	MISSION_TIMER_MODE	timerMode = TIMER_NONE;	//how the mission timer behaves (countdown, count-up, ...)
 	SDWORD				ETA;				//time taken for reinforcements to arrive
 	// < 0 = none allowed
-	UDWORD				cheatTime;			//time the cheating started (mission time-wise!)
 
 	UWORD               homeLZ_X;           //selectedPlayer's LZ x and y
 	UWORD               homeLZ_Y;

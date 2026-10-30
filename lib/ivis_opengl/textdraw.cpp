@@ -83,6 +83,10 @@ static float font_colour[4] = {1.f, 1.f, 1.f, 1.f};
 float _horizScaleFactor = 1.0f;
 float _vertScaleFactor = 1.0f;
 
+// Changes whenever a font's faces are recreated (cached WzText renders of that font are then stale)
+static uint32_t fontGeneration[font_count] = {};
+static uint32_t lastFontGeneration = 0;
+
 /***************************************************************************
  *
  *	Internal classes
@@ -522,8 +526,9 @@ struct TextRun
 	hb_language_t language;
 	FTFace* fontFace;
 
-	hb_buffer_t* buffer = nullptr; // owned
 	unsigned int glyphCount;
+	// Point into the shaper's shared HarfBuzz buffer, and so are only valid until the next run is
+	// shaped. Not owned here.
 	hb_glyph_info_t* glyphInfos = nullptr;
 	hb_glyph_position_t* glyphPositions = nullptr;
 	const uint32_t* codePoints = nullptr;
@@ -533,14 +538,6 @@ public:
 	TextRun(const uint32_t* codePoints, int startOffset, int endOffset, hb_script_t script, hb_direction_t direction, hb_language_t language, FTFace& face)
 	: startOffset(startOffset), endOffset(endOffset), script(script), direction(direction), language(language), fontFace(&face), codePoints(codePoints)
 	{ }
-
-	~TextRun()
-	{
-		if (buffer)
-		{
-			hb_buffer_destroy(buffer);
-		}
-	}
 
 public:
 	// Prevent copies
@@ -552,12 +549,6 @@ public:
 	{
 		if (this != &other)
 		{
-			// Free the existing (owned) buffer, if any
-			if (buffer)
-			{
-				hb_buffer_destroy(buffer);
-			}
-
 			// Get the other data
 			startOffset = other.startOffset;
 			endOffset = other.endOffset;
@@ -566,14 +557,12 @@ public:
 			language = other.language;
 			fontFace = other.fontFace;
 
-			buffer = other.buffer; // owned
 			glyphCount = other.glyphCount;
 			glyphInfos = other.glyphInfos;
 			glyphPositions = other.glyphPositions;
 			codePoints = other.codePoints;
 
 			// Reset other's pointer types
-			other.buffer = nullptr;
 			other.glyphInfos = nullptr;
 			other.glyphPositions = nullptr;
 		}
@@ -644,11 +633,24 @@ struct TextShaper
 		int32_t y_advance = 0;
 	};
 
+	// One buffer reused for every run of every shape. HarfBuzz recommends this over creating and
+	// destroying a buffer per run. Shaping a run resets it, so a run's glyph arrays must be consumed
+	// before the next run is shaped.
+	hb_buffer_t* m_hbBuffer = nullptr;
+
 	TextShaper()
-	{ }
+	{
+		m_hbBuffer = hb_buffer_create();
+	}
 
 	~TextShaper()
-	{ }
+	{
+		if (m_hbBuffer)
+		{
+			hb_buffer_destroy(m_hbBuffer);
+			m_hbBuffer = nullptr;
+		}
+	}
 
 	// Returns the maximum text run length (in WzString characters) that fits within a max width (supplied *IN PIXELS*)
 	uint32_t getTextMaxLenForWidth(const WzString& text, iV_fonts fontID, uint32_t maxWidthInPixels, bool rightToLeft)
@@ -1037,15 +1039,15 @@ struct TextShaper
 
 		ShapingResult shapingResult;
 
-		for (int i = 0; i < textRuns.size(); ++i)
-		{
-			shapeHarfbuzz(textRuns[i], *textRuns[i].fontFace);
-		}
-
 		int32_t x = 0;
 		int32_t y = 0;
 
-		auto processTextRunGlyphs = [&](const TextRun& run) {
+		// Shaping a run resets the shared HarfBuzz buffer its glyph arrays point into, so each run is
+		// shaped and consumed in the same step rather than shaping them all up front. Runs shape
+		// independently of one another, so this produces the same glyphs either way.
+		auto processTextRunGlyphs = [&](TextRun& run) {
+			shapeHarfbuzz(run, *run.fontFace);
+
 			for (unsigned int glyphIndex = 0; glyphIndex < run.glyphCount; ++glyphIndex)
 			{
 				hb_glyph_position_t& current_glyphPos = run.glyphPositions[glyphIndex];
@@ -1063,12 +1065,12 @@ struct TextShaper
 		if (!(FRIBIDI_IS_RTL(baseDirection)))
 		{
 #endif // defined(WZ_FRIBIDI_ENABLED)
-			std::for_each(textRuns.cbegin(), textRuns.cend(), processTextRunGlyphs);
+			std::for_each(textRuns.begin(), textRuns.end(), processTextRunGlyphs);
 #if defined(WZ_FRIBIDI_ENABLED)
 		}
 		else
 		{
-			std::for_each(textRuns.crbegin(), textRuns.crend(), processTextRunGlyphs);
+			std::for_each(textRuns.rbegin(), textRuns.rend(), processTextRunGlyphs);
 		}
 #endif // defined(WZ_FRIBIDI_ENABLED)
 
@@ -1089,22 +1091,24 @@ struct TextShaper
 		return shapeText(codePoints, fontID);
 	}
 
+	// Shapes one run into the shared buffer. The run's glyph arrays point into that buffer, so the run
+	// must be consumed before another one is shaped.
 	inline void shapeHarfbuzz(TextRun& run, FTFace& face)
 	{
-		run.buffer = hb_buffer_create();
-		hb_buffer_set_direction(run.buffer, run.direction);
-		hb_buffer_set_script(run.buffer, run.script);
-		hb_buffer_set_language(run.buffer, run.language);
-		hb_buffer_add_utf32(run.buffer, run.codePoints + run.startOffset,
+		hb_buffer_reset(m_hbBuffer);
+		hb_buffer_set_direction(m_hbBuffer, run.direction);
+		hb_buffer_set_script(m_hbBuffer, run.script);
+		hb_buffer_set_language(m_hbBuffer, run.language);
+		hb_buffer_add_utf32(m_hbBuffer, run.codePoints + run.startOffset,
                             run.endOffset - run.startOffset, 0,
                             run.endOffset - run.startOffset);
-		hb_buffer_set_flags(run.buffer, (hb_buffer_flags_t)(HB_BUFFER_FLAG_BOT | HB_BUFFER_FLAG_EOT));
-		std::array<hb_feature_t, 3> features = { {HBFeature::KerningOn, HBFeature::LigatureOn, HBFeature::CligOn} };
+		hb_buffer_set_flags(m_hbBuffer, (hb_buffer_flags_t)(HB_BUFFER_FLAG_BOT | HB_BUFFER_FLAG_EOT));
+		static const std::array<hb_feature_t, 3> features = { {HBFeature::KerningOn, HBFeature::LigatureOn, HBFeature::CligOn} };
 
-		hb_shape(face.m_font, run.buffer, features.data(), static_cast<unsigned int>(features.size()));
+		hb_shape(face.m_font, m_hbBuffer, features.data(), static_cast<unsigned int>(features.size()));
 
-		run.glyphInfos = hb_buffer_get_glyph_infos(run.buffer, &run.glyphCount);
-		run.glyphPositions = hb_buffer_get_glyph_positions(run.buffer, &run.glyphCount);
+		run.glyphInfos = hb_buffer_get_glyph_infos(m_hbBuffer, &run.glyphCount);
+		run.glyphPositions = hb_buffer_get_glyph_positions(m_hbBuffer, &run.glyphCount);
 	}
 };
 
@@ -1161,6 +1165,24 @@ static WZFontCollection* baseFonts = nullptr;
 static WZFontCollection* cjkFonts = nullptr;
 static bool failedToLoadCJKFonts = false;
 
+// Video text fonts: faces are created on demand at the bound size (a char size of 0 is unbound)
+struct VideoFontSlot
+{
+	int32_t charSize = 0; // 26.6 points
+	std::unique_ptr<FTFace> base;
+	std::unique_ptr<FTFace> cjk;
+};
+static VideoFontSlot videoFontSlots[font_video_4 - font_video_1 + 1];
+
+static optional<size_t> videoFontSlotIndex(iV_fonts fontID)
+{
+	if (fontID < font_video_1 || fontID > font_video_4)
+	{
+		return nullopt;
+	}
+	return static_cast<size_t>(fontID - font_video_1);
+}
+
 struct iVFontsHash
 {
     std::size_t operator()(iV_fonts FontID) const
@@ -1202,7 +1224,7 @@ static bool inline initializeCJKFontsIfNeeded()
 	return true;
 }
 
-static FTFace &getFTFace(iV_fonts FontID, hb_script_t script)
+static bool usesCJKFont(hb_script_t script)
 {
 	switch (script)
 	{
@@ -1211,30 +1233,69 @@ static FTFace &getFTFace(iV_fonts FontID, hb_script_t script)
 		case HB_SCRIPT_HANGUL:
 		case HB_SCRIPT_HIRAGANA:
 		case HB_SCRIPT_KATAKANA:
-			if (initializeCJKFontsIfNeeded())
-			{
-				switch (FontID)
-				{
-				default:
-				case font_regular:
-					return *(cjkFonts->regular);
-				case font_regular_bold:
-					return *(cjkFonts->regularBold);
-				case font_large:
-					return *(cjkFonts->bold);
-				case font_medium:
-					return *(cjkFonts->medium);
-				case font_medium_bold:
-					return *(cjkFonts->mediumBold);
-				case font_small:
-					return *(cjkFonts->small);
-				case font_bar:
-					return *(cjkFonts->smallBold);
-				}
-			}
-			break;
+			return true;
 		default:
-			break;
+			return false;
+	}
+}
+
+static FTFace *getVideoFontFace(size_t index, hb_script_t script)
+{
+	VideoFontSlot &slot = videoFontSlots[index];
+	ASSERT_OR_RETURN(nullptr, slot.charSize > 0, "Video font %zu is not bound", index + 1);
+	uint32_t horizDPI = static_cast<uint32_t>(DEFAULT_DPI * _horizScaleFactor);
+	uint32_t vertDPI = static_cast<uint32_t>(DEFAULT_DPI * _vertScaleFactor);
+	try {
+		if (usesCJKFont(script) && initializeCJKFontsIfNeeded())
+		{
+			if (!slot.cjk)
+			{
+				slot.cjk = std::make_unique<FTFace>(getGlobalFTlib().lib, CJK_FONT_PATH, slot.charSize, horizDPI, vertDPI, 400);
+			}
+			return slot.cjk.get();
+		}
+		if (!slot.base)
+		{
+			slot.base = std::make_unique<FTFace>(getGlobalFTlib().lib, "fonts/DejaVuSans.ttf", slot.charSize, horizDPI, vertDPI);
+		}
+	}
+	catch (const std::exception &e) {
+		debug(LOG_ERROR, "Failed to load video font:\n%s", e.what());
+		return nullptr;
+	}
+	return slot.base.get();
+}
+
+static FTFace &getFTFace(iV_fonts FontID, hb_script_t script)
+{
+	if (auto index = videoFontSlotIndex(FontID))
+	{
+		if (FTFace *face = getVideoFontFace(index.value(), script))
+		{
+			return *face;
+		}
+		FontID = font_regular;
+	}
+	if (usesCJKFont(script) && initializeCJKFontsIfNeeded())
+	{
+		switch (FontID)
+		{
+		default:
+		case font_regular:
+			return *(cjkFonts->regular);
+		case font_regular_bold:
+			return *(cjkFonts->regularBold);
+		case font_large:
+			return *(cjkFonts->bold);
+		case font_medium:
+			return *(cjkFonts->medium);
+		case font_medium_bold:
+			return *(cjkFonts->mediumBold);
+		case font_small:
+			return *(cjkFonts->small);
+		case font_bar:
+			return *(cjkFonts->smallBold);
+		}
 	}
 	switch (FontID)
 	{
@@ -1329,6 +1390,11 @@ void iV_TextInit(unsigned int horizScalePercentage, unsigned int vertScalePercen
 	// hb_language_get_default: "To avoid problems, call this function once before multiple threads can call it."
 	hb_language_get_default();
 
+	for (auto &generation : fontGeneration)
+	{
+		generation = ++lastFontGeneration;
+	}
+
 	bLoadedTextSystem = true;
 }
 
@@ -1341,6 +1407,12 @@ void iV_TextShutdown()
 	baseFonts = nullptr;
 	delete cjkFonts;
 	cjkFonts = nullptr;
+	for (auto &slot : videoFontSlots)
+	{
+		// the bound size stays: the faces are recreated on demand at the new DPI
+		slot.base.reset();
+		slot.cjk.reset();
+	}
 	delete textureID;
 	textureID = nullptr;
 	fontToEllipsisMap.clear();
@@ -1356,6 +1428,53 @@ void iV_TextUpdateScaleFactor(unsigned int horizScalePercentage, unsigned int ve
 	}
 	iV_TextShutdown();
 	iV_TextInit(horizScalePercentage, vertScalePercentage);
+}
+
+// The glyph cache is keyed by face pointer, so it is cleared whenever video font faces are freed
+static void releaseVideoFontFaces(VideoFontSlot &slot)
+{
+	if (!slot.base && !slot.cjk)
+	{
+		return;
+	}
+	slot.base.reset();
+	slot.cjk.reset();
+	if (glyphCache)
+	{
+		glyphCache->clear();
+	}
+}
+
+bool iV_BindVideoFont(iV_fonts fontID, float pointSize)
+{
+	auto index = videoFontSlotIndex(fontID);
+	ASSERT_OR_RETURN(false, index.has_value(), "Not a video font: %d", static_cast<int>(fontID));
+	ASSERT_OR_RETURN(false, pointSize > 0.f, "Invalid video font size: %f", pointSize);
+	int32_t charSize = std::max<int32_t>(1, static_cast<int32_t>(std::lround(pointSize * 64.f)));
+	VideoFontSlot &slot = videoFontSlots[index.value()];
+	if (slot.charSize == charSize)
+	{
+		return true;
+	}
+	releaseVideoFontFaces(slot);
+	slot.charSize = charSize;
+	fontGeneration[fontID] = ++lastFontGeneration;
+	return true;
+}
+
+void iV_UnbindVideoFonts()
+{
+	for (size_t i = 0; i < ARRAY_SIZE(videoFontSlots); ++i)
+	{
+		VideoFontSlot &slot = videoFontSlots[i];
+		if (slot.charSize == 0)
+		{
+			continue;
+		}
+		releaseVideoFontFaces(slot);
+		slot.charSize = 0;
+		fontGeneration[font_video_1 + i] = ++lastFontGeneration;
+	}
 }
 
 static WzText& iV_Internal_GetEllipsis(iV_fonts fontID)
@@ -1504,6 +1623,10 @@ optional<iV_fonts> iV_FontModifyBold(iV_fonts fontID, bool bold)
 			case font_small:
 				return font_bar;
 
+			case font_video_1:
+			case font_video_2:
+			case font_video_3:
+			case font_video_4:
 			case font_count:
 				return nullopt;
 		}
@@ -1527,6 +1650,10 @@ optional<iV_fonts> iV_FontModifyBold(iV_fonts fontID, bool bold)
 			case font_scaled: // treated the same as font_regular
 			case font_regular:
 			case font_small:
+			case font_video_1:
+			case font_video_2:
+			case font_video_3:
+			case font_video_4:
 				return fontID; // already non-bolded
 
 			case font_count:
@@ -1560,6 +1687,11 @@ optional<iV_fonts> iV_ShrinkFont(iV_fonts fontID)
 		case font_small:
 			return nullopt;
 
+		// video fonts are sized by their caller
+		case font_video_1:
+		case font_video_2:
+		case font_video_3:
+		case font_video_4:
 		case font_count:
 			return nullopt;
 	}
@@ -1804,6 +1936,12 @@ int WzText::lineSize()
 	return mPtsLineSize;
 }
 
+static uint32_t getFontGeneration(iV_fonts fontID)
+{
+	ASSERT_OR_RETURN(0, fontID < font_count, "Invalid font: %d", static_cast<int>(fontID));
+	return fontGeneration[fontID];
+}
+
 void WzText::setText(const WzString &text, iV_fonts fontID/*, bool delayRender*/)
 {
 	if (mText == text && fontID == mFontID)
@@ -1817,6 +1955,7 @@ void WzText::drawAndCacheText(const WzString& string, iV_fonts fontID)
 {
 	mFontID = fontID;
 	mText = string;
+	mFontGeneration = getFontGeneration(fontID);
 	mRenderingHorizScaleFactor = iV_GetHorizScaleFactor();
 	mRenderingVertScaleFactor = iV_GetVertScaleFactor();
 
@@ -1881,6 +2020,7 @@ WzText& WzText::operator=(WzText&& other)
 		mPtsLineSize = other.mPtsLineSize;
 		offsets = other.offsets;
 		dimensions = other.dimensions;
+		mFontGeneration = other.mFontGeneration;
 		mRenderingHorizScaleFactor = other.mRenderingHorizScaleFactor;
 		mRenderingVertScaleFactor = other.mRenderingVertScaleFactor;
 		layoutMetrics = other.layoutMetrics;
@@ -1902,11 +2042,10 @@ inline void WzText::updateCacheIfNecessary()
 	{
 		return; // string is empty (or hasn't yet been set), thus changes have no effect
 	}
-	if (mRenderingHorizScaleFactor != iV_GetHorizScaleFactor() || mRenderingVertScaleFactor != iV_GetVertScaleFactor())
+	if (mFontGeneration != getFontGeneration(mFontID))
 	{
-		// The text rendering subsystem's scale factor has changed, so the rendered (cached) text must be re-rendered.
+		// The font's faces were recreated (ex. the text rendering scale factor changed), so the rendered (cached) text must be re-rendered.
 		redrawAndCacheText();
-		// debug(LOG_WZ, "Redrawing / re-calculating WzText text - scale factor has changed.");
 	}
 }
 

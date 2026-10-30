@@ -49,9 +49,11 @@
 #include "multirecv.h"
 #include "lib/sound/audio_id.h"
 #include "lib/sound/audio.h"
+#include "objmem.h"
 #include "research.h"
 #include "qtscript.h"
 #include "combat.h"
+#include "ordersource_wire.h"
 
 // ////////////////////////////////////////////////////////////////////////////
 // structures
@@ -87,14 +89,16 @@ bool recvBuildFinished(NETQUEUE queue)
 	NETuint32_t(r, type); 	// Kind of building.
 	NETPosition(r, pos);      // pos
 	NETuint8_t(r, player);
-	NETend(r);
-
-	ASSERT_OR_RETURN(false, player < MAX_PLAYERS, "invalid player %u", player);
+	bool validMessage = NETend(r);
 
 	const DebugInputManager& dbgInputManager = gInputManager.debugManager();
-	if (!dbgInputManager.debugMappingsAllowed() && bMultiPlayer)
+	bool debugAllowed = dbgInputManager.debugMappingsAllowed() || !bMultiPlayer;
+	if (!validMessage || player >= MAX_PLAYERS || !debugAllowed)
 	{
-		debug(LOG_WARNING, "Failed to add structure for player %u.", NetPlay.players[queue.index].position);
+		if (recordInvalidMessage(queue.index, GAME_DEBUG_ADD_STRUCTURE))
+		{
+			debug(LOG_INFO, "Ignoring invalid GAME_DEBUG_ADD_STRUCTURE from %d (valid: %d, player: %d, debug allowed: %d) - further invalid ones will not be logged", (int)queue.index, (int)validMessage, (int)player, (int)debugAllowed);
+		}
 		return false;
 	}
 
@@ -109,7 +113,7 @@ bool recvBuildFinished(NETQUEUE queue)
 		{
 			debug(LOG_SYNC, "Synch error, structure %u was not complete, and should have been.", structId);
 			psStruct->status = SS_BUILT;
-			buildingComplete(psStruct);
+			buildingComplete(psStruct, gameWorld);
 		}
 		debug(LOG_SYNC, "Created normal building %u for player %u", psStruct->id, player);
 		return true;
@@ -119,13 +123,21 @@ bool recvBuildFinished(NETQUEUE queue)
 
 	// Find the structures stats
 	for (typeindex = 0; typeindex < numStructureStats && asStructureStats[typeindex].ref != type; typeindex++) {}	// Find structure target
+	if (typeindex >= numStructureStats)
+	{
+		if (recordInvalidMessage(queue.index, GAME_DEBUG_ADD_STRUCTURE))
+		{
+			debug(LOG_INFO, "Ignoring GAME_DEBUG_ADD_STRUCTURE from %d with unknown structure type %u - further invalid ones will not be logged", (int)queue.index, type);
+		}
+		return false;
+	}
 
 	// Build the structure
-	psStruct = buildStructureDir(&(asStructureStats[typeindex]), pos.x, pos.y, 0, player, true, structId);
+	psStruct = buildStructureDir(gameWorld, &(asStructureStats[typeindex]), pos.x, pos.y, 0, player, true, structId, true);
 	if (psStruct)
 	{
 		psStruct->status	= SS_BUILT;
-		buildingComplete(psStruct);
+		buildingComplete(psStruct, gameWorld);
 		debug(LOG_SYNC, "Huge synch error, forced to create building %u for player %u", psStruct->id, player);
 #if defined (DEBUG)
 		NETlogEntry("had to plonk down a building", SYNC_FLAG, player);
@@ -163,7 +175,14 @@ bool recvDestroyStructure(NETQUEUE queue)
 
 	auto r = NETbeginDecode(queue, GAME_DEBUG_REMOVE_STRUCTURE);
 	NETuint32_t(r, structID);
-	NETend(r);
+	if (!NETend(r))
+	{
+		if (recordInvalidMessage(queue.index, GAME_DEBUG_REMOVE_STRUCTURE))
+		{
+			debug(LOG_INFO, "Ignoring truncated GAME_DEBUG_REMOVE_STRUCTURE from %d - further invalid ones will not be logged", (int)queue.index);
+		}
+		return false;
+	}
 
 	const DebugInputManager& dbgInputManager = gInputManager.debugManager();
 	if (!dbgInputManager.debugMappingsAllowed() && bMultiPlayer)
@@ -179,7 +198,7 @@ bool recvDestroyStructure(NETQUEUE queue)
 	{
 		turnOffMultiMsg(true);
 		// Remove the struct from remote players machine
-		destroyStruct(psStruct, gameTime - deltaGameTime + 1);  // deltaGameTime is actually 0 here, since we're between updates. However, the value of gameTime - deltaGameTime + 1 will not change when we start the next tick.
+		destroyStruct(psStruct, deathTimeInTick(), gameWorld);
 		turnOffMultiMsg(false);
 	}
 
@@ -213,7 +232,16 @@ bool recvLasSat(NETQUEUE queue)
 	NETuint32_t(r, id);
 	NETuint32_t(r, targetid);
 	NETuint8_t(r, targetplayer);
-	NETend(r);
+	bool validMessage = NETend(r);
+
+	if (!validMessage || player >= MAX_PLAYERS)
+	{
+		if (recordInvalidMessage(queue.index, GAME_LASSAT))
+		{
+			debug(LOG_INFO, "Ignoring invalid GAME_LASSAT from %d (valid: %d, player: %d) - further invalid ones will not be logged", (int)queue.index, (int)validMessage, (int)player);
+		}
+		return false;
+	}
 
 	psStruct = IdToStruct(id, player);
 	psObj	 = IdToPointer(targetid, targetplayer);
@@ -223,13 +251,12 @@ bool recvLasSat(NETQUEUE queue)
 		return false;
 	}
 
-	if (psStruct && psObj && isLasSat(psStruct->pStructureType))
+	if (psStruct && psObj && isLasSat(psStruct->pStructureType) && psStruct->status == SS_BUILT)
 	{
 		// Lassats have just one weapon
 		unsigned firePause = weaponFirePause(*psStruct->getWeaponStats(0), player);
-		unsigned damLevel = PERCENT(psStruct->body, psStruct->structureBody());
 
-		if (damLevel < HEAVY_DAMAGE_LEVEL)
+		if (objectBelowHealthLevel(psStruct, HEAVY_DAMAGE_LEVEL))
 		{
 			firePause += firePause;
 		}
@@ -252,11 +279,13 @@ bool recvLasSat(NETQUEUE queue)
 	return true;
 }
 
-void sendStructureInfo(const STRUCTURE *psStruct, STRUCTURE_INFO structureInfo_, const DROID_TEMPLATE *pT)
+void sendStructureInfo(const STRUCTURE *psStruct, STRUCTURE_INFO structureInfo_, const DROID_TEMPLATE *pT, const OrderSource &source)
 {
 	uint8_t  player = psStruct->player;
 	uint32_t structId = psStruct->id;
 	uint8_t  structureInfo = structureInfo_;
+
+	orderProvenanceRecord(player, source.origin(), false);
 
 	auto w = NETbeginEncode(NETgameQueue(realSelectedPlayer), GAME_STRUCTUREINFO);
 	NETuint8_t(w, player);
@@ -281,6 +310,10 @@ void sendStructureInfo(const STRUCTURE *psStruct, STRUCTURE_INFO structureInfo_,
 			NETuint32_t(w, pT->asWeaps[i]);
 		}
 	}
+
+	OrderProvenanceWire provenance = orderProvenanceFromSource(source);
+	NETOrderProvenance(w, provenance);
+
 	NETend(w);
 }
 
@@ -292,6 +325,7 @@ void recvStructureInfo(NETQUEUE queue)
 	STRUCTURE      *psStruct;
 	DROID_TEMPLATE t, *pT = &t;
 	int32_t droidType;
+	size_t nameLength = 0;
 
 	auto r = NETbeginDecode(queue, GAME_STRUCTUREINFO);
 	NETuint8_t(r, player);
@@ -301,6 +335,7 @@ void recvStructureInfo(NETQUEUE queue)
 	{
 		WzString name;
 		NETwzstring(r, name);
+		nameLength = name.toUtf8().size();
 		pT->name = name;
 		NETuint32_t(r, pT->multiPlayerID);
 		NETint32_t(r, droidType);
@@ -312,15 +347,33 @@ void recvStructureInfo(NETQUEUE queue)
 		NETuint8_t(r, pT->asParts[COMP_SENSOR]);
 		NETuint8_t(r, pT->asParts[COMP_CONSTRUCT]);
 		NETint8_t(r, pT->numWeaps);
-		ASSERT_OR_RETURN(, pT->numWeaps >= 0 && pT->numWeaps <= ARRAY_SIZE(pT->asWeaps), "Bad numWeaps %d", pT->numWeaps);
+		if (pT->numWeaps < 0 || pT->numWeaps > ARRAY_SIZE(pT->asWeaps))
+		{
+			if (recordInvalidMessage(queue.index, GAME_STRUCTUREINFO))
+			{
+				debug(LOG_INFO, "Ignoring GAME_STRUCTUREINFO from %d with bad numWeaps %d - further invalid ones will not be logged", (int)queue.index, (int)pT->numWeaps);
+			}
+			NETend(r);
+			return;
+		}
 		for (int i = 0; i < pT->numWeaps; i++)
 		{
 			NETuint32_t(r, pT->asWeaps[i]);
 		}
 		pT->droidType = (DROID_TYPE)droidType;
-		pT = copyTemplate(player, pT);
 	}
-	NETend(r);
+	OrderProvenanceWire provenance;
+	NETOrderProvenance(r, provenance);
+	bool validMessage = NETend(r);
+
+	if (!validMessage || player >= MAX_PLAYERS || structureInfo > STRUCTUREINFO_RELEASERESEARCH || nameLength > MAX_TEMPLATE_NAME_LENGTH)
+	{
+		if (recordInvalidMessage(queue.index, GAME_STRUCTUREINFO))
+		{
+			debug(LOG_INFO, "Ignoring invalid GAME_STRUCTUREINFO from %d (valid: %d, player: %d, structureInfo: %d, name length: %zu) - further invalid ones will not be logged", (int)queue.index, (int)validMessage, (int)player, (int)structureInfo, nameLength);
+		}
+		return;
+	}
 
 	psStruct = IdToStruct(structId, player);
 
@@ -328,7 +381,7 @@ void recvStructureInfo(NETQUEUE queue)
 
 	if (psStruct == nullptr)
 	{
-		debug(LOG_WARNING, "Could not find structure %u to change production for", structId);
+		debug(LOG_NET, "Could not find structure %u to change production for", structId);
 		return;
 	}
 	if (!canGiveOrdersFor(queue.index, psStruct->player))
@@ -339,16 +392,40 @@ void recvStructureInfo(NETQUEUE queue)
 
 	CHECK_STRUCTURE(psStruct);
 
-	if (structureInfo == STRUCTUREINFO_MANUFACTURE && !researchedTemplate(pT, player, true, true))
+	const bool researchInfo = structureInfo == STRUCTUREINFO_HOLDRESEARCH || structureInfo == STRUCTUREINFO_RELEASERESEARCH;
+	if (researchInfo ? psStruct->pStructureType->type != REF_RESEARCH : !psStruct->isFactory())
 	{
-		debug(LOG_ERROR, "Invalid droid received from player %d with name %s", (int)player, pT->name.toUtf8().c_str());
+		if (recordInvalidMessage(queue.index, GAME_STRUCTUREINFO))
+		{
+			debug(LOG_INFO, "Ignoring GAME_STRUCTUREINFO %d for %s from %d - further invalid ones will not be logged", (int)structureInfo, objInfo(psStruct), (int)queue.index);
+		}
 		return;
 	}
-	if (structureInfo == STRUCTUREINFO_MANUFACTURE && !intValidTemplate(pT, nullptr, true, player))
+
+	if (structureInfo == STRUCTUREINFO_MANUFACTURE)
 	{
-		debug(LOG_ERROR, "Illegal droid received from player %d with name %s", (int)player, pT->name.toUtf8().c_str());
-		return;
+		DROID_TEMPLATE *psExisting = findPlayerTemplateById(player, pT->multiPlayerID);
+		if (psExisting != nullptr && templatesHaveSameComponents(*psExisting, *pT))
+		{
+			pT = psExisting;
+		}
+		if (!researchedTemplate(pT, player, true, false)
+			|| !intValidTemplate(pT, nullptr, false, player)
+			|| !(validTemplateForFactory(pT, psStruct, false) || player == scavengerPlayer() || !bMultiPlayer))
+		{
+			if (recordInvalidMessage(queue.index, GAME_STRUCTUREINFO))
+			{
+				debug(LOG_INFO, "Ignoring invalid droid template from player %d with name %s - further invalid ones will not be logged", (int)player, pT->name.toUtf8().c_str());
+			}
+			return;
+		}
+		if (pT == &t)
+		{
+			pT = copyTemplate(player, &t);
+		}
 	}
+
+	orderProvenanceRecordReported(player, static_cast<OrderOrigin>(provenance.origin));
 
 	if (psStruct->isFactory())
 	{

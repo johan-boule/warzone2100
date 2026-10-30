@@ -108,7 +108,9 @@
 	MSG(INTERNAL_MSG_DELIVERY_FAILURE_TRY_AGAIN) /* This should always be the first internal message! */ \
 	MSG(INTERNAL_LOBBY_NOTICE_MAP_DOWNLOADED) \
 	MSG(INTERNAL_ADMIN_ACTION_NOTICE) \
-	MSG(INTERNAL_LOCALIZED_LOBBY_NOTICE)
+	MSG(INTERNAL_LOCALIZED_LOBBY_NOTICE) \
+	MSG(INTERNAL_LOCALIZED_HOST_NOTICE) \
+	MSG(INTERNAL_LOBBY_COMMAND_RESPONSE)
 
 #define GENERATE_ENUM(ENUM) ENUM,
 
@@ -190,7 +192,95 @@ namespace INTERNAL_LOCALIZED_LOBBY_NOTICE {
 	WzQuickChatMessageData constructMessageData(Context ctx, uint32_t targetPlayerIdx, uint32_t additionalData);
 } // namespace INTERNAL_LOCALIZED_LOBBY_NOTICE
 
+// - INTERNAL_LOCALIZED_HOST_NOTICE
+namespace INTERNAL_LOCALIZED_HOST_NOTICE {
+	enum class Context : uint32_t
+	{
+		Invalid = 0,
+		LagKickWarning,
+		LagKicked,
+		DesyncKickWarning,
+		DesyncKicked,
+		DataIntegrityKicked,
+		IncompatibleModKicked,
+		InvalidCommandKicked,
+		InvalidMessageKicked,
+		AccessLevelKicked,
+		IndexChangeNotAckedKicked,
+		VoteKickFor,
+		VoteKickAgainst,
+		VoteKickSucceeded,
+		VoteKickFailed,
+		VoteKickTimedOut,
+		MapChangeVoteAllowed,
+		SpectatorMovedToPlayers,
+		PlayerMovedToSpectators,
+		MoveToPlayersFailedNoSlot,
+		HostKickedPlayer,
+		HostBannedPlayer,
+		HostMovedPlayerToSpectators,
+		MovingPlayerToSpectators,
+		AskingSpectatorToMoveToPlayers,
+		KickingPlayer,
+		AdminKickedPlayer,
+		AdminBannedPlayer,
+		HostStartingGame,
+		MinPlayersToStart,
+		LimitsReset,
+		LobbySlashCommandsEnabled
+	};
+	WzQuickChatMessageData constructMessageData(Context ctx, uint32_t additionalData = 0, optional<uint32_t> targetPlayerIdx = nullopt);
+} // namespace INTERNAL_LOCALIZED_HOST_NOTICE
+
+// - INTERNAL_LOBBY_COMMAND_RESPONSE
+namespace INTERNAL_LOBBY_COMMAND_RESPONSE {
+	enum class Command : uint32_t
+	{
+		None = 0,
+		Help,
+		Admin,
+		Me,
+		Team,
+		HostExit,
+		Kick,
+		Ban,
+		Swap,
+		Base,
+		Alliance,
+		Scav,
+		MakeSpec,
+		MakePlayer,
+		Mute,
+		Unmute
+	};
+	enum class Context : uint32_t
+	{
+		Invalid = 0,
+		Help,
+		AdminList,
+		MyInfo,
+		WaitingForSync,
+		AdminOnly,
+		HostOnly,
+		Usage,
+		InvalidValue,
+		CannotTargetHost,
+		UseUIToMoveSelf,
+		CommandFailed,
+		TeamChanged,
+		Swapped,
+		BaseSet,
+		AllianceSet,
+		ScavSet
+	};
+	WzQuickChatMessageData constructMessageData(Context ctx, Command cmd = Command::None, uint32_t additionalData = 0);
+} // namespace INTERNAL_LOBBY_COMMAND_RESPONSE
+
 } // namespace WzQuickChatDataContexts
+
+void sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context ctx, uint32_t additionalData = 0, optional<uint32_t> targetPlayerIdx = nullopt);
+void sendHostNoticeToPlayer(uint32_t receiver, WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context ctx, uint32_t additionalData = 0, optional<uint32_t> targetPlayerIdx = nullopt);
+void sendLobbyCommandResponse(optional<uint32_t> receiver, WzQuickChatDataContexts::INTERNAL_LOBBY_COMMAND_RESPONSE::Context ctx, WzQuickChatDataContexts::INTERNAL_LOBBY_COMMAND_RESPONSE::Command cmd = WzQuickChatDataContexts::INTERNAL_LOBBY_COMMAND_RESPONSE::Command::None, uint32_t additionalData = 0);
 
 std::shared_ptr<W_FORM> createQuickChatForm(WzQuickChatContext context, const std::function<void ()>& onQuickChatSent, optional<WzQuickChatMode> startingPanel = nullopt);
 

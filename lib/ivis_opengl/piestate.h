@@ -83,6 +83,9 @@ const Vector3f& getDefaultSunPosition();
 int pie_GetMaxAntialiasing();
 
 bool pie_LoadShaders(uint32_t shadowFilterSize, bool pointLightEnabled);
+/// True when the driver rejected the per pixel point lighting shaders and the lightmap
+/// path was used instead, so the option can be presented as unavailable.
+bool pie_PointLightPerPixelShaderUnavailable();
 void pie_FreeShaders();
 
 namespace pie_internal
@@ -102,5 +105,11 @@ static inline glm::vec4 pal_PIELIGHTtoVec4(PIELIGHT rgba)
 		rgba.byte.a
 	};
 }
+
+float srgbChannelToLinear(float value);
+
+//! Converts a PIELIGHT color for a scene shader. PIELIGHT colors are display values, so like textures they
+//! are converted to linear while linear lighting is on.
+glm::vec4 pie_SceneColourToVec4(PIELIGHT rgba);
 
 #endif // _pieState_h

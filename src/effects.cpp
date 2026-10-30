@@ -34,6 +34,17 @@
 	************************************************************
 	* STILL NEED TO REMOVE SOME MAGIC NUMBERS INTO #DEFINES!!! *
 	************************************************************
+
+	Effects are DISPLAY-ONLY and must stay that way:
+	- Nothing here may read or write game simulation state, or consume the synchronised RNG
+	  (gameRand / gameRandU32). Use plain rand() for visual variation.
+	- The active effect list is only advanced by processEffects(), which runs from the 3D draw
+	  path. It never runs in headless mode, so addEffect() / addMultiEffect() bail out there
+	  rather than accumulate effects that would never be processed.
+	- Sound is fine (it is presentation, not simulation).
+
+	The one exception is readFXData(), which sets burning tiles when loading a classic savegame,
+	because that format persists tile fire nowhere else.
 */
 #include "lib/framework/wzapp.h"
 #include "lib/framework/wzconfig.h"
@@ -71,11 +82,17 @@
 #include "multiplay.h"
 #include "component.h"
 #include "profiling.h"
+#include "game_world.h"
+#include "wrappers.h"
+#include "perfcounters.h"
 
 #ifndef GLM_ENABLE_EXPERIMENTAL
 	#define GLM_ENABLE_EXPERIMENTAL
 #endif
 #include <glm/gtx/transform.hpp>
+
+//! The light cast by fire, burning wreckage and destruction, close to an 1800 K blackbody
+static const PIELIGHT FIRE_LIGHT_COLOUR = pal_Colour(255, 120, 30);
 
 #define	GRAVITON_GRAVITY	((float)-800)
 #define	EFFECT_X_FLIP		0x1
@@ -256,7 +273,7 @@ void effectSetSize(UDWORD size)
 void addMultiEffect(const Vector3i *basePos, Vector3i *scatter, EFFECT_GROUP group,
                     EFFECT_TYPE type, bool specified, const iIMDShape *imd, unsigned int number, bool lit, unsigned int size, unsigned effectTime)
 {
-	if (number == 0)
+	if (number == 0 || headlessGameMode())
 	{
 		return;
 	}
@@ -357,7 +374,7 @@ static void renderDroidDeathAnimationEffect(const EFFECT *psEffect, const glm::m
 
 void addEffect(const Vector3i *pos, EFFECT_GROUP group, EFFECT_TYPE type, bool specified, const iIMDShape *imd, int lit, unsigned effectTime, Vector3i *rot /*= nullptr*/, Vector3f *velocity /*= nullptr*/)
 {
-	if (gamePaused())
+	if (gamePaused() || headlessGameMode())
 	{
 		return;
 	}
@@ -477,6 +494,8 @@ void addEffect(const Vector3i *pos, EFFECT_GROUP group, EFFECT_TYPE type, bool s
 void processEffects(const glm::mat4 &perspectiveViewMatrix, LightingData& lightData)
 {
 	WZ_PROFILE_SCOPE(processEffects);
+	WZ_PERF_SCOPE(T_processEffects);
+	WZ_PERF_COUNT(C_effectsAlive, gActiveEffects.size());
 	for (auto it = gActiveEffects.begin(); it != gActiveEffects.end(); ++it)
 	{
 		EFFECT& e = *it;
@@ -810,7 +829,7 @@ static bool updateExplosion(EFFECT *psEffect, LightingData& lightData)
 			UDWORD range = percent;
 			light.position = psEffect->position;
 			light.range = (3 * range) / 2;
-			light.colour = pal_Colour(255, 0, 0);
+			light.colour = pal_Colour(255, 0, 0); // landing zone beacons are red by design
 			lightData.lights.push_back(light);
 		}
 	}
@@ -965,12 +984,12 @@ static bool updateGraviton(EFFECT *psEffect, LightingData& lightData)
 	psEffect->position.z += graphicsTimeAdjustedIncrement(psEffect->velocity.z);
 
 	/* If it's bounced/drifted off the map then kill it */
-	if (map_coord(static_cast<int32_t>(psEffect->position.x)) >= mapWidth || map_coord(static_cast<int32_t>(psEffect->position.z)) >= mapHeight)
+	if (map_coord(static_cast<int32_t>(psEffect->position.x)) >= gameWorld.map.width || map_coord(static_cast<int32_t>(psEffect->position.z)) >= gameWorld.map.height)
 	{
 		return false;
 	}
 
-	int groundHeight = map_Height(static_cast<int>(psEffect->position.x), static_cast<int>(psEffect->position.z));
+	int groundHeight = map_Height(gameWorld.map, static_cast<int>(psEffect->position.x), static_cast<int>(psEffect->position.z));
 
 	/* If it's going up and it's still under the landscape, then remove it... */
 	if (psEffect->position.y < groundHeight && psEffect->velocity.y > 0)
@@ -1032,7 +1051,7 @@ static bool updateGraviton(EFFECT *psEffect, LightingData& lightData)
 	/* Are we below it? - Hit the ground? */
 	if ((int)psEffect->position.y < (int)groundHeight)
 	{
-		psTile = mapTile(map_coord(static_cast<int32_t>(psEffect->position.x)), map_coord(static_cast<int32_t>(psEffect->position.z)));
+		psTile = mapTile(gameWorld.map, map_coord(static_cast<int32_t>(psEffect->position.x)), map_coord(static_cast<int32_t>(psEffect->position.z)));
 		if (terrainType(psTile) == TER_WATER)
 		{
 			return false;
@@ -1109,7 +1128,7 @@ static bool updateDestruction(EFFECT *psEffect, LightingData& lightData)
 	}
 	else
 	{
-		light.colour = pal_Colour(255, 0, 0);
+		light.colour = FIRE_LIGHT_COLOUR;
 	}
 	lightData.lights.push_back(light);
 
@@ -1281,7 +1300,7 @@ static bool updateConstruction(EFFECT *psEffect)
 	if (TEST_CYCLIC(psEffect))
 	{
 		/* Has it hit the ground */
-		if (static_cast<int>(psEffect->position.y) <= map_Height(static_cast<int>(psEffect->position.x), static_cast<int>(psEffect->position.z)))
+		if (static_cast<int>(psEffect->position.y) <= map_Height(gameWorld.map, static_cast<int>(psEffect->position.x), static_cast<int>(psEffect->position.z)))
 		{
 			return false;
 		}
@@ -1312,7 +1331,7 @@ static bool updateFire(EFFECT *psEffect, LightingData& lightData)
 	light.position = psEffect->position;
 	light.position.y += fireLightHeightAboveGround;
 	light.range = (percent * psEffect->radius * 6) / 100;
-	light.colour = pal_Colour(255, 0, 0);
+	light.colour = FIRE_LIGHT_COLOUR;
 	lightData.lights.push_back(light);
 
 	/* Time to update the frame number on the construction sprite */
@@ -1323,12 +1342,12 @@ static bool updateFire(EFFECT *psEffect, LightingData& lightData)
 		pos.z = static_cast<int>(psEffect->position.z + ((rand() % psEffect->radius) - (rand() % (2 * psEffect->radius))));
 
 		// Effect is off map, no need to update it anymore
-		if (!worldOnMap(pos.x, pos.z))
+		if (!worldOnMap(gameWorld.map, pos.x, pos.z))
 		{
 			return false;
 		}
 
-		pos.y = map_Height(pos.x, pos.z);
+		pos.y = map_Height(gameWorld.map, pos.x, pos.z);
 
 		if (psEffect->type == FIRE_TYPE_SMOKY_BLUE)
 		{
@@ -1343,7 +1362,7 @@ static bool updateFire(EFFECT *psEffect, LightingData& lightData)
 		{
 			pos.x = static_cast<int>(psEffect->position.x + ((rand() % psEffect->radius / 2) - (rand() % (2 * psEffect->radius / 2))));
 			pos.z = static_cast<int>(psEffect->position.z + ((rand() % psEffect->radius / 2) - (rand() % (2 * psEffect->radius / 2))));
-			pos.y = map_Height(pos.x, pos.z);
+			pos.y = map_Height(gameWorld.map, pos.x, pos.z);
 			addEffect(&pos, EFFECT_SMOKE, SMOKE_TYPE_DRIFTING_HIGH, false, nullptr, 0);
 		}
 		else
@@ -1352,12 +1371,12 @@ static bool updateFire(EFFECT *psEffect, LightingData& lightData)
 			pos.z = static_cast<int>(psEffect->position.z + ((rand() % psEffect->radius) - (rand() % (2 * psEffect->radius))));
 
 			// Effect is off map, no need to update it anymore
-			if (!worldOnMap(pos.x, pos.z))
+			if (!worldOnMap(gameWorld.map, pos.x, pos.z))
 			{
 				return false;
 			}
 
-			pos.y = map_Height(pos.x, pos.z);
+			pos.y = map_Height(gameWorld.map, pos.x, pos.z);
 			addEffect(&pos, EFFECT_EXPLOSION, EXPLOSION_TYPE_SMALL, false, nullptr, 0);
 		}
 
@@ -1385,6 +1404,7 @@ static bool updateFire(EFFECT *psEffect, LightingData& lightData)
 /** Calls the appropriate render routine for each type of effect */
 void renderEffect(const EFFECT *psEffect, const glm::mat4 &viewMatrix)
 {
+	WZ_PERF_SCOPE(T_renderEffects);
 	/* What type of effect are we dealing with? */
 	switch (psEffect->group)
 	{
@@ -1448,6 +1468,21 @@ static void renderWaypointEffect(const EFFECT *psEffect, const glm::mat4 &viewMa
 	pie_Draw3DShape(psEffect->imd, 0, 0, WZCOL_WHITE, 0, 0, positionEffect(psEffect), viewMatrix);
 }
 
+/// The billboard rotation that turns a flat effect to face the camera. It reads nothing but the camera
+/// rotation, so it is held until the camera moves.
+static const glm::mat4 &effectBillboardRotation()
+{
+	static Vector3i cachedRot(INT32_MIN, INT32_MIN, INT32_MIN);
+	static glm::mat4 cached(1.f);
+	if (cachedRot.x != playerPos.r.x || cachedRot.y != playerPos.r.y)
+	{
+		cachedRot = playerPos.r;
+		cached = glm::rotate(UNDEG(-playerPos.r.y), glm::vec3(0.f, 1.f, 0.f))
+		         * glm::rotate(UNDEG(-playerPos.r.x), glm::vec3(1.f, 0.f, 0.f));
+	}
+	return cached;
+}
+
 static void renderFirework(const EFFECT *psEffect, const glm::mat4 &viewMatrix)
 {
 	/* these don't get rendered */
@@ -1457,8 +1492,7 @@ static void renderFirework(const EFFECT *psEffect, const glm::mat4 &viewMatrix)
 	}
 
 	glm::mat4 modelMatrix = positionEffect(psEffect);
-	modelMatrix *= glm::rotate(UNDEG(-playerPos.r.y), glm::vec3(0.f, 1.f, 0.f)) * glm::rotate(UNDEG(-playerPos.r.x), glm::vec3(1.f, 0.f, 0.f))
-	               * glm::scale(glm::vec3(psEffect->size / 100.f));
+	modelMatrix *= effectBillboardRotation() * glm::scale(glm::vec3(psEffect->size / 100.f));
 
 	pie_Draw3DShape(psEffect->imd, psEffect->frameNumber, 0, WZCOL_WHITE, pie_ADDITIVE | pie_NODEPTHWRITE, EFFECT_EXPLOSION_ADDITIVE, modelMatrix, viewMatrix);
 }
@@ -1467,8 +1501,7 @@ static void renderFirework(const EFFECT *psEffect, const glm::mat4 &viewMatrix)
 static void renderBloodEffect(const EFFECT *psEffect, const glm::mat4 &viewMatrix)
 {
 	glm::mat4 modelMatrix = positionEffect(psEffect);
-	modelMatrix *= glm::rotate(UNDEG(-playerPos.r.y), glm::vec3(0.f, 1.f, 0.f)) * glm::rotate(UNDEG(-playerPos.r.x), glm::vec3(1.f, 0.f, 0.f))
-	               * glm::scale(glm::vec3(psEffect->size / 100.f));
+	modelMatrix *= effectBillboardRotation() * glm::scale(glm::vec3(psEffect->size / 100.f));
 
 	pie_Draw3DShape(getDisplayImdFromIndex(MI_BLOOD), psEffect->frameNumber, 0, WZCOL_WHITE, pie_TRANSLUCENT | pie_NODEPTHWRITE, EFFECT_BLOOD_TRANSPARENCY, modelMatrix, viewMatrix);
 }
@@ -1556,9 +1589,7 @@ static void renderExplosionEffect(const EFFECT *psEffect, const glm::mat4 &viewM
 	{
 		/* Always face the viewer! */
 		// TODO This only faces towards the viewer, if the effect is in the middle of the screen... It draws the effect parallel with the screens near/far planes.
-		modelMatrix *=
-			glm::rotate(UNDEG(-playerPos.r.y), glm::vec3(0.f, 1.f, 0.f)) *
-			glm::rotate(UNDEG(-playerPos.r.x), glm::vec3(1.f, 0.f, 0.f));
+		modelMatrix *= effectBillboardRotation();
 	}
 
 	/* Tesla explosions diminish in size */
@@ -1642,9 +1673,7 @@ static void renderConstructionEffect(const EFFECT *psEffect, const glm::mat4 &vi
 	/* Bit in comments doesn't quite work yet? */
 	if (TEST_FACING(psEffect))
 	{
-		modelMatrix *=
-			glm::rotate(UNDEG(-playerPos.r.y), glm::vec3(0.f, 1.f, 0.f)) *
-			glm::rotate(UNDEG(-playerPos.r.x), glm::vec3(1.f, 0.f, 0.f));
+		modelMatrix *= effectBillboardRotation();
 	}
 
 	/* Scale size according to age */
@@ -1686,8 +1715,7 @@ static void renderSmokeEffect(const EFFECT *psEffect, const glm::mat4 &viewMatri
 	if (TEST_FACING(psEffect))
 	{
 		/* Always face the viewer! */
-		modelMatrix *= glm::rotate(UNDEG(-playerPos.r.y), glm::vec3(0.f, 1.f, 0.f)) *
-			glm::rotate(UNDEG(-playerPos.r.x), glm::vec3(1.f, 0.f, 0.f));
+		modelMatrix *= effectBillboardRotation();
 	}
 
 	if (TEST_SCALED(psEffect))
@@ -2079,7 +2107,7 @@ void	effectSetupConstruction(EFFECT& effect)
 void	effectSetupFire(EFFECT& effect)
 {
 	effect.frameDelay = 300;	   // needs to be investigated...
-	effect.radius = auxVar;	// needs to be investigated
+	effect.radius = static_cast<uint16_t>(std::clamp<UDWORD>(auxVar, 1, UINT16_MAX));
 	effect.lifeSpan = (UWORD)auxVarSec;
 	effect.birthTime = graphicsTime;
 	SET_ESSENTIAL(effect);
@@ -2243,7 +2271,7 @@ static void effectStructureUpdates()
 	/* Go thru' all players */
 	for (unsigned player = 0; player < MAX_PLAYERS; ++player)
 	{
-		for (STRUCTURE *psStructure : apsStructLists[player])
+		for (STRUCTURE *psStructure : gameWorld.objects.structures[player])
 		{
 			// Find its group.
 			unsigned int partition = psStructure->id % EFFECT_STRUCTURE_DIVISION;
@@ -2331,6 +2359,165 @@ void effectResetUpdates()
 	memset(lastUpdateStructures, 0, sizeof(lastUpdateStructures));
 }
 
+// MARK: - Active effect list serialization (disk savegame, display-only)
+//
+// Restoring the effect list is purely so a loaded game looks like the one that was saved (ex. a
+// destroyed oil derrick still burning). Nothing here feeds the simulation, which is why it lives in
+// the savegame's local per-client section rather than the game state document.
+
+static nlohmann::ordered_json writeEffectVector3f(const Vector3f &v)
+{
+	return nlohmann::ordered_json::array({ v.x, v.y, v.z });
+}
+
+static nlohmann::ordered_json writeEffectVector3i(const Vector3i &v)
+{
+	return nlohmann::ordered_json::array({ v.x, v.y, v.z });
+}
+
+static bool readEffectVector3f(const nlohmann::ordered_json &j, const char *key, Vector3f &out)
+{
+	if (!j.contains(key))
+	{
+		return false;
+	}
+	const nlohmann::ordered_json &v = j.at(key);
+	if (!v.is_array() || v.size() < 3)
+	{
+		return false;
+	}
+	out = Vector3f(v[0].get<float>(), v[1].get<float>(), v[2].get<float>());
+	return true;
+}
+
+static bool readEffectVector3i(const nlohmann::ordered_json &j, const char *key, Vector3i &out)
+{
+	if (!j.contains(key))
+	{
+		return false;
+	}
+	const nlohmann::ordered_json &v = j.at(key);
+	if (!v.is_array() || v.size() < 3)
+	{
+		return false;
+	}
+	out = Vector3i(v[0].get<int32_t>(), v[1].get<int32_t>(), v[2].get<int32_t>());
+	return true;
+}
+
+std::vector<nlohmann::ordered_json> serializeActiveEffects()
+{
+	std::vector<nlohmann::ordered_json> out;
+	out.reserve(gActiveEffects.size());
+
+	for (auto iter = gActiveEffects.begin(); iter != gActiveEffects.end(); ++iter)
+	{
+		const EFFECT &e = *iter;
+		if (e.group == EFFECT_FREED)
+		{
+			continue;
+		}
+
+		nlohmann::ordered_json j = nlohmann::ordered_json::object();
+		j["group"] = static_cast<int>(e.group);
+		j["type"] = static_cast<int>(e.type);
+		j["control"] = e.control;
+		j["frameNumber"] = e.frameNumber;
+		j["size"] = e.size;
+		j["baseScale"] = e.baseScale;
+		j["specific"] = e.specific;
+		// The player colour the effect was created with. Gravitons, giblets and the droid death
+		// animation are drawn in it, so it must survive the round-trip.
+		j["player"] = e.player;
+		j["position"] = writeEffectVector3f(e.position);
+		j["velocity"] = writeEffectVector3f(e.velocity);
+		j["rotation"] = writeEffectVector3i(e.rotation);
+		j["spin"] = writeEffectVector3i(e.spin);
+		j["birthTime"] = e.birthTime;
+		j["lastFrame"] = e.lastFrame;
+		j["frameDelay"] = e.frameDelay;
+		j["lifeSpan"] = e.lifeSpan;
+		j["radius"] = e.radius;
+		if (e.imd)
+		{
+			j["imd"] = modelName(e.imd).toUtf8();
+		}
+
+		out.push_back(std::move(j));
+	}
+
+	return out;
+}
+
+void restoreActiveEffects(const std::vector<nlohmann::ordered_json> &effects)
+{
+	if (headlessGameMode())
+	{
+		// Nothing drains the list without the 3D draw path, so leave it empty
+		return;
+	}
+
+	// The restore is authoritative: drop anything already added (the world restore re-creates the
+	// landing lights via setNoGoArea, and those are permanent, so replaying on top would double them).
+	initEffectsSystem();
+
+	for (const nlohmann::ordered_json &j : effects)
+	{
+		if (!j.is_object())
+		{
+			continue;
+		}
+
+		const int group = j.value("group", static_cast<int>(EFFECT_FREED));
+		const int type = j.value("type", -1);
+		if (group < 0 || group >= EFFECT_FREED || type < 0 || type > DROID_ANIMEVENT_DYING_NORMAL_ST)
+		{
+			continue;
+		}
+
+		EFFECT e;
+		e.group = static_cast<EFFECT_GROUP>(group);
+		e.type = static_cast<EFFECT_TYPE>(type);
+		e.control = j.value("control", static_cast<uint8_t>(0));
+		e.frameNumber = j.value("frameNumber", static_cast<uint8_t>(0));
+		e.size = j.value("size", static_cast<uint16_t>(0));
+		e.baseScale = j.value("baseScale", static_cast<uint8_t>(0));
+		e.specific = j.value("specific", static_cast<uint8_t>(0));
+		e.player = j.value("player", static_cast<uint8_t>(0));
+		readEffectVector3f(j, "position", e.position);
+		readEffectVector3f(j, "velocity", e.velocity);
+		readEffectVector3i(j, "rotation", e.rotation);
+		readEffectVector3i(j, "spin", e.spin);
+		e.birthTime = j.value("birthTime", graphicsTime);
+		e.lastFrame = j.value("lastFrame", e.birthTime);
+		e.frameDelay = j.value("frameDelay", static_cast<uint16_t>(0));
+		e.lifeSpan = j.value("lifeSpan", static_cast<uint16_t>(0));
+		e.radius = j.value("radius", static_cast<uint16_t>(0));
+
+		if (j.contains("imd"))
+		{
+			const WzString imdName = WzString::fromUtf8(j.at("imd").get<std::string>());
+			const iIMDBaseShape *baseImd = (!imdName.isEmpty()) ? modelGet(imdName) : nullptr;
+			e.imd = (baseImd) ? baseImd->displayModel() : nullptr;
+		}
+
+		// Same requirement addEffect() asserts: everything except these groups is drawn from its imd,
+		// so an entry that lost its model would be a null dereference at render time.
+		if (e.imd == nullptr && e.group != EFFECT_DESTRUCTION && e.group != EFFECT_FIRE && e.group != EFFECT_SAT_LASER)
+		{
+			continue;
+		}
+
+		// updateFire() scatters its spawns with rand() % radius, so a zero radius would divide by zero.
+		if (e.group == EFFECT_FIRE && e.radius == 0)
+		{
+			e.radius = 1;
+		}
+
+		gActiveEffects.emplace(std::move(e));
+	}
+}
+
 /** This will save out the effects data */
 bool writeFXData(const char *fileName)
 {
@@ -2385,7 +2572,7 @@ bool writeFXData(const char *fileName)
 }
 
 /** This will read in the effects data */
-bool readFXData(const char *fileName)
+bool readFXData(const char *fileName, WorldMapState& mapState)
 {
 	// Clear out anything that's there already!
 	initEffectsSystem();
@@ -2396,11 +2583,19 @@ bool readFXData(const char *fileName)
 	for (int i = 0; i < list.size(); ++i)
 	{
 		ini.beginGroup(list[i]);
+		const int group = ini.value("group").toInt();
+		const int type = ini.value("type").toInt();
+		if (group < 0 || group >= EFFECT_FREED || type < 0 || type > DROID_ANIMEVENT_DYING_NORMAL_ST)
+		{
+			debug(LOG_ERROR, "Invalid effect group (%d) or type (%d) in %s", group, type, fileName);
+			ini.endGroup();
+			continue;
+		}
 		EFFECT curEffect;
 
 		curEffect.control      = ini.value("control").toInt();
-		curEffect.group        = (EFFECT_GROUP)ini.value("group").toInt();
-		curEffect.type         = (EFFECT_TYPE)ini.value("type").toInt();
+		curEffect.group        = (EFFECT_GROUP)group;
+		curEffect.type         = (EFFECT_TYPE)type;
 		curEffect.frameNumber  = ini.value("frameNumber").toInt();
 		curEffect.size         = ini.value("size").toInt();
 		curEffect.baseScale    = ini.value("baseScale").toInt();
@@ -2427,6 +2622,16 @@ bool readFXData(const char *fileName)
 		{
 			curEffect.imd = nullptr;
 		}
+		if (curEffect.imd == nullptr && curEffect.group != EFFECT_DESTRUCTION && curEffect.group != EFFECT_FIRE && curEffect.group != EFFECT_SAT_LASER)
+		{
+			debug(LOG_ERROR, "Effect without a model in %s", fileName);
+			ini.endGroup();
+			continue;
+		}
+		if (curEffect.group == EFFECT_FIRE && curEffect.radius == 0)
+		{
+			curEffect.radius = 1;
+		}
 
 		// For fire effects, set the tile as being on fire so that (e.g.) burning oil resources can't
 		// immediately be built on
@@ -2436,9 +2641,11 @@ bool readFXData(const char *fileName)
 			const int timeLeftToRun = curEffect.lifeSpan - timeThatEffectHasBeenRunning;
 
 			// Sanity check - don't allow a negative time to wrap to a huge positive unsigned value.
-			if (timeLeftToRun > 0)
+			if (timeLeftToRun > 0
+				&& curEffect.position.x >= 0 && curEffect.position.x < world_coord(mapState.width)
+				&& curEffect.position.z >= 0 && curEffect.position.z < world_coord(mapState.height))
 			{
-				tileSetFire(static_cast<int32_t>(curEffect.position.x), static_cast<int32_t>(curEffect.position.z), static_cast<uint32_t>(timeLeftToRun));
+				tileSetFire(mapState, static_cast<int32_t>(curEffect.position.x), static_cast<int32_t>(curEffect.position.z), static_cast<uint32_t>(timeLeftToRun));
 			}
 		}
 

@@ -69,6 +69,8 @@ public:
 
 	// Static factory method to create from raw data
 	static optional<NetMessage> tryFromRawData(const uint8_t* buffer, size_t bufferLen);
+	// Takes ownership of a buffer that must hold exactly one complete message (header + payload)
+	static optional<NetMessage> tryFromRawData(NetMsgDataVector&& rawData);
 
 	NetMessage(NetMessage&&) = default;
 	NetMessage& operator=(NetMessage&&) = default;
@@ -85,6 +87,15 @@ public:
 	// Append the raw data of this message to the provided output vector.
 	void rawDataAppendToVector(std::vector<uint8_t>& output) const;
 
+	enum class Origin : uint8_t
+	{
+		Received,
+		RelayedByHost,
+		InjectedByHost
+	};
+	Origin origin() const { return origin_; }
+	void setOrigin(Origin origin) { origin_ = origin; }
+
 private:
 
 	// Meant to be executed only by NetMessageBuilder
@@ -93,6 +104,7 @@ private:
 	friend class NetMessageBuilder;
 
 	NetMsgDataVector data_;
+	Origin origin_ = Origin::Received;
 };
 
 /// <summary>
@@ -108,7 +120,6 @@ class NetMessageBuilder
 public:
 
 	explicit NetMessageBuilder(uint8_t type, size_t reservedCapacity = 16);
-	explicit NetMessageBuilder(NetMsgDataVector&& rawData);
 
 	uint8_t type() const
 	{
@@ -127,6 +138,12 @@ public:
 		data_.insert(data_.end(), src, src + len);
 	}
 
+	// Bytes appended so far, excluding the header
+	size_t payloadSize() const
+	{
+		return data_.size() - NetMessage::HEADER_LENGTH;
+	}
+
 	// Build the final message (invalidates NetMessageBuilder instance)
 	NetMessage build()
 	{
@@ -135,7 +152,8 @@ public:
 		if (len > UINT16_MAX)
 		{
 			ASSERT(false, "Message payload length exceeds uint16_t max: %zu (message type: %u)", len, type());
-			len = UINT16_MAX; // Clamp to max length, so we can still send the message and probably gracefully handle it on the other side.
+			len = UINT16_MAX; // Truncate to the largest length the header can hold
+			data_.resize(NetMessage::HEADER_LENGTH + len);
 		}
 		const uint16_t payloadLen = static_cast<uint16_t>(len);
 		// Store payload length in network byte order starting at the second byte of the data vector.
@@ -245,6 +263,14 @@ public:
 	{
 		return index <= msgData->size();
 	}
+	size_t remaining() const
+	{
+		return (index < msgData->size()) ? msgData->size() - index : 0;
+	}
+	void markInvalid() const
+	{
+		index = msgData->size() + 1;
+	}
 
 	const NetMsgDataVector* msgData;
 	mutable size_t index = NetMessage::HEADER_LENGTH;
@@ -282,10 +308,23 @@ public:
 
 	size_t currentIncompleteDataBuffered() const;
 
+	/// Capture the raw bytes of every message not yet read by the sim (the range [begin, messagePos)),
+	/// in read (FIFO) order, without modifying the queue. Used to persist the pending game-action backlog
+	/// into a disk savegame (where there is no host relay to re-feed in-flight commands on restore).
+	/// Restore by pushMessage()ing the captured messages back, in the returned order, into a fresh queue.
+	std::vector<std::vector<uint8_t>> snapshotUnreadMessages() const;
+
 	inline size_t numPendingGameTimeUpdateMessages() const
 	{
 		return pendingGameTimeUpdateMessages;
 	}
+
+	/// The number of messages not yet read (popMessage) - what snapshotUnreadMessages() would return
+	size_t numUnreadMessages() const;
+
+	/// Whether the queue's messages are sent over the network / read by the game (setWillNeverGetMessages*)
+	inline bool getsMessagesForNet() const { return canGetMessagesForNet; }
+	inline bool getsMessages() const { return canGetMessages; }
 
 private:
 	void popOldMessages();                                             ///< Pops any messages that are no longer needed.

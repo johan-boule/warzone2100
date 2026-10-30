@@ -46,6 +46,7 @@ using json = nlohmann::json;
 #include <physfs.h>
 #include "lib/framework/file.h"
 #include <sstream>
+#include <string_view>
 
 class WZ_Notification_Preferences
 {
@@ -110,6 +111,11 @@ WZ_Notification_Preferences::WZ_Notification_Preferences(const std::string &file
 			}
 			ASSERT(!mRoot.is_null(), "JSON document from %s is null", fileName.c_str());
 			ASSERT(mRoot.is_object(), "JSON document from %s is not an object. Read: \n%s", fileName.c_str(), data);
+			if (!mRoot.is_object())
+			{
+				// treat as if no preferences exist yet
+				mRoot = json::object();
+			}
 			free(data);
 		}
 		else
@@ -759,8 +765,9 @@ std::shared_ptr<W_NOTIFICATION> W_NOTIFICATION::make(WZ_Queued_Notification* req
 
 	if (psActionButton != nullptr || request->notification.duration == 0)
 	{
+		static constexpr std::u8string_view DISMISS_LABEL_PREFIX = u8"▴ ";
 		// 2.) "Dismiss" button
-		dismissLabel = u8"▴ " + dismissLabel;
+		dismissLabel = std::string(DISMISS_LABEL_PREFIX.begin(), DISMISS_LABEL_PREFIX.end()) + dismissLabel;
 		sButInit.id = 3;
 		sButInit.FontID = font_regular;
 		sButInit.width = iV_GetTextWidth(dismissLabel.c_str(), font_regular) + 18;

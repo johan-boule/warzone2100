@@ -26,6 +26,8 @@
  */
 
 #include <physfs.h>
+#include <map>
+#include <algorithm>
 
 #include "lib/framework/frame.h"
 #include "lib/framework/strres.h"
@@ -63,6 +65,8 @@
 #include "activity.h"
 #include "main.h"					// for GetGameMode
 
+#include <chrono>
+
 #include "multimenu.h"
 #include "multiplay.h"
 #include "multirecv.h"
@@ -75,21 +79,23 @@
 #include "multilobbycommands.h"
 #include "stdinreader.h"
 #include "hci/quickchat.h"
+#include "game_world.h"
 
 // ////////////////////////////////////////////////////////////////////////////
 // Local Functions
 
 static void resetMultiVisibility(UDWORD player);
-void destroyPlayerResources(UDWORD player, bool quietly);
+void destroyPlayerResources(GameWorld& world, UDWORD player, bool quietly);
 
 //////////////////////////////////////////////////////////////////////////////
 /*
 ** when a remote player leaves an arena game do this!
 **
+** @param world : the game world to destroy the resources for `player` from
 ** @param player -- the one we need to clear
 ** @param quietly -- true means without any visible effects
 */
-void clearPlayer(UDWORD player, bool quietly)
+void clearPlayer(GameWorld& world, UDWORD player, bool quietly)
 {
 	ASSERT_OR_RETURN(, player < MAX_CONNECTED_PLAYERS, "Invalid player: %" PRIu32 "", player);
 
@@ -111,10 +117,10 @@ void clearPlayer(UDWORD player, bool quietly)
 		return; // no more to do
 	}
 
-	destroyPlayerResources(player, quietly);
+	destroyPlayerResources(world, player, quietly);
 }
 
-void destroyPlayerResources(UDWORD player, bool quietly)
+void destroyPlayerResources(GameWorld& world, UDWORD player, bool quietly)
 {
 	UDWORD			i;
 
@@ -138,31 +144,31 @@ void destroyPlayerResources(UDWORD player, bool quietly)
 
 	debug(LOG_DEATH, "killing off all droids for player %d", player);
 	// delete all droids
-	mutating_list_iterate(apsDroidLists[player], [quietly](DROID* d)
+	mutating_list_iterate(world.objects.droids[player], [quietly, &world](DROID* d)
 	{
 		if (quietly)			// don't show effects
 		{
-			killDroid(d);
+			killDroid(d, world.objects);
 		}
 		else				// show effects
 		{
-			destroyDroid(d, gameTime);
+			destroyDroid(d, deathTimeNow(), world);
 		}
 		return IterationResult::CONTINUE_ITERATION;
 	});
 
 	debug(LOG_DEATH, "killing off all structures for player %d", player);
 	// delete all structs
-	mutating_list_iterate(apsStructLists[player], [quietly](STRUCTURE* psStruct)
+	mutating_list_iterate(world.objects.structures[player], [quietly, &world](STRUCTURE* psStruct)
 	{
 		// FIXME: look why destroyStruct() doesn't put back the feature like removeStruct() does
 		if (quietly || psStruct->pStructureType->type == REF_RESOURCE_EXTRACTOR)		// don't show effects
 		{
-			removeStruct(psStruct, true);
+			removeStruct(psStruct, true, world);
 		}
 		else			// show effects
 		{
-			destroyStruct(psStruct, gameTime);
+			destroyStruct(psStruct, deathTimeNow(), world);
 		}
 		return IterationResult::CONTINUE_ITERATION;
 	});
@@ -173,24 +179,130 @@ void destroyPlayerResources(UDWORD player, bool quietly)
 static bool destroyMatchingStructs(UDWORD player, std::function<bool (STRUCTURE *)> cmp, bool quietly)
 {
 	bool destroyedAnyStructs = false;
-	mutating_list_iterate(apsStructLists[player], [quietly, &cmp, &destroyedAnyStructs](STRUCTURE* psStruct)
+	mutating_list_iterate(gameWorld.objects.structures[player], [quietly, &cmp, &destroyedAnyStructs](STRUCTURE* psStruct)
 	{
 		if (cmp(psStruct))
 		{
 			// FIXME: look why destroyStruct() doesn't put back the feature like removeStruct() does
 			if (quietly || psStruct->pStructureType->type == REF_RESOURCE_EXTRACTOR)		// don't show effects
 			{
-				removeStruct(psStruct, true);
+				removeStruct(psStruct, true, gameWorld);
 			}
 			else			// show effects
 			{
-				destroyStruct(psStruct, gameTime);
+				destroyStruct(psStruct, deathTimeNow(), gameWorld);
 			}
 			destroyedAnyStructs = true;
 		}
 		return IterationResult::CONTINUE_ITERATION;
 	});
 	return destroyedAnyStructs;
+}
+
+// Return a recipient's (specified by `idx`) share of a `total` quantity that is
+// divided among `numShares` recipients. Any remainder is dealt out one apiece
+// to the lowest indices first, so the shares add back up to exactly `total`.
+static int64_t shareOf(int64_t total, size_t numShares, size_t idx)
+{
+	ASSERT_OR_RETURN(0, idx < numShares, "Share %zu out of range (%zu shares)", idx, numShares);
+	ASSERT_OR_RETURN(0, total >= 0, "Tried to share a negative total of %" PRId64 "", total);
+
+	const int64_t n = static_cast<int64_t>(numShares);
+	const int64_t remainder = total % n;
+	const bool receiveRemainder = static_cast<int64_t>(idx) < remainder;
+
+	return total / n + (receiveRemainder ? 1 : 0);
+}
+
+// Should teammates inherit a structure (and its limit) when its owner leaves?
+static bool teamInherits(STRUCTURE_TYPE type, bool sharedResearch)
+{
+	if (!sharedResearch && type == REF_RESEARCH)
+	{
+		return false;
+	}
+	if (type == REF_HQ)
+	{
+		// Inheriting HQ may cause potentially subtle issues due to the implicit
+		// assumptions all over that there's only 1 HQ per player on a map
+		return false;
+	}
+	return true;
+}
+
+// Give the player's structures and limits to the team. This is done fairly so
+// that the team's total allowance for each structure ends up what it would have
+// been had the player never left, and nothing handed over becomes unbuildable
+// once destroyed.
+static void distributeStructuresAndLimits(UDWORD player, const std::vector<uint32_t>& possibleTargets)
+{
+	const bool sharedResearch = alliancesSharedResearch(game.alliance);
+	const size_t numTargets = possibleTargets.size();
+	ASSERT_OR_RETURN(, numTargets > 0, "No targets to distribute to");
+
+	// Bucketed up front by stat, because gifting moves structures out of this player's list
+	std::map<UDWORD, std::vector<STRUCTURE *>> giftableByStat;
+	for (STRUCTURE *psStruct : gameWorld.objects.structures[player])
+	{
+		if (psStruct && teamInherits(psStruct->pStructureType->type, sharedResearch))
+		{
+			giftableByStat[psStruct->pStructureType - asStructureStats].push_back(psStruct);
+		}
+	}
+
+	// Increment each time to rotate the recipient order (reduce bias)
+	size_t cursor = 0;
+
+	for (UDWORD stat = 0; stat < numStructureStats; ++stat)
+	{
+		auto& upgrade = asStructureStats[stat].upgrade;
+
+		// If the structure is not inheritable, do not gift it and
+		// do not increase its limit for teammates
+		if (!teamInherits(asStructureStats[stat].type, sharedResearch))
+		{
+			continue;
+		}
+
+		// An unlimited leaver has no pool to divide, so a capped recipient can end up over its
+		// cap once the structures arrive. That only blocks building more until the count drops.
+		const unsigned pool = upgrade[player].limit;
+		const bool sharePool = (pool != LOTS_OF);
+
+		auto giftable = giftableByStat.find(stat);
+		const std::vector<STRUCTURE *> *structs = (giftable != giftableByStat.end()) ? &giftable->second : nullptr;
+
+		if (!sharePool && !structs)
+		{
+			continue;	// the common case: nothing capped, and none of it built
+		}
+
+		size_t next = 0;
+		for (size_t i = 0; i < numTargets; ++i)
+		{
+			const auto to = possibleTargets[(cursor + i) % numTargets];
+
+			// An unlimited recipient discards its share - the team total is unbounded anyway
+			if (sharePool && upgrade[to].limit != LOTS_OF)
+			{
+				// Held below LOTS_OF, which would otherwise read as "no limit at all"
+				const unsigned share = static_cast<unsigned>(shareOf(pool, numTargets, i));
+				upgrade[to].limit += std::min(share, LOTS_OF - 1 - upgrade[to].limit);
+			}
+
+			if (structs)
+			{
+				const auto share = static_cast<size_t>(shareOf(static_cast<int64_t>(structs->size()), numTargets, i));
+				for (size_t n = 0; n < share; ++n)
+				{
+					giftSingleStructure((*structs)[next++], static_cast<UBYTE>(to), false);
+				}
+			}
+		}
+		ASSERT(!structs || next == structs->size(), "Distributed %zu of %zu structures", next, structs ? structs->size() : 0);
+
+		cursor = (cursor + 1) % numTargets;
+	}
 }
 
 bool splitResourcesAmongTeam(UDWORD player)
@@ -220,23 +332,26 @@ bool splitResourcesAmongTeam(UDWORD player)
 		return false;
 	}
 
+	const size_t numTargets = possibleTargets.size();
+
 	// Distribute power evenly
-	auto powerPerTarget = getPower(player) / static_cast<int32_t>(possibleTargets.size());
-	for (auto to : possibleTargets)
+	const int32_t power = getPower(player);
+	for (size_t i = 0; i < numTargets; ++i)
 	{
-		addPower(to, powerPerTarget);
+		addPower(possibleTargets[i], static_cast<int32_t>(shareOf(power, numTargets, i)));
 	}
 	setPower(player, 0);
 
 	// Distribute the player's additional unit limits
-	auto additionalDroidsLimitPerTarget = getMaxDroids(player) / static_cast<int>(possibleTargets.size());
-	auto additionalCommandersLimitPerTarget = getMaxCommanders(player) / static_cast<int>(possibleTargets.size());
-	auto additionalConstructorsLimitPerTarget = getMaxConstructors(player) / static_cast<int>(possibleTargets.size());
-	for (auto to : possibleTargets)
+	const int maxDroids = getMaxDroids(player);
+	const int maxCommanders = getMaxCommanders(player);
+	const int maxConstructors = getMaxConstructors(player);
+	for (size_t i = 0; i < numTargets; ++i)
 	{
-		setMaxDroids(to, getMaxDroids(to) + additionalDroidsLimitPerTarget);
-		setMaxCommanders(to, getMaxCommanders(to) + additionalCommandersLimitPerTarget);
-		setMaxConstructors(to, getMaxConstructors(to) + additionalConstructorsLimitPerTarget);
+		const auto to = possibleTargets[i];
+		setMaxDroids(to, getMaxDroids(to) + static_cast<int>(shareOf(maxDroids, numTargets, i)));
+		setMaxCommanders(to, getMaxCommanders(to) + static_cast<int>(shareOf(maxCommanders, numTargets, i)));
+		setMaxConstructors(to, getMaxConstructors(to) + static_cast<int>(shareOf(maxConstructors, numTargets, i)));
 	}
 
 	// Distribute droids between targets as evenly as possible
@@ -256,7 +371,7 @@ bool splitResourcesAmongTeam(UDWORD player)
 			return a.itemsRecv < b.itemsRecv;
 		});
 	};
-	mutating_list_iterate(apsDroidLists[player], [&droidsGiftedPerTarget, &incrRecvItem](DROID* d)
+	mutating_list_iterate(gameWorld.objects.droids[player], [&droidsGiftedPerTarget, &incrRecvItem](DROID* d)
 	{
 		bool transferredDroid = false;
 		if (!isDead(d))
@@ -275,50 +390,19 @@ bool splitResourcesAmongTeam(UDWORD player)
 
 		if (!transferredDroid)
 		{
-			destroyDroid(d, gameTime);
+			destroyDroid(d, deathTimeNow(), gameWorld);
 		}
 		return IterationResult::CONTINUE_ITERATION;
 	});
 
-	auto distributeMatchingStructs = [&](std::function<bool (STRUCTURE *)> cmp)
-	{
-		std::vector<PlayerItemsReceived> structsGiftedPerTarget;
-		for (auto to : possibleTargets)
-		{
-			structsGiftedPerTarget.push_back(PlayerItemsReceived{to, 0});
-		}
-		auto incrRecvStruct = [&](size_t idx) {
-			structsGiftedPerTarget[idx].itemsRecv += 1;
-			std::stable_sort(structsGiftedPerTarget.begin(), structsGiftedPerTarget.end(), [](const PlayerItemsReceived& a, const PlayerItemsReceived& b) -> bool {
-				return a.itemsRecv < b.itemsRecv;
-			});
-		};
+	distributeStructuresAndLimits(player, possibleTargets);
 
-		mutating_list_iterate(apsStructLists[player], [&cmp, &structsGiftedPerTarget, &incrRecvStruct](STRUCTURE* psStruct)
-		{
-			if (psStruct && cmp(psStruct))
-			{
-				giftSingleStructure(psStruct, structsGiftedPerTarget.front().player, false);
-				incrRecvStruct(0);
-			}
-			return IterationResult::CONTINUE_ITERATION;
-		});
-	};
-
-	// Distribute key structures
-	distributeMatchingStructs([](STRUCTURE *psStruct) { return psStruct->pStructureType->type == REF_RESOURCE_EXTRACTOR; });
-	distributeMatchingStructs([](STRUCTURE *psStruct) { return psStruct->pStructureType->type == REF_POWER_GEN; });
-	if (alliancesSharedResearch(game.alliance))
+	if (!alliancesSharedResearch(game.alliance))
 	{
-		distributeMatchingStructs([](STRUCTURE *psStruct) { return psStruct->pStructureType->type == REF_RESEARCH; });
-	}
-	else
-	{
-		// destroy the research centers in unshared research mode
+		// research centers are not gifted in unshared research mode, so destroy
+		// them. Don't let the leaving player's labs keep researching
 		destroyMatchingStructs(player, [](STRUCTURE *psStruct) { return psStruct->pStructureType->type == REF_RESEARCH; }, false);
 	}
-	distributeMatchingStructs([](STRUCTURE *psStruct) { return psStruct->pStructureType->type == REF_COMMAND_CONTROL; });
-	distributeMatchingStructs([](STRUCTURE *psStruct) { return psStruct->isFactory(); });
 
 	return true;
 }
@@ -352,18 +436,19 @@ void handlePlayerLeftInGame(UDWORD player)
 		return; // no more to do
 	}
 
+	// Apply the configured leave behavior to their resources.
 	PLAYER_LEAVE_MODE mode = game.playerLeaveMode;
 	switch (mode)
 	{
 		case PLAYER_LEAVE_MODE::DESTROY_RESOURCES:
-			destroyPlayerResources(player, false);
+			destroyPlayerResources(gameWorld, player, false);
 			break;
 		case PLAYER_LEAVE_MODE::SPLIT_WITH_TEAM:
 			if (!splitResourcesAmongTeam(player))
 			{
 				// no valid targets to split resources among
 				// instead, destroy the player
-				destroyPlayerResources(player, false);
+				destroyPlayerResources(gameWorld, player, false);
 			}
 			break;
 	}
@@ -384,13 +469,13 @@ static void resetMultiVisibility(UDWORD player)
 		if (owned != player)								// done reset own stuff..
 		{
 			//droids
-			for (DROID* pDroid : apsDroidLists[owned])
+			for (DROID* pDroid : gameWorld.objects.droids[owned])
 			{
 				pDroid->visible[player] = false;
 			}
 
 			//structures
-			for (STRUCTURE* pStruct : apsStructLists[owned])
+			for (STRUCTURE* pStruct : gameWorld.objects.structures[owned])
 			{
 				pStruct->visible[player] = false;
 			}
@@ -447,14 +532,30 @@ void recvPlayerLeft(NETQUEUE queue)
 	uint32_t playerIndex = 0;
 	auto r = NETbeginDecode(queue, GAME_PLAYER_LEFT);
 	NETuint32_t(r, playerIndex);
-	NETend(r);
+	if (!NETend(r))
+	{
+		if (recordInvalidMessage(queue.index, GAME_PLAYER_LEFT))
+		{
+			debug(LOG_INFO, "Ignoring truncated GAME_PLAYER_LEFT from %d - further invalid ones will not be logged", (int)queue.index);
+		}
+		return;
+	}
 
-	addConsolePlayerLeftMessage(playerIndex);
+	if (playerIndex >= MAX_CONNECTED_PLAYERS)
+	{
+		if (recordInvalidMessage(queue.index, GAME_PLAYER_LEFT))
+		{
+			debug(LOG_INFO, "Invalid player index %" PRIu32 " from %" PRIu8, playerIndex, queue.index);
+		}
+		return;
+	}
 
 	if (whosResponsible(playerIndex) != queue.index)
 	{
 		return;
 	}
+
+	addConsolePlayerLeftMessage(playerIndex);
 
 	turnOffMultiMsg(true);
 	handlePlayerLeftInGame(playerIndex);
@@ -494,9 +595,17 @@ bool MultiPlayerLeave(UDWORD playerIndex)
 	if (NetPlay.isHost)
 	{
 		multiClearHostRequestMoveToPlayer(playerIndex);
+		if (playerIndex < MAX_PLAYERS)
+		{
+			resetLobbyChangePlayerVote(playerIndex);
+		}
 		multiSyncResetPlayerChallenge(playerIndex);
 		resetMultiOptionPrefValues(playerIndex);
 	}
+
+	resetInvalidMessageLog(playerIndex);
+	multiSyncResetPlayerPingReplies(playerIndex);
+	lobbyRequestRateLimitsReset(playerIndex);
 
 	NETlogEntry("Player leaving game", SYNC_FLAG, playerIndex);
 	debug(LOG_NET, "** Player %u [%s], has left the game at game time %u.", playerIndex, getPlayerName(playerIndex), gameTime);
@@ -518,8 +627,9 @@ bool MultiPlayerLeave(UDWORD playerIndex)
 	if (ingame.localJoiningInProgress)
 	{
 		addConsolePlayerLeftMessage(playerIndex);
-		clearPlayer(playerIndex, false);
+		clearPlayer(gameWorld, playerIndex, false);
 		clearPlayerMultiStats(playerIndex); // local only
+		ingame.VerifiedIdentity[playerIndex] = false;
 		NetPlay.players[playerIndex].difficulty = AIDifficulty::DISABLED;
 	}
 	else if (NetPlay.isHost)  // If hosting, and game has started (not in pre-game lobby screen, that is).
@@ -578,6 +688,9 @@ bool MultiPlayerJoin(UDWORD playerIndex, optional<EcKey::Key> verifiedJoinIdenti
 	}
 
 	playerSpamMuteReset(playerIndex);
+	resetInvalidMessageLog(playerIndex);
+	multiSyncResetPlayerPingReplies(playerIndex);
+	lobbyRequestRateLimitsReset(playerIndex);
 
 	if (NetPlay.isHost)		// host responsible for welcoming this player.
 	{
@@ -609,7 +722,7 @@ bool MultiPlayerJoin(UDWORD playerIndex, optional<EcKey::Key> verifiedJoinIdenti
 		if (lobby_slashcommands_enabled())
 		{
 			// Inform the new player that this lobby has slash commands enabled.
-			sendRoomSystemMessageToSingleReceiver("Lobby slash commands enabled. Type " LOBBY_COMMAND_PREFIX "help to see details.", playerIndex, true);
+			sendHostNoticeToPlayer(playerIndex, WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::LobbySlashCommandsEnabled);
 		}
 	}
 	addConsolePlayerJoinMessage(playerIndex);
@@ -674,7 +787,7 @@ bool recvDataCheck(NETQUEUE queue)
 			}
 
 			snprintf(msg, sizeof(msg), _("%s (%u) has an incompatible mod, and has been kicked."), getPlayerName(player), player);
-			sendInGameSystemMessage(msg);
+			sendHostNotice(WzQuickChatDataContexts::INTERNAL_LOCALIZED_HOST_NOTICE::Context::IncompatibleModKicked, 0, player);
 			addConsoleMessage(msg, LEFT_JUSTIFY, NOTIFY_MESSAGE);
 
 			kickPlayer(player, _("Your data doesn't match the host's!"), ERROR_WRONGDATA, false);

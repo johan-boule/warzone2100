@@ -57,7 +57,7 @@
 
 static void recvGiftStruct(uint8_t from, uint8_t to, uint32_t structID);
 static void recvGiftDroids(uint8_t from, uint8_t to, uint32_t droidID);
-static void sendGiftDroids(uint8_t from, uint8_t to);
+static void sendGiftDroids(const WorldObjectState& objState, uint8_t from, uint8_t to);
 static void giftResearch(uint8_t from, uint8_t to, bool send);
 static void giftAutoGame(uint8_t from, uint8_t to, bool send);
 
@@ -75,19 +75,22 @@ bool recvGift(NETQUEUE queue)
 	NETuint8_t(r, from);
 	NETuint8_t(r, to);
 	NETuint32_t(r, droidID);
-	NETend(r);
-
-	if (!canGiveOrdersFor(queue.index, from))
+	if (!NETend(r))
 	{
-		debug(LOG_WARNING, "Gift (%d) from %d, to %d, queue.index %d", (int)type, (int)from, (int)to, (int)queue.index);
-		syncDebug("Wrong player.");
+		if (recordInvalidMessage(queue.index, GAME_GIFT))
+		{
+			debug(LOG_INFO, "Ignoring truncated GAME_GIFT from %d - further invalid ones will not be logged", (int)queue.index);
+		}
 		return false;
 	}
 
-	if (to >= MAX_PLAYERS)
+	if (!canGiveOrdersFor(queue.index, from) || to >= MAX_PLAYERS || (from == to && type != AUTOGAME_GIFT))
 	{
-		debug(LOG_WARNING, "Gift (%d) from %d, to %d (invalid recipient player), queue.index %d", (int)type, (int)from, (int)to, (int)queue.index);
-		syncDebug("Invalid recipient player.");
+		if (recordInvalidMessage(queue.index, GAME_GIFT))
+		{
+			debug(LOG_INFO, "Ignoring GAME_GIFT (%d) from %d to %d from %d - further invalid ones will not be logged", (int)type, (int)from, (int)to, (int)queue.index);
+		}
+		syncDebug("Invalid gift.");
 		return false;
 	}
 
@@ -95,7 +98,7 @@ bool recvGift(NETQUEUE queue)
 	{
 		if (NetPlay.players[to].isSpectator)
 		{
-			debug(LOG_WARNING, "Can't gift (%d) from %d, to %d (spectator player), queue.index %d", (int)type, (int)from, (int)to, (int)queue.index);
+			debug(LOG_NET, "Can't gift (%d) from %d, to %d (spectator player), queue.index %d", (int)type, (int)from, (int)to, (int)queue.index);
 			syncDebug("Can't gift to spectator.");
 			return false;
 		}
@@ -105,6 +108,15 @@ bool recvGift(NETQUEUE queue)
 	switch (type)
 	{
 	case RADAR_GIFT:
+		if (!alliancesCanGiveResearchAndRadar(game.alliance))
+		{
+			if (recordInvalidMessage(queue.index, GAME_GIFT))
+			{
+				debug(LOG_INFO, "Ignoring GAME_GIFT (%d) from %d in this alliance mode - further invalid ones will not be logged", (int)type, (int)queue.index);
+			}
+			syncDebug("Radar gift not allowed.");
+			return false;
+		}
 		audioTrack = ID_SENSOR_DOWNLOAD;
 		giftRadar(from, to, false);
 		break;
@@ -129,7 +141,11 @@ bool recvGift(NETQUEUE queue)
 		giftAutoGame(from, to, false);
 		break;
 	default:
-		debug(LOG_ERROR, "recvGift: Unknown Gift recvd");
+		if (recordInvalidMessage(queue.index, GAME_GIFT))
+		{
+			debug(LOG_INFO, "Ignoring unknown GAME_GIFT (%d) from %d - further invalid ones will not be logged", (int)type, (int)queue.index);
+		}
+		syncDebug("Unknown gift.");
 		return false;
 		break;
 	}
@@ -156,7 +172,7 @@ bool sendGift(uint8_t type, uint8_t to)
 		break;
 	case DROID_GIFT:
 		audioTrack = ID_UNITS_TRANSFER;
-		sendGiftDroids(selectedPlayer, to);
+		sendGiftDroids(gameWorld.objects, selectedPlayer, to);
 		break;
 	case RESEARCH_GIFT:
 		audioTrack = ID_TECHNOLOGY_TRANSFER;
@@ -233,7 +249,7 @@ void giftRadar(uint8_t from, uint8_t to, bool send)
 	// If we are receiving the gift
 	else
 	{
-		hqReward(from, to);
+		hqReward(gameWorld, from, to);
 		if (to == selectedPlayer && loopMissionState == LMS_NORMAL)
 		{
 			CONPRINTF(_("%s Gives You A Visibility Report"), getPlayerName(from));
@@ -247,8 +263,14 @@ static void recvGiftStruct(uint8_t from, uint8_t to, uint32_t structID)
 	STRUCTURE *psStruct = IdToStruct(structID, from);
 	if (psStruct)
 	{
+		const STRUCTURE_STATS *psStats = psStruct->pStructureType;
+		if (bMultiPlayer && psStats->curCount[to] >= psStats->upgrade[to].limit)
+		{
+			syncDebug("Structure limit reached.");
+			return;
+		}
 		syncDebugStructure(psStruct, '<');
-		giftSingleStructure(psStruct, to, false);
+		giftSingleStructure(psStruct, to, false, false);
 		syncDebugStructure(psStruct, '>');
 		if (to == selectedPlayer)
 		{
@@ -257,7 +279,7 @@ static void recvGiftStruct(uint8_t from, uint8_t to, uint32_t structID)
 	}
 	else
 	{
-		debug(LOG_ERROR, "Bad structure id %u, from %u to %u", structID, from, to);
+		syncDebug("Structure %u from %u to %u not found.", structID, from, to);
 	}
 }
 
@@ -269,7 +291,7 @@ static void recvGiftStruct(uint8_t from, uint8_t to, uint32_t structID)
 // \param to    :player that should be getting the droid
 static void recvGiftDroids(uint8_t from, uint8_t to, uint32_t droidID)
 {
-	DROID *psDroid = IdToDroid(droidID, from);
+	DROID *psDroid = IdToDroid(gameWorld.objects, droidID, from);
 
 	if (psDroid)
 	{
@@ -283,22 +305,23 @@ static void recvGiftDroids(uint8_t from, uint8_t to, uint32_t droidID)
 	}
 	else
 	{
-		debug(LOG_ERROR, "Bad droid id %u, from %u to %u", droidID, from, to);
+		syncDebug("Droid %u from %u to %u not found.", droidID, from, to);
 	}
 }
 
 // sendGiftDroids()
 // We give selected droid(s) as a gift to another player.
 //
+// \param objState : the object state to send the droids between `from` and `to`
 // \param from  :player that sent us the droid
 // \param to    :player that should be getting the droid
-static void sendGiftDroids(uint8_t from, uint8_t to)
+static void sendGiftDroids(const WorldObjectState& objState, uint8_t from, uint8_t to)
 {
 	DroidList::const_iterator psD;
 	uint8_t      giftType = DROID_GIFT;
 	uint8_t      totalToSend = 0;
 
-	if (apsDroidLists[from].empty())
+	if (objState.droids[from].empty())
 	{
 		return;
 	}
@@ -309,8 +332,8 @@ static void sendGiftDroids(uint8_t from, uint8_t to)
 	 * over their droid limit.
 	 */
 
-	for (psD = apsDroidLists[from].begin();
-	     psD != apsDroidLists[from].end() && (getNumDroids(to) + totalToSend < getMaxDroids(to)) && totalToSend != UINT8_MAX;
+	for (psD = objState.droids[from].begin();
+	     psD != objState.droids[from].end() && (getNumDroids(to) + totalToSend < getMaxDroids(to)) && totalToSend != UINT8_MAX;
 	     ++psD)
 	{
 		if ((*psD)->selected)
@@ -328,7 +351,7 @@ static void sendGiftDroids(uint8_t from, uint8_t to)
 	 * does its own net calls.
 	 */
 
-	for (psD = apsDroidLists[from].begin(); psD != apsDroidLists[from].end() && totalToSend != 0; ++psD)
+	for (psD = objState.droids[from].begin(); psD != objState.droids[from].end() && totalToSend != 0; ++psD)
 	{
 		if ((*psD)->selected)
 		{
@@ -419,15 +442,11 @@ void giftPower(uint8_t from, uint8_t to, uint32_t amount, bool send)
 		}
 		else if (amount == 0) // the GUI option
 		{
-			value = getPower(from) / 3;
-			usePower(from, value);
-			addPower(to, value);
+			value = transferPower(from, to, getPower(from) / 3);
 		}
 		else // for scripts etc that can give precise amounts
 		{
-			value = MIN(getPower(from), amount);
-			usePower(from, value);
-			addPower(to, value);
+			value = transferPower(from, to, MIN(getPower(from), amount));
 		}
 		if (from != ANYPLAYER && to == selectedPlayer)
 		{
@@ -442,6 +461,7 @@ void giftPower(uint8_t from, uint8_t to, uint32_t amount, bool send)
 
 void requestAlliance(uint8_t from, uint8_t to, bool prop, bool allowAudio)
 {
+	ASSERT_OR_RETURN(, from < MAX_PLAYERS && to < MAX_PLAYERS, "Invalid players %u, %u", from, to);
 	if (prop && bMultiMessages)
 	{
 		sendAlliance(from, to, ALLIANCE_REQUESTED, false);
@@ -478,6 +498,7 @@ void breakAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio)
 {
 	char	tm1[128];
 
+	ASSERT_OR_RETURN(, p1 < MAX_PLAYERS && p2 < MAX_PLAYERS, "Invalid players %u, %u", p1, p2);
 	if (prop && bMultiMessages)
 	{
 		sendAlliance(p1, p2, ALLIANCE_BROKEN, false);
@@ -504,7 +525,7 @@ void breakAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio)
 
 	// Make sure p1's structures are no longer considered "our buildings" to their former allies
 	// For unit pathing
-	for (const STRUCTURE* psStructure : apsStructLists[p1])
+	for (const STRUCTURE* psStructure : gameWorld.objects.structures[p1])
 	{
 		StructureBounds b = getStructureBounds(psStructure);
 
@@ -512,13 +533,13 @@ void breakAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio)
 		{
 			for (int j = 0; j < b.size.y; j++)
 			{
-				auxClearAll(b.map.x + i, b.map.y + j, AUXBITS_OUR_BUILDING);
-				auxSetAllied(b.map.x + i, b.map.y + j, psStructure->player, AUXBITS_OUR_BUILDING);
+				auxClearAll(gameWorld.map, b.map.x + i, b.map.y + j, AUXBITS_OUR_BUILDING);
+				auxSetAllied(gameWorld.map, b.map.x + i, b.map.y + j, psStructure->player, AUXBITS_OUR_BUILDING);
 			}
 		}
 	}
 	// Do the same for p2's stuff
-	for (const STRUCTURE* psStructure : apsStructLists[p2])
+	for (const STRUCTURE* psStructure : gameWorld.objects.structures[p2])
 	{
 		StructureBounds b = getStructureBounds(psStructure);
 
@@ -526,8 +547,8 @@ void breakAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio)
 		{
 			for (int j = 0; j < b.size.y; j++)
 			{
-				auxClearAll(b.map.x + i, b.map.y + j, AUXBITS_OUR_BUILDING);
-				auxSetAllied(b.map.x + i, b.map.y + j, psStructure->player, AUXBITS_OUR_BUILDING);
+				auxClearAll(gameWorld.map, b.map.x + i, b.map.y + j, AUXBITS_OUR_BUILDING);
+				auxSetAllied(gameWorld.map, b.map.x + i, b.map.y + j, psStructure->player, AUXBITS_OUR_BUILDING);
 			}
 		}
 	}
@@ -537,6 +558,7 @@ void formAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio, bool allow
 {
 	char	tm1[128];
 
+	ASSERT_OR_RETURN(, p1 < MAX_PLAYERS && p2 < MAX_PLAYERS, "Invalid players %u, %u", p1, p2);
 	if (bMultiMessages && prop)
 	{
 		sendAlliance(p1, p2, ALLIANCE_FORMED, false);
@@ -573,7 +595,7 @@ void formAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio, bool allow
 	}
 
 	// Clear out any attacking orders
-	for (DROID* psDroid : apsDroidLists[p1])	// from -> to
+	for (DROID* psDroid : gameWorld.objects.droids[p1])	// from -> to
 	{
 		if (psDroid->order.type == DORDER_ATTACK
 		    && psDroid->order.psObj
@@ -582,7 +604,7 @@ void formAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio, bool allow
 			orderDroid(psDroid, DORDER_STOP, ModeImmediate);
 		}
 	}
-	for (DROID* psDroid : apsDroidLists[p2])	// to -> from
+	for (DROID* psDroid : gameWorld.objects.droids[p2])	// to -> from
 	{
 		if (psDroid->order.type == DORDER_ATTACK
 		    && psDroid->order.psObj
@@ -593,7 +615,7 @@ void formAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio, bool allow
 	}
 
 	// Properly mark all of p1's structures as allied buildings for unit pathing
-	for (const STRUCTURE* psStructure : apsStructLists[p1])
+	for (const STRUCTURE* psStructure : gameWorld.objects.structures[p1])
 	{
 		StructureBounds b = getStructureBounds(psStructure);
 
@@ -603,19 +625,19 @@ void formAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio, bool allow
 			{
 				if (!(psStructure->pStructureType->type == REF_GATE))
 				{
-					auxSetAllied(b.map.x + i, b.map.y + j, psStructure->player, AUXBITS_OUR_BUILDING);
+					auxSetAllied(gameWorld.map, b.map.x + i, b.map.y + j, psStructure->player, AUXBITS_OUR_BUILDING);
 				}
 				else
 				{
 					// Make sure gates aren't set as impassible to our new allies
-					auxClearAll(b.map.x + i, b.map.y + j, AUXBITS_NONPASSABLE);
-					auxSetEnemy(b.map.x + i, b.map.y + j, psStructure->player, AUXBITS_NONPASSABLE);
+					auxClearAll(gameWorld.map, b.map.x + i, b.map.y + j, AUXBITS_NONPASSABLE);
+					auxSetEnemy(gameWorld.map, b.map.x + i, b.map.y + j, psStructure->player, AUXBITS_NONPASSABLE);
 				}
 			}
 		}
 	}
 	// Do the same for p2's stuff
-	for (const STRUCTURE* psStructure : apsStructLists[p2])
+	for (const STRUCTURE* psStructure : gameWorld.objects.structures[p2])
 	{
 		StructureBounds b = getStructureBounds(psStructure);
 
@@ -625,12 +647,12 @@ void formAlliance(uint8_t p1, uint8_t p2, bool prop, bool allowAudio, bool allow
 			{
 				if (!(psStructure->pStructureType->type == REF_GATE))
 				{
-					auxSetAllied(b.map.x + i, b.map.y + j, psStructure->player, AUXBITS_OUR_BUILDING);
+					auxSetAllied(gameWorld.map, b.map.x + i, b.map.y + j, psStructure->player, AUXBITS_OUR_BUILDING);
 				}
 				else
 				{
-					auxClearAll(b.map.x + i, b.map.y + j, AUXBITS_NONPASSABLE);
-					auxSetEnemy(b.map.x + i, b.map.y + j, psStructure->player, AUXBITS_NONPASSABLE);
+					auxClearAll(gameWorld.map, b.map.x + i, b.map.y + j, AUXBITS_NONPASSABLE);
+					auxSetEnemy(gameWorld.map, b.map.x + i, b.map.y + j, psStructure->player, AUXBITS_NONPASSABLE);
 				}
 			}
 		}
@@ -649,6 +671,39 @@ void sendAlliance(uint8_t from, uint8_t to, uint8_t state, int32_t value)
 	NETend(w);
 }
 
+bool allianceInvolvesSpectator(uint8_t p1, uint8_t p2)
+{
+	if (!bMultiPlayer)
+	{
+		return false;
+	}
+	auto isSpectator = [](uint8_t player) {
+		return static_cast<size_t>(player) < NetPlay.players.size() && NetPlay.players[player].isSpectator;
+	};
+	return isSpectator(p1) || isSpectator(p2);
+}
+
+static bool validAllianceChange(uint8_t from, uint8_t to, uint8_t state)
+{
+	return from < MAX_PLAYERS && to < MAX_PLAYERS && from != to && !alliancesFixed(game.alliance)
+		&& (state == ALLIANCE_REQUESTED || state == ALLIANCE_FORMED || state == ALLIANCE_BROKEN);
+}
+
+// Whether a valid alliance change still applies, which it may no longer do by the time it is processed
+static bool allianceChangeApplies(uint8_t from, uint8_t to, uint8_t state)
+{
+	switch (state)
+	{
+	case ALLIANCE_REQUESTED:
+		return !allianceInvolvesSpectator(from, to) && alliances[from][to] != ALLIANCE_FORMED;
+	case ALLIANCE_FORMED:
+		// "to" must have asked "from" first
+		return !allianceInvolvesSpectator(from, to) && alliances[from][to] == ALLIANCE_INVITATION;
+	default:
+		return true;
+	}
+}
+
 bool recvAlliance(NETQUEUE queue, bool allowAudio)
 {
 	uint8_t to, from, state;
@@ -659,56 +714,34 @@ bool recvAlliance(NETQUEUE queue, bool allowAudio)
 	NETuint8_t(r, to);
 	NETuint8_t(r, state);
 	NETint32_t(r, value);
-	NETend(r);
+	bool validMessage = NETend(r);
 
-	if (!canGiveOrdersFor(queue.index, from))
+	if (!validMessage || !canGiveOrdersFor(queue.index, from) || !validAllianceChange(from, to, state))
 	{
-		return false;
-	}
-
-	if (to >= MAX_PLAYERS)
-	{
-		debug(LOG_WARNING, "Invalid recipient player (%d), queue.index %d", (int)to, (int)queue.index);
-		return false;
-	}
-
-	auto prohibitedNewAlliance = [](uint8_t from, uint8_t to) -> bool {
-		if (bMultiPlayer)
+		syncDebug("Rejected alliance change %d %d %d from %d", (int)from, (int)to, (int)state, (int)queue.index);
+		if (recordInvalidMessage(queue.index, GAME_ALLIANCE))
 		{
-			if ((static_cast<size_t>(from) < NetPlay.players.size()) && NetPlay.players[from].isSpectator)
-			{
-				debug(LOG_WARNING, "Can't enable alliance from %d (spectator), to %d", (int)from, (int)to);
-				syncDebug("Can't enable alliance from spectator.");
-				return true;
-			}
-			if ((static_cast<size_t>(to) < NetPlay.players.size()) && NetPlay.players[to].isSpectator)
-			{
-				debug(LOG_WARNING, "Can't enable alliance from %d, to %d (spectator)", (int)from, (int)to);
-				syncDebug("Can't enable alliance to spectator.");
-				return true;
-			}
+			debug(LOG_INFO, "Ignoring invalid GAME_ALLIANCE from %d (valid: %d, from: %d, to: %d, state: %d, alliance type: %d) - further invalid ones will not be logged",
+			      (int)queue.index, (int)validMessage, (int)from, (int)to, (int)state, (int)game.alliance);
 		}
 		return false;
-	};
+	}
+	if (!allianceChangeApplies(from, to, state))
+	{
+		syncDebug("Alliance change %d %d %d from %d no longer applies", (int)from, (int)to, (int)state, (int)queue.index);
+		return false;
+	}
 
 	switch (state)
 	{
-	case ALLIANCE_NULL:
-		break;
 	case ALLIANCE_REQUESTED:
-		if (prohibitedNewAlliance(from, to)) { return false; }
 		requestAlliance(from, to, false, allowAudio);
 		break;
 	case ALLIANCE_FORMED:
-		if (prohibitedNewAlliance(from, to)) { return false; }
 		formAlliance(from, to, false, allowAudio, true);
 		break;
 	case ALLIANCE_BROKEN:
 		breakAlliance(from, to, false, allowAudio);
-		break;
-	default:
-		debug(LOG_ERROR, "Unknown alliance state recvd.");
-		return false;
 		break;
 	}
 
@@ -740,13 +773,13 @@ void  technologyGiveAway(const STRUCTURE *pS)
 	}
 
 	uint32_t x = map_coord(pS->pos.x), y = map_coord(pS->pos.y);
-	if (!pickATileGen(&x, &y, LOOK_FOR_EMPTY_TILE, zonedPAT))
+	if (!pickATileGen(gameWorld, &x, &y, LOOK_FOR_EMPTY_TILE, zonedPAT))
 	{
 		syncDebug("Did not find location for oil drum.");
 		debug(LOG_FEATURE, "Unable to find a free location.");
 		return;
 	}
-	FEATURE *pF = buildFeature(&asFeatureStats[featureIndex], world_coord(x), world_coord(y), false);
+	FEATURE *pF = buildFeature(gameWorld, &asFeatureStats[featureIndex], world_coord(x), world_coord(y), false);
 	if (pF)
 	{
 		pF->player = pS->player;
@@ -785,7 +818,14 @@ void recvMultiPlayerFeature(NETQUEUE queue)
 		NETuint32_t(r, y);
 		NETuint32_t(r, id);
 	}
-	NETend(r);
+	if (!NETend(r))
+	{
+		if (recordInvalidMessage(queue.index, GAME_DEBUG_ADD_FEATURE))
+		{
+			debug(LOG_INFO, "Ignoring truncated GAME_DEBUG_ADD_FEATURE from %d - further invalid ones will not be logged", (int)queue.index);
+		}
+		return;
+	}
 
 	const DebugInputManager& dbgInputManager = gInputManager.debugManager();
 	if (!dbgInputManager.debugMappingsAllowed() && bMultiPlayer)
@@ -801,7 +841,7 @@ void recvMultiPlayerFeature(NETQUEUE queue)
 		if (asFeatureStats[i].ref == ref)
 		{
 			// Create a feature of the specified type at the given location
-			buildFeature(&asFeatureStats[i], x, y, false, id);
+			buildFeature(gameWorld, &asFeatureStats[i], x, y, false, id);
 			break;
 		}
 	}

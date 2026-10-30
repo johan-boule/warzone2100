@@ -179,19 +179,27 @@ namespace wzapi
 
 		//__ ## eventGameLoaded()
 		//__
-		//__ An event that is run when game is loaded from a saved game. There is usually no need to use this event.
+		//__ An event that is run when a game is loaded from a save written by an earlier version of the game.
+		//__ A save written since 4.8 restores the game as it was saved, including the scripts' global (`var`) variables,
+		//__ their timers, groups and labels, and the interface they set up
+		//__ (the reticule buttons, whether the interface is shown, replaced textures, the minimap, the sky and lighting).
+		//__ This event isn't run then, and the game goes on as if it had never been saved.
+		//__ NOTE: a script that keeps state anywhere else
+		//__ (`let` or `const` variables it changes, closures, properties of functions) loses it when a game is loaded.
+		//__ (Changed in 4.8.)
 		//__
 		virtual bool handle_eventGameLoaded() SCRIPTING_EVENT_NON_REQUIRED
 
 		//__ ## eventGameSaving()
 		//__
-		//__ An event that is run before game is saved. There is usually no need to use this event.
+		//__ Deprecated: no longer raised.
 		//__
 		virtual bool handle_eventGameSaving() SCRIPTING_EVENT_NON_REQUIRED
 
 		//__ ## eventGameSaved()
 		//__
 		//__ An event that is run after game is saved. There is usually no need to use this event.
+		//__ It runs after the game state was captured, so a handler must not change the game state.
 		//__
 		virtual bool handle_eventGameSaved() SCRIPTING_EVENT_NON_REQUIRED
 
@@ -430,6 +438,14 @@ namespace wzapi
 		//__ An event that is run whenever an object is destroyed. Careful passing
 		//__ the parameter object around, since it is about to vanish!
 		//__
+		//__ It is run at the end of the game update in which the object was
+		//__ destroyed. It isn't run for objects removed between two updates:
+		//__ - while a game or level is being set up, by the game itself or by
+		//__   removeObject() in eventGameInit or eventStartLevel
+		//__ - by removeObject() in another event that runs between updates
+		//__   (eventGameLoaded, eventPlayerLeft, the UI and menu events, ...)
+		//__ - when a player leaves the game.
+		//__
 		virtual bool handle_eventDestroyed(const BASE_OBJECT *psVictim) = 0;
 
 		//__ ## eventPickup(feature, droid)
@@ -582,6 +598,12 @@ namespace wzapi
 		return lhs;
 	}
 
+	enum class ScriptBinding : uint8_t
+	{
+		PlayerAI = 0,
+		HostDeclaredGlobal = 1,
+	};
+
 	class scripting_instance : public scripting_event_handling_interface
 	{
 	public:
@@ -596,6 +618,8 @@ namespace wzapi
 		const std::string& scriptPath() const { return m_scriptPath; }
 		int player() const { return m_player; }
 		bool isHostAI() const;
+		ScriptBinding binding() const { return m_binding; }
+		void setBinding(ScriptBinding binding) { m_binding = binding; }
 
 	public:
 		inline void setReceiveAllEvents(bool value) { m_isReceivingAllEvents = value; }
@@ -624,19 +648,37 @@ namespace wzapi
 		// - 4.) The filePath is checked relative to the main scriptPath (LoadFileSearchOptions::ScriptPath)
 		bool loadFileForInclude(const std::string& filePath, std::string& loadedFilePath, char **ppFileData, UDWORD *pFileSize, uint32_t searchFlags = LoadFileSearchOptions::All);
 
+		// Record a file this instance was loaded from (the script file, then each include() or includeJSON(), in order).
+		// sourceHash() is saved with the script state, so a load can tell a script changed since the save.
+		void noteSourceFile(const std::string& path, const char *data, size_t size);
+		/// A SHA-256 (hex) of the files' paths and contents (line endings as LF), in the order they were read
+		std::string sourceHash() const;
+
 	public:
 		// event handling
 		// - see `scripting_event_handling_interface`
 
 	public:
 		// save / restore state
-		virtual bool saveScriptGlobals(nlohmann::json &result) = 0;
-		virtual bool loadScriptGlobals(const nlohmann::json &result) = 0;
+		virtual bool saveScriptGlobals(nlohmann::ordered_json &result) = 0;
+		// fixedNulls: true if the save distinguishes JS null from undefined (save format
+		// version >= 2). When false (older saves), JSON null is mapped to JS undefined.
+		virtual bool loadScriptGlobals(const nlohmann::ordered_json &result, bool fixedNulls) = 0;
 
-		virtual nlohmann::json saveTimerFunction(uniqueTimerID timerID, std::string timerName, const timerAdditionalData* additionalParam) = 0;
+		virtual nlohmann::ordered_json saveTimerFunction(uniqueTimerID timerID, std::string timerName, const timerAdditionalData* additionalParam) = 0;
 
 		// recreates timer functions (and additional userdata) based on the information saved by the saveTimerFunction() method
-		virtual std::tuple<TimerFunc, std::unique_ptr<timerAdditionalData>> restoreTimerFunction(const nlohmann::json& savedTimerFuncData) = 0;
+		virtual std::tuple<TimerFunc, std::unique_ptr<timerAdditionalData>> restoreTimerFunction(const nlohmann::ordered_json& savedTimerFuncData) = 0;
+
+		// save / restore the script engine's Math.random() PRNG state
+		// - Restoring it lets a resumed instance continue the identical Math.random() sequence instead of re-seeding from wall-clock
+		//   time at context creation (otherwise AI bots that call Math.random() diverge across a save/restore)
+		virtual uint64_t saveMathRandomState() const = 0;
+		virtual void restoreMathRandomState(uint64_t state) = 0;
+
+		// a callback that calls the named script function of this instance with the player (as setReticuleButton's).
+		// It does nothing once the instance is gone.
+		virtual playerCallbackFunc namedCallback(const WzString& func) = 0;
 
 	public:
 		// get state for debugging
@@ -678,7 +720,9 @@ namespace wzapi
 		int m_player;
 		std::string m_scriptName;
 		std::string m_scriptPath;
+		std::vector<std::pair<std::string, std::string>> m_sourceFiles; // path, SHA-256 (hex) of the contents
 		bool m_isReceivingAllEvents = false;
+		ScriptBinding m_binding = ScriptBinding::PlayerAI;
 	};
 
 	class execution_context_base
@@ -975,6 +1019,7 @@ namespace wzapi
 	#define WZAPI_AI_UNSAFE
 
 	std::string translate(WZAPI_PARAMS(std::string str));
+	std::string markForTranslation(WZAPI_PARAMS(std::string str));
 	uint32_t syncRandom(WZAPI_PARAMS(uint32_t limit));
 	bool setAlliance(WZAPI_PARAMS(int player1, int player2, bool areAllies));
 	no_return_value sendAllianceRequest(WZAPI_PARAMS(int player2));
@@ -998,6 +1043,8 @@ namespace wzapi
 	bool useSafetyTransport(WZAPI_PARAMS(bool flag));
 	bool restoreLimboMissionData(WZAPI_NO_PARAMS);
 	uint32_t getMultiTechLevel(WZAPI_NO_PARAMS);
+	uint32_t benchArrangement(WZAPI_NO_PARAMS);
+	bool benchTileBlocked(WZAPI_PARAMS(std::string propulsionName, int x, int y));
 	bool setCampaignNumber(WZAPI_PARAMS(int campaignNumber));
 	int32_t getMissionType(WZAPI_NO_PARAMS);
 	bool getRevealStatus(WZAPI_NO_PARAMS);
@@ -1083,7 +1130,7 @@ namespace wzapi
 	bool setStructureLimits(WZAPI_PARAMS(std::string structureName, int limit, optional<int> _player));
 	bool applyLimitSet(WZAPI_NO_PARAMS);
 	bool emitSound(WZAPI_PARAMS(std::string sound, int x, int y));
-	no_return_value setMissionTime(WZAPI_PARAMS(int _time));
+	no_return_value setMissionTime(WZAPI_PARAMS(int _time, optional<int> _mode));
 	int getMissionTime(WZAPI_NO_PARAMS);
 	no_return_value setReinforcementTime(WZAPI_PARAMS(int _time, optional<bool> _removeLaunch));
 	no_return_value completeResearch(WZAPI_PARAMS(std::string researchName, optional<int> _player, optional<bool> _forceResearch));
@@ -1117,7 +1164,7 @@ namespace wzapi
 	/// <param name="_sfx">Optional boolean parameter that specifies whether special effects are to be applied.</param>
 	/// <returns>`true` if `psObj` has been successfully queued for destruction.</returns>
 	bool removeObject(WZAPI_PARAMS(BASE_OBJECT *psObj, optional<bool> _sfx));
-	no_return_value setScrollLimits(WZAPI_PARAMS(int x1, int y1, int x2, int y2));
+	no_return_value setScrollLimits(WZAPI_PARAMS(int x1, int y1, int x2, int y2)); WZAPI_AI_UNSAFE
 	scr_area getScrollLimits(WZAPI_NO_PARAMS);
 	returned_nullable_ptr<const STRUCTURE> addStructure(WZAPI_PARAMS(std::string structureName, int player, int x, int y, optional<int> _direction));
 	unsigned int getStructureLimit(WZAPI_PARAMS(std::string structureName, optional<int> _player));
@@ -1143,6 +1190,8 @@ namespace wzapi
 	nlohmann::json getUsefulConstants();
 	nlohmann::json constructStaticPlayerData();
 	std::vector<PerPlayerUpgrades> getUpgradesObject();
+	/// getUpgradesObject(), built once for the stats loaded (statsGeneration()), for every script instance to share
+	const std::vector<PerPlayerUpgrades>& getUpgradesObjectCached();
 	nlohmann::json constructMapTilesArray();
 
 	// `wzapi::removeObject` API call adds the game objects to this list.

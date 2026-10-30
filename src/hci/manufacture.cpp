@@ -28,6 +28,12 @@
 #include "../display3d.h"
 
 STRUCTURE *ManufactureController::highlightedFactory = nullptr;
+
+void ManufactureController::visitUiObjectRefs(const UiObjectRefVisitor &visit)
+{
+	visitUiObjectRef(highlightedFactory, visit);
+}
+
 static const uint8_t nullBrainComponent = 0; // "0" to reference "NULLxxx" components
 static const uint8_t commandBrainComponent = 1; // hmm there is only 1 "CommandBrain01" anyway..
 
@@ -106,7 +112,7 @@ void ManufactureController::startDeliveryPointPosition()
 	ASSERT_NOT_NULLPTR_OR_RETURN(, factory);
 
 	// make sure that the factory isn't assigned to a commander
-	assignFactoryCommandDroid(factory, nullptr);
+	assignFactoryCommandDroid(factory, nullptr, ModeQueue);
 	auto psFlag = FindFactoryDelivery(factory);
 	if (psFlag)
 	{
@@ -356,15 +362,20 @@ protected:
 			return;
 		}
 		const auto player = factory->player;
-		const auto exp = getTopExperience(player);
+		auto exp = getTopExperience(player);
 		unsigned int lvl = 0;
 		if (!factory->pFunctionality->factory.psSubject)
 		{
 			// not showing icon when nothing is being built
 			return;
 		}
-		if (factory->pFunctionality->factory.psSubject->droidType == DROID_COMMAND || factory->pFunctionality->factory.psSubject->droidType == DROID_SENSOR)
+		bool isCommander = factory->pFunctionality->factory.psSubject->droidType == DROID_COMMAND;
+		if (isCommander || factory->pFunctionality->factory.psSubject->droidType == DROID_SENSOR)
 		{
+			if (isCommander)
+			{
+				exp = std::min(factory->pFunctionality->factory.psSubject->getBrainStats()->productionCommanderExpLimit * 65536, exp);
+			}
 			lvl = getDroidLevel(exp, player, commandBrainComponent);
 		}
 		else if (factory->pFunctionality->factory.psSubject->droidType == DROID_CONSTRUCT

@@ -27,6 +27,8 @@
 #include "lib/netplay/wz_connection_provider.h"
 #include "lib/netplay/wz_compression_provider.h"
 
+#include <zlib.h>
+
 IClientConnection::IClientConnection(WzConnectionProvider& connProvider, WzCompressionProvider& compressionProvider, PendingWritesManager& pwm)
 	: selfConnList_({ this }),
 	connProvider_(connProvider.shared_from_this()),
@@ -128,8 +130,11 @@ net::result<ssize_t> IClientConnection::readNoInt(void* buf, size_t max_size, si
 
 		if (compressionAdapter_->availableSpaceToDecompress() != 0)
 		{
+			if (!compressionAdapter_->decompressionStreamConsumedAllInput())
+			{
+				return tl::make_unexpected(make_zlib_error_code(Z_DATA_ERROR));
+			}
 			compressionAdapter_->setDecompressionNeedInput(true);
-			ASSERT(compressionAdapter_->decompressionStreamConsumedAllInput(), "Compression algorithm impl not consuming all input!");
 		}
 
 		return max_size - compressionAdapter_->availableSpaceToDecompress();  // Got some data, return how much.
@@ -239,6 +244,9 @@ net::result<void> IClientConnection::flush(size_t* rawByteCount)
 		return {};  // No data to flush out.
 	}
 
+	// NOTE: capturing compressionBuf by reference is safe only because append() invokes
+	// the callback synchronously (while holding the pending-writes lock) before returning;
+	// the buffer is cleared immediately below. Do not change append() to defer the callback.
 	pwm_->append(this, [&compressionBuf] (PendingWritesManager::ConnectionWriteQueue& writeQueue)
 	{
 		writeQueue.reserve(writeQueue.size() + compressionBuf.size());

@@ -8,18 +8,19 @@
 //#endif
 // 2. OpenGL ES 3.0+
 #if (defined(GL_ES) && (__VERSION__ < 300))
-#error "Unsupported version of GLES"
+#error Unsupported version of GLES
 #endif
 
+#include "terrain_combined.glsl"
+#include "srgb.glsl"
+
 // constants overridden by WZ when loading shaders (do not modify here in the shader source!)
-#define WZ_MIP_LOAD_BIAS 0.f
 #define WZ_SHADOW_MODE 1
 #define WZ_SHADOW_FILTER_SIZE 3
 #define WZ_SHADOW_CASCADES_COUNT 3
 #define WZ_POINT_LIGHT_ENABLED 0
 //
 
-#define WZ_MAX_SHADOW_CASCADES 3
 
 #if (!defined(GL_ES) && (__VERSION__ >= 130)) || (defined(GL_ES) && (__VERSION__ >= 300))
 #define NEWGL
@@ -37,7 +38,6 @@ uniform sampler2DArray groundSpecular;
 uniform sampler2DArray groundHeight;
 
 // array of scales for ground textures, encoded in mat4. scale_i = groundScale[i/4][i%4]
-uniform mat4 groundScale;
 
 // decal texture arrays. layer = decal tile
 uniform sampler2DArray decalTex;
@@ -48,26 +48,12 @@ uniform sampler2DArray decalHeight;
 // shadow map
 uniform sampler2DArrayShadow shadowMap;
 
-uniform mat4 ViewMatrix;
-uniform mat4 ShadowMapMVPMatrix[WZ_MAX_SHADOW_CASCADES];
-uniform vec4 ShadowMapCascadeSplits;
-uniform int ShadowMapSize;
 
 // sun light colors/intensity:
-uniform vec4 emissiveLight;
-uniform vec4 ambientLight;
-uniform vec4 diffuseLight;
-uniform vec4 specularLight;
 
 
-uniform vec4 cameraPos; // in modelSpace
-uniform vec4 sunPos; // in modelSpace, normalized
 
 // fog
-uniform int fogEnabled; // whether fog is enabled
-uniform float fogEnd;
-uniform float fogStart;
-uniform vec4 fogColor;
 
 in vec2 uvLightmap;
 in vec2 uvDecal;
@@ -98,7 +84,7 @@ out vec4 FragColor;
 
 vec3 getGroundUv(int i) {
 	uint groundNo = fgrounds[i];
-	return vec3(uvGround * groundScale[groundNo/4u][groundNo%4u], groundNo);
+	return vec3(uvGround * groundScale[groundNo/4u][groundNo%4u], float(groundNo));
 }
 
 struct BumpData {
@@ -110,7 +96,13 @@ struct BumpData {
 void getGroundBM(int i, inout BumpData res) {
 	vec3 uv = getGroundUv(i);
 	float w = fgroundWeights[i];
-	res.color += texture2DArray(groundTex, uv, WZ_MIP_LOAD_BIAS) * w;
+	vec4 color = texture2DArray(groundTex, uv, WZ_MIP_LOAD_BIAS);
+	if (linearLighting != 0)
+	{
+		// The layer blend was tuned for display values, so re-encode each layer before the weighted sum
+		color.rgb = wzLinearToSrgb(color.rgb);
+	}
+	res.color += color * w;
 	vec3 N = texture2DArray(groundNormal, uv, WZ_MIP_LOAD_BIAS).xyz;
 	N = mix(normalize(N * 2.f - 1.f), vec3(0.f,0.f,1.f), vec3(float(N == vec3(0.f,0.f,0.f))));
 	res.N += N * w;
@@ -130,23 +122,43 @@ vec4 doBumpMapping(BumpData b, vec3 groundLightDir, vec3 groundHalfVec) {
 	float specularFactor = blinnTerm(b.N, normalize(groundHalfVec), b.gloss, 16.f);
 
 	vec4 lightmap_vec4 = texture(lightmap_tex, uvLightmap, 0.f);
-
 	float adjustedTileBrightness = pow(lightmap_vec4.a, 2.f-lightmap_vec4.a); // ... * tile brightness / ambient occlusion (stored in lightmap.a)
+	vec4 res;
+	vec4 albedoLinear = b.color;
+	float pointLightGloss = b.gloss;
+	if (linearLighting != 0)
+	{
+		// The tier's lighting was tuned for display values, so it is evaluated in display space
+		vec3 ambientD = wzLinearToSrgb(ambientLight.rgb);
+		vec3 diffuseD = wzLinearToSrgb(diffuseLight.rgb);
+		vec3 specularD = wzLinearToSrgb(specularLight.rgb);
+		vec3 lightD = ambientD * adjustedTileBrightness + diffuseD * diffuseFactor + lightmap_vec4.rgb / 1.4f;
+		vec3 specD = (specularD * specularFactor * diffuseFactor + lightmap_vec4.rgb / 2.5f) * (b.gloss * b.gloss);
+		res = vec4(wzSrgbToLinear(b.color.rgb * lightD + specD), b.color.a);
+		albedoLinear.rgb = wzSrgbToLinear(b.color.rgb);
+		// Like the albedo, the gloss map scales display values, so convert it to linear the same way
+		pointLightGloss = wzSrgbToLinear(vec3(b.gloss)).r;
+	}
+	else
+	{
+		vec4 adjustedAmbientLight = ambientLight * adjustedTileBrightness;
+		vec4 light = adjustedAmbientLight + diffuseLight * diffuseFactor;
+		light.rgb = blendAddEffectLighting(light.rgb, lightmap_vec4.rgb / 1.4f); // additive color (from environmental point lights / effects)
 
-	vec4 adjustedAmbientLight = ambientLight * adjustedTileBrightness;
-	vec4 light = adjustedAmbientLight + diffuseLight * diffuseFactor;
-	light.rgb = blendAddEffectLighting(light.rgb, (lightmap_vec4.rgb / 1.4f)); // additive color (from environmental point lights / effects)
+		vec4 light_spec = specularLight * specularFactor * diffuseFactor;
+		light_spec.rgb = blendAddEffectLighting(light_spec.rgb, lightmap_vec4.rgb / 2.5f); // additive color (from environmental point lights / effects)
+		light_spec *= (b.gloss * b.gloss);
 
-	vec4 light_spec = specularLight * specularFactor * diffuseFactor;
-	light_spec.rgb = blendAddEffectLighting(light_spec.rgb, (lightmap_vec4.rgb / 2.5f)); // additive color (from environmental point lights / effects)
-	light_spec *= (b.gloss * b.gloss);
-
-	vec4 res = (b.color*light) + light_spec;
+		res = (b.color*light) + light_spec;
+	}
 
 #if WZ_POINT_LIGHT_ENABLED == 1
 	// point lights
 	vec2 clipSpaceCoord = gl_FragCoord.xy / vec2(float(viewportWidth), float(viewportHeight));
-	res += iterateOverAllPointLights(clipSpaceCoord, posModelSpace, b.N, normalize(groundHalfVec - groundLightDir), b.color, b.gloss, ModelTangentMatrix);
+	// The light loop works in world space, so the tangent frame is inverted once here.
+	// The frame is built orthonormal, so its transpose stands in for its inverse, and the third column of that is the vertex normal.
+	mat3 tangentToWorld = transpose(ModelTangentMatrix);
+	res += iterateOverAllPointLights(clipSpaceCoord, posModelSpace, tangentToWorld * b.N, tangentToWorld[2], tangentToWorld * normalize(groundHalfVec - groundLightDir), albedoLinear, pointLightGloss);
 #endif
 
 	// Calculate water murkiness based on non-constant-density-fog, see https://iquilezles.org/articles/fog/
@@ -159,8 +171,15 @@ vec4 doBumpMapping(BumpData b, vec3 groundLightDir, vec3 groundHalfVec) {
 	float waterDeep = 0.003 * murkyFactor;
 	murkiness = clamp(murkiness, 0.0, 1.0);
 	waterDeep = clamp(waterDeep, 0.0, 1.0);
-	res.rgb = mix(res.rgb, (vec3(0.315,0.425,0.475)*vec3(1.0-waterDeep)), murkiness);
-
+	// The murk color, its depth fade and the tile attenuation in lightmap.a were tuned for display values,
+	// so under linear lighting they apply in display space
+	vec3 murkColor = vec3(0.315,0.425,0.475)*vec3(1.0-waterDeep);
+	if (linearLighting != 0)
+	{
+		vec3 display = mix(wzLinearToSrgb(res.rgb), murkColor, murkiness) * lightmap_vec4.a;
+		return vec4(wzSrgbToLinear(display), b.color.a);
+	}
+	res.rgb = mix(res.rgb, murkColor, murkiness);
 	return vec4(res.rgb * lightmap_vec4.a, b.color.a);
 }
 
@@ -175,8 +194,13 @@ vec4 main_bumpMapping() {
 	getGroundBM(3, bump);
 
 	if (tile >= 0) {
-		vec3 uv = vec3(uvDecal, tile);
+		vec3 uv = vec3(uvDecal, float(tile));
 		vec4 decalColor = texture2DArray(decalTex, uv, WZ_MIP_LOAD_BIAS);
+		if (linearLighting != 0)
+		{
+			// The decal mixes over the layers in display space as well
+			decalColor.rgb = wzLinearToSrgb(decalColor.rgb);
+		}
 		float a = decalColor.a;
 		// blend color, normal and gloss with ground ones based on alpha
 		bump.color = (1.f - a)*bump.color + a*vec4(decalColor.rgb, 1.f);
@@ -186,19 +210,14 @@ vec4 main_bumpMapping() {
 		bump.N = (1.f - a)*bump.N + a*n;
 		bump.gloss = (1.f - a)*bump.gloss + a*texture2DArray(decalSpecular, uv, WZ_MIP_LOAD_BIAS).r;
 	}
+	// Every lighting term below assumes unit length - but a weighted sum of unit normals is shorter than unit when they disagree (so normalize)
+	bump.N = normalize(bump.N);
 	return doBumpMapping(bump, groundLightDir, groundHalfVec);
 }
 
 void main()
 {
 	vec4 fragColor = main_bumpMapping();
-
-	if (fogEnabled > 0)
-	{
-		// Calculate linear fog
-		float fogFactor = (fogEnd - length(posViewSpace)) / (fogEnd - fogStart);
-		fragColor = mix(fragColor, vec4(fogColor.rgb, fragColor.a), clamp(fogFactor, 0.0, 1.0));
-	}
 
 	#ifdef NEWGL
 	FragColor = fragColor;

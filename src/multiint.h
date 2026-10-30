@@ -1,7 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 /*
 	This file is part of Warzone 2100.
 	Copyright (C) 1999-2004  Eidos Interactive
-	Copyright (C) 2005-2020  Warzone 2100 Project
+	Copyright (C) 2005-2026  Warzone 2100 Project (https://github.com/Warzone2100)
 
 	Warzone 2100 is free software; you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
@@ -30,9 +32,12 @@
 #include "lib/widget/form.h"
 #include "lib/widget/button.h"
 #include <functional>
+#include <memory>
+#include <string>
 #include <vector>
 #include <set>
 #include "lib/framework/wzstring.h"
+#include "lib/framework/loading_task_fwd.h"
 #include "titleui/multiplayer.h"
 #include "faction.h"
 
@@ -64,6 +69,14 @@ struct WzMultiButton : public W_BUTTON
 void calcBackdropLayoutForMultiplayerOptionsTitleUI(WIDGET *psWidget);
 void readAIs();	///< step 1, load AI definition files
 void loadMultiScripts();	///< step 2, load the actual AI scripts
+
+/// The settings file whose "scripts" group (extra / rules scripts) the current game was started with, and the
+/// directory those scripts are in: a --skirmish test or --autohost configuration. Both empty for other games.
+/// Recorded in savegames, so that a loaded game runs the same scripts.
+const WzString &getLaunchScriptsIni();
+const WzString &getLaunchScriptsPath();
+/// Set by a savegame load: the next loadMultiScripts uses these when the game was not itself launched with them.
+void setRestoredLaunchScripts(const WzString &ini, const WzString &path);
 const char *getAIName(int player);	///< only run this -after- readAIs() is called
 const std::vector<WzString> getAINames();
 int matchAIbyName(const char* name);	///< only run this -after- readAIs() is called
@@ -170,7 +183,12 @@ std::string getDefaultSkirmishAI(const bool& displayNameOnly=false);
 
 void kickPlayer(uint32_t player_id, const char *reason, LOBBY_ERROR_TYPES type, bool banPlayer = false);
 void displayKickReasonPopup(const std::string &reason);
-void loadMapPreview(bool hideInterface);
+
+struct Sha256;
+class ResourceLoadingController;
+
+LoadingTask<> mapPreviewLoadTask(ResourceLoadingController &controller, bool hideInterface);
+LoadingTask<> mapPreviewLoadTask(ResourceLoadingController &controller, bool hideInterface, std::string mapName, Sha256 mapHash);
 
 bool changeReadyStatus(UBYTE player, bool bReady);
 WzString formatGameName(WzString name);
@@ -189,6 +207,9 @@ bool SendColourRequest(UBYTE player, UBYTE col);
 void handleAutoReadyRequest();
 
 void multiClearHostRequestMoveToPlayer(uint32_t playerIdx);
+void lobbyRequestRateLimitsNotifyIndexSwap(uint32_t playerIndexA, uint32_t playerIndexB);
+void lobbyRequestRateLimitsReset(uint32_t playerIndex);
+bool lobbyNameChangeRequestAllowed(uint32_t sender);
 
 // ////////////////////////////////////////////////////////////////
 // CONNECTION SCREEN

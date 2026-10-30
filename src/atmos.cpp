@@ -35,6 +35,7 @@
 #include "miscimd.h"
 #include "profiling.h"
 #include "lib/gamelib/gtime.h"
+#include "game_world.h"
 #include <cmath>
 
 #ifndef GLM_ENABLE_EXPERIMENTAL
@@ -68,6 +69,7 @@ enum AP_STATUS
 static ATPART	*asAtmosParts = nullptr;
 static UDWORD	freeParticle = 0;
 static WT_CLASS	weather = WT_NONE;
+static bool	weatherEnabled = true;
 
 /* Setup all the particles */
 void atmosInitSystem()
@@ -115,7 +117,7 @@ static void testParticleWrap(ATPART *psPart)
 }
 
 /* Moves one of the particles */
-static void processParticle(ATPART *psPart)
+static void processParticle(WorldMapState& mapState, ATPART *psPart)
 {
 	SDWORD	groundHeight;
 	Vector3i pos;
@@ -135,8 +137,8 @@ static void processParticle(ATPART *psPart)
 
 		/* If it's gone off the WORLD... */
 		if (psPart->position.x < 0 || psPart->position.z < 0 ||
-		    psPart->position.x > ((mapWidth - 1)*TILE_UNITS) ||
-		    psPart->position.z > ((mapHeight - 1)*TILE_UNITS))
+		    psPart->position.x > ((mapState.width - 1)*TILE_UNITS) ||
+		    psPart->position.z > ((mapState.height - 1)*TILE_UNITS))
 		{
 			/* The kill it */
 			psPart->status = APS_INACTIVE;
@@ -147,7 +149,7 @@ static void processParticle(ATPART *psPart)
 		if (psPart->position.y < TILE_MAX_HEIGHT)
 		{
 			/* Get ground height */
-			groundHeight = map_Height(static_cast<int>(psPart->position.x), static_cast<int>(psPart->position.z));
+			groundHeight = map_Height(mapState, static_cast<int>(psPart->position.x), static_cast<int>(psPart->position.z));
 
 			/* Are we below ground? */
 			if ((int)psPart->position.y < groundHeight
@@ -159,7 +161,7 @@ static void processParticle(ATPART *psPart)
 				{
 					x = map_coord(static_cast<int32_t>(psPart->position.x));
 					y = map_coord(static_cast<int32_t>(psPart->position.z));
-					psTile = mapTile(x, y);
+					psTile = mapTile(mapState, x, y);
 					if (terrainType(psTile) == TER_WATER && TEST_TILE_VISIBLE_TO_SELECTEDPLAYER(psTile)) // display-only check for adding effect
 					{
 						pos.x = static_cast<int>(psPart->position.x);
@@ -250,14 +252,14 @@ static void atmosAddParticle(const Vector3f &pos, AP_TYPE type)
 }
 
 /* Move the particles */
-void atmosUpdateSystem()
+void atmosUpdateSystem(WorldMapState& mapState)
 {
 	WZ_PROFILE_SCOPE(atmosUpdateSystem);
 	UDWORD	i;
 	UDWORD	numberToAdd;
 	Vector3f pos;
 
-	if (!asAtmosParts)
+	if (!asAtmosParts || !weatherEnabled)
 	{
 		return;
 	}
@@ -270,7 +272,7 @@ void atmosUpdateSystem()
 			/* See if it's active */
 			if (asAtmosParts[i].status == APS_ACTIVE)
 			{
-				processParticle(&asAtmosParts[i]);
+				processParticle(mapState, &asAtmosParts[i]);
 			}
 		}
 
@@ -298,8 +300,8 @@ void atmosUpdateSystem()
 
 			/* If we've got one on the grid */
 			if (pos.x > 0 && pos.z > 0 &&
-			    pos.x < (SDWORD)world_coord(mapWidth - 1) &&
-			    pos.z < (SDWORD)world_coord(mapHeight - 1))
+			    pos.x < (SDWORD)world_coord(mapState.width - 1) &&
+			    pos.z < (SDWORD)world_coord(mapState.height - 1))
 			{
 				/* On grid, so which particle shall we add? */
 				switch (weather)
@@ -338,7 +340,7 @@ void atmosDrawParticles(const glm::mat4 &viewMatrix, const glm::mat4 &perspectiv
 	WZ_PROFILE_SCOPE(atmosDrawParticles);
 	UDWORD	i;
 
-	if (weather == WT_NONE || !asAtmosParts)
+	if (weather == WT_NONE || !asAtmosParts || !weatherEnabled)
 	{
 		return;
 	}
@@ -393,4 +395,24 @@ void atmosSetWeatherType(WT_CLASS type)
 WT_CLASS atmosGetWeatherType()
 {
 	return weather;
+}
+
+void atmosSetWeatherEnabled(bool enabled)
+{
+	if (weatherEnabled == enabled)
+	{
+		return;
+	}
+	weatherEnabled = enabled;
+	if (!enabled && asAtmosParts)
+	{
+		// drop any live particles so re-enabling starts clean
+		memset(asAtmosParts, 0, MAX_ATMOS_PARTICLES * sizeof(*asAtmosParts));
+		freeParticle = 0;
+	}
+}
+
+bool atmosGetWeatherEnabled()
+{
+	return weatherEnabled;
 }

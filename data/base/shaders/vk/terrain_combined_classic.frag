@@ -1,28 +1,28 @@
 #version 450
 
 #include "terrain_combined.glsl"
+#include "srgb.glsl"
 
-layout (constant_id = 0) const float WZ_MIP_LOAD_BIAS = 0.f;
 layout (constant_id = 1) const uint WZ_SHADOW_MODE = 1;
 layout (constant_id = 2) const uint WZ_SHADOW_FILTER_SIZE = 5;
 layout (constant_id = 3) const uint WZ_SHADOW_CASCADES_COUNT = 3;
 
-layout(set = 1, binding = 0) uniform sampler2D lightmap_tex;
+layout(set = 2, binding = 0) uniform sampler2D lightmap_tex;
 
 // ground texture arrays. layer = ground type
-layout(set = 1, binding = 1) uniform sampler2DArray groundTex;
-layout(set = 1, binding = 2) uniform sampler2DArray groundNormal;
-layout(set = 1, binding = 3) uniform sampler2DArray groundSpecular;
-layout(set = 1, binding = 4) uniform sampler2DArray groundHeight;
+layout(set = 2, binding = 1) uniform sampler2DArray groundTex;
+layout(set = 2, binding = 2) uniform sampler2DArray groundNormal;
+layout(set = 2, binding = 3) uniform sampler2DArray groundSpecular;
+layout(set = 2, binding = 4) uniform sampler2DArray groundHeight;
 
 // decal texture arrays. layer = decal tile
-layout(set = 1, binding = 5) uniform sampler2DArray decalTex;
-layout(set = 1, binding = 6) uniform sampler2DArray decalNormal;
-layout(set = 1, binding = 7) uniform sampler2DArray decalSpecular;
-layout(set = 1, binding = 8) uniform sampler2DArray decalHeight;
+layout(set = 2, binding = 5) uniform sampler2DArray decalTex;
+layout(set = 2, binding = 6) uniform sampler2DArray decalNormal;
+layout(set = 2, binding = 7) uniform sampler2DArray decalSpecular;
+layout(set = 2, binding = 8) uniform sampler2DArray decalHeight;
 
 // depth map
-layout(set = 1, binding = 9) uniform sampler2DArrayShadow shadowMap;
+layout(set = 2, binding = 9) uniform sampler2DArrayShadow shadowMap;
 
 layout(location = 0) in FragData frag;
 layout(location = 10) flat in FragFlatData fragf;
@@ -45,8 +45,18 @@ vec4 main_classic() {
 	float visibility = getShadowVisibility(frag.posModelSpace, frag.posViewSpace, diffuseFactor, 0.001f);
 
 	vec4 lightmap_vec4 = texture(lightmap_tex, frag.uvLightmap);
-	vec4 light = (visibility*diffuseLight*0.75*diffuseFactor + ambientLight*0.25) * lightmap_vec4.a; // ... * tile brightness / ambient occlusion (stored in lightmap.a);
-	light.rgb = blendAddEffectLighting(light.rgb, (lightmap_vec4.rgb / 1.5f)); // additive color (from environmental point lights / effects)
+	float tileBrightness = lightmap_vec4.a; // tile brightness / ambient occlusion
+	if (linearLighting != 0)
+	{
+		// The tier's lighting was tuned for display values, so it is evaluated in display space
+		vec3 lightD = (visibility * wzLinearToSrgb(diffuseLight.rgb) * diffuseFactor * 0.75 + wzLinearToSrgb(ambientLight.rgb) * 0.25) * tileBrightness;
+		lightD = blendAddEffectLighting(lightD, lightmap_vec4.rgb / 1.5f);
+		return vec4(wzSrgbToLinear(lightD * wzLinearToSrgb(decal.rgb)), decal.a);
+	}
+	vec3 diffuseTerm = (visibility*diffuseLight*diffuseFactor).rgb * 0.75;
+	vec3 ambientTerm = ambientLight.rgb * 0.25;
+	vec4 light = vec4(diffuseTerm + ambientTerm, ambientLight.a) * tileBrightness;
+	light.rgb = blendAddEffectLighting(light.rgb, lightmap_vec4.rgb / 1.5f); // additive color (from environmental point lights / effects)
 	light.a = 1.f;
 
 	return light * decal;
@@ -56,10 +66,5 @@ void main()
 {
 	vec4 fragColor = main_classic();
 
-	if (fogEnabled > 0)
-	{
-		float fogFactor = (fogEnd - length(frag.posViewSpace)) / (fogEnd - fogStart);
-		fragColor = mix(fragColor, vec4(fogColor.rgb, fragColor.a), clamp(fogFactor, 0.0, 1.0));
-	}
 	FragColor = fragColor;
 }

@@ -1,7 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 /*
 	This file is part of Warzone 2100.
 	Copyright (C) 1999-2004  Eidos Interactive
-	Copyright (C) 2005-2020  Warzone 2100 Project
+	Copyright (C) 2005-2026  Warzone 2100 Project (https://github.com/Warzone2100)
 
 	Warzone 2100 is free software; you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
@@ -23,6 +25,7 @@
 
 #include "frame.h"
 #include "wzstring.h"
+#include "mainthreadexec.h"
 #include <vector>
 #include <functional>
 #include <nonstd/optional.hpp>
@@ -32,34 +35,6 @@ using nonstd::nullopt;
 struct WZ_THREAD;
 struct WZ_MUTEX;
 struct WZ_SEMAPHORE;
-
-class WZ_MAINTHREADEXEC
-{
-public:
-	WZ_MAINTHREADEXEC() { }
-	virtual ~WZ_MAINTHREADEXEC() { };
-
-	// subclass should override this
-	virtual void doExecOnMainThread() { };
-};
-
-class WZ_MAINTHREADEXECFUNC: public WZ_MAINTHREADEXEC
-{
-public:
-	typedef std::function<void ()> execFuncType;
-public:
-	WZ_MAINTHREADEXECFUNC(const execFuncType &execFunc)
-	: execFunc(execFunc)
-	{ }
-	virtual ~WZ_MAINTHREADEXECFUNC() { };
-
-	void doExecOnMainThread()
-	{
-		execFunc();
-	};
-private:
-	execFuncType execFunc;
-};
 
 struct screeninfo
 {
@@ -80,6 +55,9 @@ void wzResetGfxSettingsOnFailure();
 void wzGetGameToRendererScaleFactor(float *horizScaleFactor, float *vertScaleFactor);
 void wzGetGameToRendererScaleFactorInt(unsigned int *horizScalePercentage, unsigned int *vertScalePercentage);
 void wzMainEventLoop(std::function<void()> onShutdown);
+/// Platform event pump for synchronous loading drains. Keeps the OS window responsive
+/// while `runTaskToCompletion` / `runBlockingResourceLoad` spin on the main thread.
+/// Called from game-layer loading housekeeping and lib/ivis_opengl blocking gfx loads.
 void wzPumpEventsWhileLoading();
 void wzQuit(int exitCode);              ///< Quit game
 int wzGetQuitExitCode();
@@ -89,6 +67,7 @@ bool wzIsSupportedWindowMode(WINDOW_MODE mode);
 WINDOW_MODE wzGetNextWindowMode(WINDOW_MODE currentMode);
 WINDOW_MODE wzAltEnterToggleFullscreen();
 bool wzChangeWindowMode(WINDOW_MODE mode, bool silent = false);
+void wzProcessPendingWindowChanges();
 WINDOW_MODE wzGetCurrentWindowMode();
 bool wzIsMaximized();
 bool wzIsFullscreen();
@@ -111,13 +90,22 @@ unsigned int wzGetMaximumDisplayScaleForWindowSize(unsigned int windowWidth, uns
 unsigned int wzGetMaximumDisplayScaleForCurrentWindowSize();
 unsigned int wzGetSuggestedDisplayScaleForCurrentWindowSize(unsigned int desiredMaxScreenDimension);
 unsigned int wzGetCurrentDisplayScale();
+/// The active refresh rate of the display the window is currently on (0 when unknown)
+float wzGetCurrentDisplayRefreshRate();
 void wzGetWindowResolution(int *screen, unsigned int *width, unsigned int *height);
 bool wzHasClipboardText();
 WzString wzGetClipboardText();
 bool wzSetClipboardText(const char *text);
 void wzSetCursor(CURSOR index);
+CURSOR wzGetCursor();
+class iV_Image;
+// Returns the image and hotspot for a loaded cursor, or nullptr if unavailable
+const iV_Image* wzGetCursorImage(CURSOR cur, int& hotX, int& hotY);
+// Incremented whenever the cursor image set is rebuilt (e.g. coloured/mono or scale changes)
+unsigned int wzGetCursorImagesGeneration();
 void wzApplyCursor();
 void wzShowMouse(bool visible); ///< Show the Mouse?
+void wzGamepadApplyMode(); ///< Applies the current gamepad mode setting, initializing or shutting down the subsystem as needed
 void wzGrabMouse();		///< Trap mouse cursor in application window
 void wzReleaseMouse();	///< Undo the wzGrabMouse operation
 uint32_t wzGetTicks();		///< Milliseconds since start of game
@@ -172,19 +160,34 @@ WZ_DECL_NONNULL(1) void wzSemaphoreDestroy(WZ_SEMAPHORE *semaphore);
 WZ_DECL_NONNULL(1) void wzSemaphoreWait(WZ_SEMAPHORE *semaphore);
 WZ_DECL_NONNULL(1) bool wzSemaphoreWaitTimeout(WZ_SEMAPHORE *semaphore, int32_t timeoutMS);
 WZ_DECL_NONNULL(1) void wzSemaphorePost(WZ_SEMAPHORE *semaphore);
+
+// Asynchronously executes exec->doExecOnMainThread() on the main thread, then deletes `exec` (also on the main thread).
+// `exec` must be allocated on the heap, and ownership passes to this function:
+// it is not safe to access `exec` after calling wzAsyncExecOnMainThread.
+//
+// Thread-safe.
+// May be called from any thread, at any time - including before the backend has initialized (queued execs run once the main loop starts).
+// Execs run in the order they were posted, from the main loop.
+// An exec posted from inside another exec runs on a later frame.
+// After shutdown (wzShutdownMainThreadExecs), posts are ignored and `exec` is deliberately leaked.
+//
+// No guarantees are made about when it runs relative to the calling of this function -
+// this function may return before, during, or after its execution on the main thread.
 WZ_DECL_NONNULL(1) void wzAsyncExecOnMainThread(WZ_MAINTHREADEXEC *exec);
 
-// Asynchronously executes execFunc() on the main thread.
-// This function must be thread-safe, and may be safely called from any thread.
-//
-// No guarantees are made about when execFunc() will be called relative to the
-// calling of this function - this function may return before, during, or after
-// execFunc()'s execution on the main thread.
+// Asynchronously executes execFunc() on the main thread (see above).
 inline void wzAsyncExecOnMainThread(const std::function<void ()> &execFunc)
 {
 	wzAsyncExecOnMainThread(new WZ_MAINTHREADEXECFUNC(execFunc));
-	// receiver handles deleting the parameter on the main thread after doExecOnMainThread() has been called
 }
+
+// Runs the execs queued by wzAsyncExecOnMainThread.
+// NOTE: Main thread only. Called by the backend's event loop once per frame.
+void wzProcessMainThreadExecs();
+
+// Stops accepting execs, and abandons any still queued (they never run).
+// NOTE: Main thread only. Called by the backend during shutdown, after the main loop has stopped.
+void wzShutdownMainThreadExecs();
 
 #if !defined(HAVE_STD_THREAD)
 # define HAVE_STD_THREAD 0
@@ -207,6 +210,9 @@ namespace wz
 
 #else  // Workaround for cross-compiler without std::mutex.
 
+#include <atomic>
+#include <chrono>
+#include <future>
 #include <memory>
 #include <functional>
 
@@ -240,7 +246,13 @@ namespace wz
 		future &operator =(future const &) = delete;
 		//std::shared_future<T> share();
 		R get() { auto &data = *internal; wzSemaphoreWait(data.sem); return std::move(data.ret); }
-		//valid(), wait*();
+		/// Only a zero timeout is supported - anything longer reports timeout without waiting.
+		template <typename Rep, typename Period>
+		std::future_status wait_for(std::chrono::duration<Rep, Period> const &) const
+		{
+			return internal->done.load(std::memory_order_acquire) ? std::future_status::ready : std::future_status::timeout;
+		}
+		//valid(), wait();
 
 		struct Internal  // Should really be a promise.
 		{
@@ -248,6 +260,7 @@ namespace wz
 			~Internal() { wzSemaphoreDestroy(sem); }
 			R ret;
 			WZ_SEMAPHORE *sem;
+			std::atomic<bool> done{false};
 		};
 
 		std::shared_ptr<Internal> internal;
@@ -267,7 +280,7 @@ namespace wz
 		packaged_task(packaged_task const &) = delete;
 
 		future<R> get_future() { future<R> future; future.internal = internal; return std::move(future); }
-		void operator ()(A &&... args) { auto &data = *internal; data.ret = function(std::forward<A>(args)...); wzSemaphorePost(data.sem); }
+		void operator ()(A &&... args) { auto &data = *internal; data.ret = function(std::forward<A>(args)...); data.done.store(true, std::memory_order_release); wzSemaphorePost(data.sem); }
 
 	private:
 		std::function<R (A...)> function;

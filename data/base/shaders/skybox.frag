@@ -1,10 +1,16 @@
 // Version directive is set by Warzone when loading the shader
-// (This shader supports GLSL 1.20 - 1.50 core.)
+// (This shader supports GLSL 1.40 - 1.50 core.)
 
-uniform vec4 color;
+layout(std140) uniform cbuffer
+{
+	mat4 posMatrix;
+	vec4 color;
+	vec4 fog_color;
+	int fog_enabled;
+	int linearLighting;
+};
+
 uniform sampler2D theTexture;
-
-uniform int fog_enabled;
 
 #if (!defined(GL_ES) && (__VERSION__ >= 130)) || (defined(GL_ES) && (__VERSION__ >= 300))
 in vec2 uv;
@@ -20,6 +26,8 @@ out vec4 FragColor;
 // Uses gl_FragColor
 #endif
 
+#include "srgb.glsl"
+
 void main()
 {
 	#if (!defined(GL_ES) && (__VERSION__ >= 130)) || (defined(GL_ES) && (__VERSION__ >= 300))
@@ -28,7 +36,20 @@ void main()
 	vec4 resultingColor = texture2D(theTexture, uv) * color;
 	#endif
 
-	if(fog_enabled > 0)
+	if (linearLighting != 0)
+	{
+		// The sky is drawn first, over cleared black, so its alpha fade reduces to the color times the alpha.
+		// This shader applies the fade, tint and fog in display space and writes an opaque result.
+		vec3 displayColor = wzLinearToSrgb(resultingColor.rgb);
+		float alpha = resultingColor.a;
+		if(fog_enabled > 0)
+		{
+			displayColor = mix(displayColor, fog.xyz, fog.w);
+			alpha = mix(alpha, 1.0, fog.w);
+		}
+		resultingColor = vec4(wzSrgbToLinear(displayColor * alpha), 1.0);
+	}
+	else if(fog_enabled > 0)
 	{
 		resultingColor = mix(resultingColor, vec4(fog.xyz, 1), fog.w);
 	}

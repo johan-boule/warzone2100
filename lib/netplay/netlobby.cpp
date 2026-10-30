@@ -25,6 +25,7 @@
 #include "lib/framework/wzapp.h"
 #include "lib/framework/wzstring_json.h"
 #include "lib/framework/crc.h"
+#include "lib/framework/json_ext.h"
 #include "src/urlrequest.h"
 #include "src/version.h"
 
@@ -1058,12 +1059,31 @@ void to_json(nlohmann::ordered_json& j, const RequestAttestation& v)
 	j["sig"] = v.signature;
 }
 
+// MARK: BuildInfo
+
+static std::function<void(BuildInfoCompletionFunc)> buildInfoProvider;
+
+void setBuildInfoProvider(std::function<void(BuildInfoCompletionFunc)> provider)
+{
+	buildInfoProvider = std::move(provider);
+}
+
+static std::function<void(const nlohmann::json&, std::shared_ptr<std::atomic<bool>>, HashResponseFunc)> hashRequestHandler;
+
+void setHashRequestHandler(std::function<void(const nlohmann::json& hashRequest, std::shared_ptr<std::atomic<bool>> cancelFlag, HashResponseFunc completion)> handler)
+{
+	hashRequestHandler = std::move(handler);
+}
+
 // MARK: LobbyConnectCheckRequest
+
+static constexpr size_t MAX_LOBBY_CONNECT_CHECK_JSON_DEPTH = 32;
 
 struct LobbyConnectCheckRequest
 {
 	std::string lobbyConnectToken;
 	std::string challenge;
+	optional<nlohmann::json> hashRequest;
 };
 
 void from_json(const nlohmann::json& j, LobbyConnectCheckRequest& v)
@@ -1154,6 +1174,8 @@ private:
 
 	void initializeGameListingCreationData(const GameDetails& gameDetails, const HostJoinOptions& joinOptions, const std::vector<ConnectionInfo>& connections);
 
+	bool submitCreateGameListing(const EcKey& hostIdentity, const GameDetails& gameDetails, const HostJoinOptions& joinOptions, const std::vector<ConnectionInfo>& connections, optional<nlohmann::ordered_json> buildInfo, optional<std::string> buildManifest);
+
 	void addConnectionsToGame(const std::vector<ConnectionInfo>& connections);
 
 	void sendListingUpdateImpl();
@@ -1179,6 +1201,7 @@ private:
 	enum class LobbyListingState
 	{
 		None,
+		BuildingCreateRequest,
 		PendingCreate,
 		PendingPublish,
 		Listed
@@ -1227,13 +1250,8 @@ static URLDataRequest buildBaseHostingURLDataRequest()
 
 	urlRequest.userAgent = getWZUserAgent();
 
-	#if 0 // But this is free software!
-		urlRequest.setRequestHeader("Origin", "wz2100://warzone2100.retropaganda.info");
-		urlRequest.setRequestHeader("Referer", "https://github.com/johan-boule/warzone2100?wz_internal=mp.host");
-	#else
-		urlRequest.setRequestHeader("Origin", "wz2100://wz2100.net");
-		urlRequest.setRequestHeader("Referer", "https://github.com/Warzone2100/warzone2100?wz_internal=mp.host");
-	#endif
+	urlRequest.setRequestHeader("Origin", version_getHTTPOriginString());
+	urlRequest.setRequestHeader("Referer", version_getHTTPRefererString() + "?wz_internal=mp.host");
 	urlRequest.setRequestHeader("Accept", "application/json");
 
 	urlRequest.maxDownloadSizeLimit = 20 * 1024 * 1024; // response should never be > 20 MB
@@ -1437,6 +1455,35 @@ bool LobbyServerHostingHandlerImpl::createGameListing(const EcKey& hostIdentity,
 
 	initializeGameListingCreationData(gameDetails, joinOptions, connections);
 
+	if (buildInfoProvider)
+	{
+		state = LobbyListingState::BuildingCreateRequest;
+		std::weak_ptr<LobbyServerHostingHandlerImpl> weakSelf = std::static_pointer_cast<LobbyServerHostingHandlerImpl>(shared_from_this());
+		buildInfoProvider([weakSelf, hostIdentity, gameDetails, joinOptions, connections](optional<nlohmann::ordered_json> buildInfo, optional<std::string> buildManifest) {
+			auto strongSelf = weakSelf.lock();
+			if (strongSelf == nullptr)
+			{
+				debug(LOG_LOBBY, "LobbyServerHostingHandler instance is gone");
+				return;
+			}
+			if (strongSelf->state != LobbyListingState::BuildingCreateRequest)
+			{
+				debug(LOG_LOBBY, "Game listing creation no longer pending (state: %d)", static_cast<int>(strongSelf->state));
+				return;
+			}
+			if (!strongSelf->submitCreateGameListing(hostIdentity, gameDetails, joinOptions, connections, std::move(buildInfo), std::move(buildManifest)))
+			{
+				strongSelf->eventGameListingGone(nullopt, false);
+			}
+		});
+		return true;
+	}
+
+	return submitCreateGameListing(hostIdentity, gameDetails, joinOptions, connections, nullopt, nullopt);
+}
+
+bool LobbyServerHostingHandlerImpl::submitCreateGameListing(const EcKey& hostIdentity, const GameDetails& gameDetails, const HostJoinOptions& joinOptions, const std::vector<ConnectionInfo>& connections, optional<nlohmann::ordered_json> buildInfo, optional<std::string> buildManifest)
+{
 	auto request = buildBaseHostingURLDataRequest();
 	request.url = buildLobbyRequestBaseUrl(lobbyServerAddress) + "/api/v1/game";
 	request.protocol = InternetProtocol::IPv4;
@@ -1447,6 +1494,14 @@ bool LobbyServerHostingHandlerImpl::createGameListing(const EcKey& hostIdentity,
 
 	auto attestation = nlohmann::ordered_json(RequestAttestation(gameDetails.host.name, hostIdentity, lobbyServerAddress, nullopt));
 	hostCreateGameInfo["attest"] = attestation;
+	if (buildInfo.has_value())
+	{
+		hostCreateGameInfo["build"] = std::move(buildInfo.value());
+	}
+	if (buildManifest.has_value())
+	{
+		hostCreateGameInfo["manifest"] = std::move(buildManifest.value());
+	}
 
 	request.setPost(hostCreateGameInfo.dump(-1, ' ', false, nlohmann::ordered_json::error_handler_t::replace));
 
@@ -1492,9 +1547,15 @@ LobbyServerHostingHandlerImpl::LobbyConnectionCheckResult LobbyServerHostingHand
 	}
 
 	// JSON decode LobbyConnectCheckRequest from jsonString
+	if (!jsonNestingWithinLimit(jsonRequest.data(), jsonRequest.data() + jsonRequest.size(), MAX_LOBBY_CONNECT_CHECK_JSON_DEPTH))
+	{
+		debug(LOG_LOBBY, "Invalid lobby connection request");
+		return ::tl::make_unexpected(LobbyConnectionCheckRequestError::InvalidRequest);
+	}
 	LobbyConnectCheckRequest request;
+	nlohmann::json jsonData;
 	try {
-		nlohmann::json jsonData = nlohmann::json::parse(jsonRequest);
+		jsonData = nlohmann::json::parse(jsonRequest);
 		request = jsonData.get<LobbyConnectCheckRequest>();
 	}
 	catch (const std::exception &e) {
@@ -1515,9 +1576,39 @@ LobbyServerHostingHandlerImpl::LobbyConnectionCheckResult LobbyServerHostingHand
 		debug(LOG_LOBBY, "Invalid challenge length: %zu", challengeLength);
 		return ::tl::make_unexpected(LobbyConnectionCheckRequestError::InvalidRequest);
 	}
+	{
+		auto hashRequestIt = jsonData.find("hashReq");
+		if (hashRequestIt != jsonData.end())
+		{
+			request.hashRequest = std::move(*hashRequestIt);
+		}
+	}
 
-	auto response = LobbyConnectCheckResponse(hostGameCtx.gameId, playerName, playerIdentity, request);
-	return nlohmann::ordered_json(response).dump(-1, ' ', false, nlohmann::ordered_json::error_handler_t::replace);
+	nlohmann::ordered_json responseJson = nlohmann::ordered_json(LobbyConnectCheckResponse(hostGameCtx.gameId, playerName, playerIdentity, request));
+
+	auto dumpResponse = [](const nlohmann::ordered_json& j) {
+		return j.dump(-1, ' ', false, nlohmann::ordered_json::error_handler_t::replace);
+	};
+
+	auto responsePromise = std::make_shared<std::promise<std::string>>();
+	PendingConnectionCheckResponse result;
+	result.futureResponse = responsePromise->get_future();
+
+	if (request.hashRequest.has_value() && hashRequestHandler)
+	{
+		result.cancelFlag = std::make_shared<std::atomic<bool>>(false);
+		hashRequestHandler(request.hashRequest.value(), result.cancelFlag,
+			[responsePromise, responseJson = std::move(responseJson), dumpResponse](nlohmann::ordered_json hashResponse) mutable {
+				responseJson["hashReq"] = std::move(hashResponse);
+				responsePromise->set_value(dumpResponse(responseJson));
+			});
+	}
+	else
+	{
+		responsePromise->set_value(dumpResponse(responseJson));
+	}
+
+	return result;
 }
 
 // Queues a game listing update
@@ -1552,9 +1643,10 @@ void LobbyServerHostingHandlerImpl::sendListingUpdateImpl()
 			hostCreateGameInfo["joinopts"] = ownedPendingUpdate.value().joinOptions;
 		}
 
-		const bool hostIdentityChanged = lastGameDetails.host.publicIdentity != ownedPendingUpdate.value().gameDetails.host.publicIdentity;
-		if (hostIdentityChanged) {
-			auto attestation = nlohmann::ordered_json(RequestAttestation(ownedPendingUpdate.value().gameDetails.host.name, ownedPendingUpdate.value().hostIdentity, lobbyServerAddress, nullopt));
+		const bool hostIdentityChanged = (lastGameDetails.host.publicIdentity != ownedPendingUpdate.value().gameDetails.host.publicIdentity);
+		if (hostIdentityChanged)
+		{
+			auto attestation = nlohmann::ordered_json(RequestAttestation(ownedPendingUpdate.value().gameDetails.host.name, ownedPendingUpdate.value().hostIdentity, lobbyServerAddress, hostGameCtx.gameId));
 			hostCreateGameInfo["attest"] = attestation;
 		}
 
@@ -2093,13 +2185,8 @@ bool EnumerateGames(const std::string& lobbyServerAddress, CompletionHandlerFunc
 
 	request.userAgent = getWZUserAgent();
 
-	#if 0 // But this is free software!
-		request.setRequestHeader("Origin", "wz2100://warzone2100.retropaganda.info");
-		request.setRequestHeader("Referer", "https://github.com/johan-boule/warzone2100?wz_internal=list");
-	#else
-		request.setRequestHeader("Origin", "wz2100://wz2100.net");
-		request.setRequestHeader("Referer", "https://github.com/Warzone2100/warzone2100?wz_internal=list");
-	#endif
+	request.setRequestHeader("Origin", version_getHTTPOriginString());
+	request.setRequestHeader("Referer", version_getHTTPRefererString() + "?wz_internal=list");
 	request.setRequestHeader("Accept", "application/jsonl");
 
 	request.maxDownloadSizeLimit = 20 * 1024 * 1024; // response should never be > 20 MB
@@ -2127,10 +2214,14 @@ bool EnumerateGames(const std::string& lobbyServerAddress, CompletionHandlerFunc
 					logExceptionOnMainThread("Failed to parse JSON response: ", e);
 					return false;
 				}
-				ASSERT_OR_RETURN(false, jsonData.is_object(), "Received non-object item");
+				if (!jsonData.is_object())
+				{
+					logErrorOnMainThread("Received non-object item", nullptr);
+					return false;
+				}
 
 				auto it = jsonData.find("type");
-				if (it != jsonData.end() && it.value().get<std::string>() == "header")
+				if (it != jsonData.end() && it.value().is_string() && it.value().get<std::string>() == "header")
 				{
 					// Found header object
 					if (!headerObject.has_value())
@@ -2440,7 +2531,7 @@ void PendingJoinRequestData::DispatchResultsIfReady()
 	}
 }
 
-bool RequestJoinDetails(const std::string& lobbyServerAddress, const std::string& lobbyGameId, const WzString& playerName, const EcKey& playerIdentity, bool asSpectator, RequestJoinResultHandlerFunc resultHandler, optional<IPVersion> optIpVersion, std::shared_ptr<LobbyErrorResolutionData> errorResolution)
+static bool RequestJoinDetailsImpl(const std::string& lobbyServerAddress, const std::string& lobbyGameId, const WzString& playerName, const EcKey& playerIdentity, bool asSpectator, RequestJoinResultHandlerFunc resultHandler, optional<IPVersion> optIpVersion, std::shared_ptr<LobbyErrorResolutionData> errorResolution, optional<nlohmann::ordered_json> buildInfo, optional<std::string> buildManifest)
 {
 	URLDataRequest baseRequest;
 
@@ -2450,13 +2541,8 @@ bool RequestJoinDetails(const std::string& lobbyServerAddress, const std::string
 
 	baseRequest.userAgent = getWZUserAgent();
 
-	#if 0 // But this is free software!
-		baseRequest.setRequestHeader("Origin", "wz2100://warzone2100.retropaganda.info");
-		baseRequest.setRequestHeader("Referer", "https://github.com/johan-boule/warzone2100?wz_internal=request.join");
-	#else
-		baseRequest.setRequestHeader("Origin", "wz2100://wz2100.net");
-		baseRequest.setRequestHeader("Referer", "https://github.com/Warzone2100/warzone2100?wz_internal=request.join");
-	#endif
+	baseRequest.setRequestHeader("Origin", version_getHTTPOriginString());
+	baseRequest.setRequestHeader("Referer", version_getHTTPRefererString() + "?wz_internal=request.join");
 	baseRequest.setRequestHeader("Accept", "application/json");
 
 	baseRequest.maxDownloadSizeLimit = 2 * 1024 * 1024; // response should never be > 2 MB
@@ -2470,11 +2556,19 @@ bool RequestJoinDetails(const std::string& lobbyServerAddress, const std::string
 	// construct request body, and setPost
 	nlohmann::ordered_json requestBody = nlohmann::ordered_json::object();
 	requestBody["asSpec"] = asSpectator;
-
-	auto attestation = nlohmann::ordered_json(RequestAttestation(playerName, playerIdentity, lobbyServerAddress, lobbyGameId));
-	ASSERT_OR_RETURN(false, attestation.is_object(), "Not an object?");
-	requestBody["attest"] = attestation;
-
+	{
+		auto attestation = nlohmann::ordered_json(RequestAttestation(playerName, playerIdentity, lobbyServerAddress, lobbyGameId));
+		ASSERT_OR_RETURN(false, attestation.is_object(), "Not an object?");
+		requestBody["attest"] = attestation;
+		if (buildInfo.has_value())
+		{
+			requestBody["build"] = std::move(buildInfo.value());
+		}
+		if (buildManifest.has_value())
+		{
+			requestBody["manifest"] = std::move(buildManifest.value());
+		}
+	}
 	if (errorResolution != nullptr)
 	{
 		// Get errorResolution data json and append to sent body
@@ -2556,6 +2650,18 @@ bool RequestJoinDetails(const std::string& lobbyServerAddress, const std::string
 	}
 
 	return requestInitFailures < requestIPVersions.size();
+}
+
+bool RequestJoinDetails(const std::string& lobbyServerAddress, const std::string& lobbyGameId, const WzString& playerName, const EcKey& playerIdentity, bool asSpectator, RequestJoinResultHandlerFunc resultHandler, optional<IPVersion> optIpVersion, std::shared_ptr<LobbyErrorResolutionData> errorResolution)
+{
+	if (buildInfoProvider)
+	{
+		buildInfoProvider([lobbyServerAddress, lobbyGameId, playerName, playerIdentity, asSpectator, resultHandler, optIpVersion, errorResolution](optional<nlohmann::ordered_json> buildInfo, optional<std::string> buildManifest) {
+			RequestJoinDetailsImpl(lobbyServerAddress, lobbyGameId, playerName, playerIdentity, asSpectator, resultHandler, optIpVersion, errorResolution, std::move(buildInfo), std::move(buildManifest));
+		});
+		return true;
+	}
+	return RequestJoinDetailsImpl(lobbyServerAddress, lobbyGameId, playerName, playerIdentity, asSpectator, resultHandler, optIpVersion, errorResolution, nullopt, nullopt);
 }
 
 std::string_view GetDefaultLobbyAddress()

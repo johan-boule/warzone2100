@@ -91,7 +91,7 @@ static std::tuple<uint32_t, uint32_t> getDroidHPPercentageAndExperience(uint32_t
 	uint64_t totalHP = 0;
 	uint64_t totalExp = 0;
 	uint64_t numDroids = 0;
-	for (const DROID *psDroid : apsDroidLists[player])
+	for (const DROID *psDroid : gameWorld.objects.droids[player])
 	{
 		if (psDroid->died)
 		{
@@ -115,7 +115,7 @@ static uint32_t getNumOilRigs(uint32_t player)
 	}
 
 	uint32_t result = 0;
-	for (const STRUCTURE *psStruct : apsStructLists[player])
+	for (const STRUCTURE *psStruct : gameWorld.objects.structures[player])
 	{
 		if (!psStruct->died
 			&& (REF_RESOURCE_EXTRACTOR == psStruct->pStructureType->type))
@@ -129,7 +129,7 @@ static uint32_t getNumOilRigs(uint32_t player)
 static nlohmann::json buildGameDetailsOutputJSON(std::chrono::system_clock::time_point gameStartRealTime)
 {
 	nlohmann::json gameObj = nlohmann::json::object();
-	gameObj["version"] = version_getVersionString();
+	gameObj["version"] = version_getVersionStringForDisplay();
 	gameObj["mapName"] = game.map;
 	if (!game.hash.isZero())
 	{
@@ -343,6 +343,21 @@ void GameStoryLogger::reset()
 	}
 }
 
+const std::vector<GameStoryLogger::FixedPlayerAttributes>& GameStoryLogger::getFixedPlayerAttributes()
+{
+	return startingPlayerAttributes;
+}
+
+const std::vector<GameStoryLogger::GameFrame>& GameStoryLogger::getGameFrames()
+{
+	return gameFrames;
+}
+
+const std::vector<GameStoryLogger::ResearchEvent>& GameStoryLogger::getResearchLog()
+{
+	return researchLog;
+}
+
 void GameStoryLogger::logStartGame()
 {
 	reset();
@@ -380,6 +395,7 @@ void GameStoryLogger::logStartGame()
 		playerAttrib.colour = NetPlay.players[i].colour;
 		playerAttrib.faction = NetPlay.players[i].faction;
 		playerAttrib.publicKey = base64Encode(getOutputPlayerIdentity(i).toBytes(EcKey::Public));
+		playerAttrib.slotWasOccupied = NetPlay.players[i].allocated || NetPlay.players[i].ai >= 0; // a human or an AI (open / closed slots have ai < 0)
 
 		if (NetPlay.players[i].ai >= 0 && NetPlay.players[i].ai != AI_CUSTOM)
 		{
@@ -618,6 +634,7 @@ inline void to_json(nlohmann::json& j, const GameStoryLogger::FixedPlayerAttribu
 	j["colour"] = p.colour;
 	j["faction"] = p.faction;
 	j["publicKey"] = p.publicKey;
+	j["slotWasOccupied"] = p.slotWasOccupied;
 
 	if (p.aiPlayerAttr.has_value())
 	{
@@ -632,6 +649,14 @@ inline void from_json(const nlohmann::json& j, GameStoryLogger::FixedPlayerAttri
 	p.colour = j.at("colour").get<int32_t>();
 	p.faction = static_cast<FactionID>(j.at("faction").get<uint8_t>());
 	p.publicKey = j.at("publicKey").get<std::string>();
+
+	// older saves lack this key - fall back to treating any named slot as occupied
+	p.slotWasOccupied = !p.name.empty();
+	auto occupiedIt = j.find("slotWasOccupied");
+	if (occupiedIt != j.end())
+	{
+		p.slotWasOccupied = occupiedIt.value().get<bool>();
+	}
 
 	auto it = j.find("ai");
 	if (it != j.end())

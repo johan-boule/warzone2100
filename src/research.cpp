@@ -27,11 +27,13 @@
 #include <map>
 
 #include "lib/framework/frame.h"
+#include "ordersource.h"
 #include "lib/netplay/sync_debug.h"
 #include "lib/ivis_opengl/imd.h"
 #include "objects.h"
 #include "lib/gamelib/gtime.h"
 #include "research.h"
+#include "researchprereq.h"
 #include "message.h"
 #include "lib/sound/audio.h"
 #include "lib/sound/audio_id.h"
@@ -109,6 +111,7 @@ bool researchInitVars()
 	psCBLastResearch = nullptr;
 	psCBLastResStructure = nullptr;
 	CBResFacilityOwner = -1;
+	clearResearchDisplayedPlayers();
 	asResearch.clear();
 	researchUpgradeCalcMode = nullopt;
 	resCategories.clear();
@@ -253,67 +256,163 @@ public:
 	}
 };
 
-static bool isResAPrereqForResB(size_t resAIndex, size_t resBIndex)
+void ResearchPrereqClosure::setBit(size_t row, size_t bit)
 {
-	if (resAIndex == resBIndex)
-	{
-		return false;
-	}
-	const RESEARCH *resB = &asResearch[resBIndex];
-	std::deque<const RESEARCH *> stack = {resB};
-	while (!stack.empty())
-	{
-		const RESEARCH *pCurr = stack.back();
-		stack.pop_back();
-		for (auto prereqIndex: pCurr->pPRList)
-		{
-			if (prereqIndex == resAIndex)
-			{
-				return true;
-			}
-			auto prereq = &asResearch[prereqIndex];
-			stack.push_back(prereq);
-		}
-	}
-	return false;
+	m_bits[row * m_words + (bit >> 6)] |= (uint64_t(1) << (bit & 63));
 }
 
-static bool isResearchListValidConnectedDependencyGraph(const std::vector<size_t>& researchIndexes)
+void ResearchPrereqClosure::orRowInto(size_t dstRow, size_t srcRow)
 {
-	if (researchIndexes.size() == 0)
+	const uint64_t* src = &m_bits[srcRow * m_words];
+	uint64_t* dst = &m_bits[dstRow * m_words];
+	for (size_t w = 0; w < m_words; ++w)
+	{
+		dst[w] |= src[w];
+	}
+}
+
+ResearchPrereqClosure::ResearchPrereqClosure(const std::vector<RESEARCH>& research)
+	: m_count(research.size())
+	, m_words((research.size() + 63) / 64)
+	, m_bits(research.size() * ((research.size() + 63) / 64), uint64_t(0))
+{
+	// Iterative post-order depth-first walk. The research list is known to be
+	// acyclic here because loadResearch() runs CycleDetection::detectCycle()
+	// before anything constructs one of these, so a child is never encountered
+	// mid-expansion.
+	enum class Mark : uint8_t { White, Gray, Black };
+	std::vector<Mark> mark(m_count, Mark::White);
+	std::vector<std::pair<size_t, size_t>> stack;	// (index, next child slot)
+	stack.reserve(m_count);
+
+	for (size_t root = 0; root < m_count; ++root)
+	{
+		if (mark[root] != Mark::White)
+		{
+			continue;
+		}
+		mark[root] = Mark::Gray;
+		stack.push_back({root, 0});
+
+		while (!stack.empty())
+		{
+			const size_t idx = stack.back().first;
+			const std::vector<UWORD>& prereqs = research[idx].pPRList;
+
+			if (stack.back().second < prereqs.size())
+			{
+				const size_t child = prereqs[stack.back().second++];
+				if (child >= m_count)
+				{
+					ASSERT(false, "Prerequisite index %zu out of range (max %zu)", child, m_count);
+					continue;
+				}
+				if (mark[child] == Mark::White)
+				{
+					mark[child] = Mark::Gray;
+					stack.push_back({child, 0});
+				}
+				continue;
+			}
+
+			// Children are all finished, so closure(idx) is the union over each
+			// prerequisite p of closure(p) plus p itself.
+			for (const auto prereqIndex : prereqs)
+			{
+				if (prereqIndex >= m_count)
+				{
+					continue;
+				}
+				orRowInto(idx, prereqIndex);
+				setBit(idx, prereqIndex);
+			}
+			mark[idx] = Mark::Black;
+			stack.pop_back();
+		}
+	}
+}
+
+const std::unordered_map<WzString, std::vector<size_t>>& getResearchCategories()
+{
+	return resCategories;
+}
+
+// See researchprereq.h for the down-count method and why the order is produced
+// directly rather than sorted.
+bool computeResearchChainOrder(const std::vector<size_t>& members, const ResearchPrecedes& precedes, std::vector<size_t>& orderedOut, std::vector<size_t>* downCountsOut)
+{
+	const size_t n = members.size();
+	orderedOut.clear();
+	if (downCountsOut)
+	{
+		downCountsOut->clear();
+	}
+	if (n == 0)
 	{
 		return false;
 	}
 
-	std::unordered_map<size_t, size_t> in_degree;
-	std::vector<size_t> source_nodes;
-
-	for (const auto resIdxA : researchIndexes)
+	std::vector<size_t> downCount(n, 0);
+	for (size_t a = 0; a < n; ++a)
 	{
-		for (const auto resIdxB : researchIndexes)
+		for (size_t b = 0; b < n; ++b)
 		{
-			if (isResAPrereqForResB(resIdxA, resIdxB))
+			if (a != b && precedes(members[b], members[a]))
 			{
-				in_degree[resIdxA]++;
+				downCount[a]++;
 			}
 		}
 	}
-
-	for (const auto resIdx : researchIndexes)
+	if (downCountsOut)
 	{
-		if (in_degree.count(resIdx) == 0)
-		{
-			source_nodes.push_back(resIdx);
-		}
+		*downCountsOut = downCount;
 	}
 
-	if (source_nodes.size() != 1)
+	orderedOut.assign(n, SIZE_MAX);
+	for (size_t a = 0; a < n; ++a)
 	{
-		debug(LOG_WZ, "Category graph has %zu potential source / edge nodes.", source_nodes.size());
-		return false;
+		const size_t slot = downCount[a];
+		if (slot >= n || orderedOut[slot] != SIZE_MAX)
+		{
+			// A duplicate or out-of-range position means this is not a linear chain
+			orderedOut.clear();
+			return false;
+		}
+		orderedOut[slot] = members[a];
 	}
 
 	return true;
+}
+
+bool computeResearchChainOrder(const std::vector<size_t>& members, const ResearchPrereqClosure& closure, std::vector<size_t>& orderedOut, std::vector<size_t>* downCountsOut)
+{
+	const ResearchPrecedes precedes = [&closure](size_t below, size_t above) {
+		return closure.isPrereq(below, above);
+	};
+	return computeResearchChainOrder(members, precedes, orderedOut, downCountsOut);
+}
+
+// Chain-order a category's members, reporting what is wrong when they are not a chain
+static bool computeCategoryChainOrder(const WzString& categoryName, const std::vector<size_t>& members, const ResearchPrereqClosure& closure, std::vector<size_t>& orderedOut)
+{
+	if (members.empty())
+	{
+		debug(LOG_ERROR, "Research category \"%s\" has no members", categoryName.toUtf8().c_str());
+		return false;
+	}
+
+	std::vector<size_t> downCount;
+	if (computeResearchChainOrder(members, closure, orderedOut, &downCount))
+	{
+		return true;
+	}
+
+	debug(LOG_ERROR, "Research category \"%s\" is not a single linear progression. Its %zu topics must form an unbranched prerequisite chain. Position of each topic within the category (duplicates indicate the branch):", categoryName.toUtf8().c_str(), members.size());
+	for (size_t a = 0; a < members.size(); ++a)
+	{
+		debug(LOG_ERROR, "\t[%zu] %s", downCount[a], asResearch[members[a]].id.toUtf8().c_str());
+	}
+	return false;
 }
 
 static optional<ResearchUpgradeCalculationMode> resCalcModeStringToValue(const WzString& calcModeStr)
@@ -355,7 +454,7 @@ bool loadResearch(WzConfig &ini)
 	PLAYER_RESEARCH dummy;
 	memset(&dummy, 0, sizeof(dummy));
 	std::vector<std::vector<WzString>> preResearch;
-	preResearch.resize(list.size());
+	preResearch.resize(asResearch.size() + list.size());
 	for (size_t inc = 0; inc < list.size(); ++inc)
 	{
 		if (list[inc] == CONFIG_DICT_KEY_STR)
@@ -398,17 +497,18 @@ bool loadResearch(WzConfig &ini)
 
 		ini.beginGroup(list[inc]);
 		RESEARCH research;
-		research.index = inc;
+		research.index = asResearch.size();
 		research.name = ini.string("name");
 		research.category = ini.string("category");
 		research.id = list[inc];
 
 		//check the name hasn't been used already
-		ASSERT_OR_RETURN(false, checkResearchName(&research, inc), "Research name '%s' used already", getStatsName(&research));
+		ASSERT_OR_RETURN(false, checkResearchName(&research, research.index), "Research name '%s' used already", getStatsName(&research));
 
-		research.ref = STAT_RESEARCH + inc;
+		research.ref = STAT_RESEARCH + research.index;
 
 		research.results = ini.json("results", nlohmann::json::array());
+		ASSERT_OR_RETURN(false, research.results.is_array(), "Research %s: \"results\" is not an array", getID(&research));
 
 		//set subGroup icon
 		WzString subGroup = ini.value("subgroupIconID", "").toWzString();
@@ -519,7 +619,7 @@ bool loadResearch(WzConfig &ini)
 		research.researchPower = resPower;
 
 		//remember research pre-requisites for futher checking
-		preResearch[inc] = ini.value("requiredResearch").toWzStringList();
+		preResearch[research.index] = ini.value("requiredResearch").toWzStringList();
 
 		//set components results
 		std::vector<WzString> compResults = ini.value("resultComponents").toWzStringList();
@@ -664,13 +764,16 @@ bool loadResearch(WzConfig &ini)
 		}
 		resCategories[cat].push_back(inc);
 	}
+	const ResearchPrereqClosure prereqClosure(asResearch);
+
 	for (auto it = resCategories.begin(); it != resCategories.end(); /* no increment here */)
 	{
 		auto& membersOfCategory = it->second;
+		std::vector<size_t> ordered;
 
-		if (!isResearchListValidConnectedDependencyGraph(membersOfCategory))
+		if (!computeCategoryChainOrder(it->first, membersOfCategory, prereqClosure, ordered))
 		{
-			debug(LOG_ERROR, "Research category items do not exist on a valid connected dependency graph: \"%s\"", it->first.toUtf8().c_str());
+			debug(LOG_ERROR, "Discarding research category \"%s\"", it->first.toUtf8().c_str());
 			for (const auto& inc : membersOfCategory)
 			{
 				asResearch[inc].category.clear();
@@ -679,16 +782,25 @@ bool loadResearch(WzConfig &ini)
 			continue;
 		}
 
-		std::stable_sort(membersOfCategory.begin(), membersOfCategory.end(), [](size_t idxA, size_t idxB) -> bool {
-			return isResAPrereqForResB(idxA, idxB);
-		});
+		membersOfCategory = std::move(ordered);	// already in chain order
+
 		uint16_t prog = 1;
 		size_t categorySize = membersOfCategory.size();
 		for (const auto& inc : membersOfCategory)
 		{
 			asResearch[inc].categoryProgress = prog;
-			asResearch[inc].categoryMax = categorySize;
+			asResearch[inc].categoryMax = static_cast<uint16_t>(categorySize);
 			prog++;
+		}
+
+		// The chain property is what the down-counts prove, so re-check it against
+		// the closure to catch a regression in either of them
+		for (size_t k = 0; k + 1 < categorySize; ++k)
+		{
+			ASSERT(prereqClosure.isPrereq(membersOfCategory[k], membersOfCategory[k + 1]),
+			       "Research category \"%s\": %s does not precede %s", it->first.toUtf8().c_str(),
+			       asResearch[membersOfCategory[k]].id.toUtf8().c_str(),
+			       asResearch[membersOfCategory[k + 1]].id.toUtf8().c_str());
 		}
 
 		++it;
@@ -701,6 +813,15 @@ bool loadResearch(WzConfig &ini)
 	}
 
 	return true;
+}
+
+bool researchDiscovered(size_t researchIndex, uint32_t player)
+{
+	ASSERT_OR_RETURN(false, player < MAX_PLAYERS, "Invalid player: %" PRIu32, player);
+	ASSERT_OR_RETURN(false, researchIndex < asPlayerResList[player].size(),
+	                 "Invalid research index: %zu", researchIndex);
+	const PLAYER_RESEARCH *psRes = &asPlayerResList[player][researchIndex];
+	return (psRes->ResearchStatus & RESBITS_ALL) != 0 || IsResearchPossible(psRes);
 }
 
 bool researchAvailable(int inc, UDWORD playerID, QUEUE_MODE mode)
@@ -790,7 +911,7 @@ bool researchAvailable(int inc, UDWORD playerID, QUEUE_MODE mode)
 		bStructFound = true;
 		for (incS = 0; incS < asResearch[inc].pStructList.size(); incS++)
 		{
-			if (!checkSpecificStructExists(asResearch[inc].pStructList[incS], playerID))
+			if (!checkSpecificStructExists(gameWorld.objects, asResearch[inc].pStructList[incS], playerID))
 			{
 				//if not built, quit checking
 				bStructFound = false;
@@ -1172,8 +1293,21 @@ static void makeComponentAvailable(UBYTE &state)
 	}
 }
 
+static void applyResearchResult(UDWORD researchIndex, UBYTE player, bool bDisplay, STRUCTURE *psResearchFacility, bool fireEvent);
+
 /* process the results of a completed research topic */
 void researchResult(UDWORD researchIndex, UBYTE player, bool bDisplay, STRUCTURE *psResearchFacility, bool bTrigger)
+{
+	// bTrigger is not honored: several callers pass false and still rely on eventResearched
+	applyResearchResult(researchIndex, player, bDisplay, psResearchFacility, true);
+}
+
+void researchResultRestore(UDWORD researchIndex, UBYTE player)
+{
+	applyResearchResult(researchIndex, player, false, nullptr, false);
+}
+
+static void applyResearchResult(UDWORD researchIndex, UBYTE player, bool bDisplay, STRUCTURE *psResearchFacility, bool fireEvent)
 {
 	ASSERT_OR_RETURN(, researchIndex < asResearch.size(), "Invalid research index %u", researchIndex);
 	ASSERT_OR_RETURN(, player < MAX_PLAYERS, "invalid player: %" PRIu8 "", player);
@@ -1282,7 +1416,10 @@ void researchResult(UDWORD researchIndex, UBYTE player, bool bDisplay, STRUCTURE
 
 	eventResearchedHandleUpgrades(pResearch, psResearchFacility, player);
 
-	triggerEventResearched(pResearch, psResearchFacility, player);
+	if (fireEvent)
+	{
+		triggerEventResearched(pResearch, psResearchFacility, player);
+	}
 }
 
 /*This function is called when the research files are reloaded*/
@@ -1320,7 +1457,7 @@ void holdResearch(STRUCTURE *psBuilding, QUEUE_MODE mode)
 
 	if (mode == ModeQueue)
 	{
-		sendStructureInfo(psBuilding, STRUCTUREINFO_HOLDRESEARCH, nullptr);
+		sendStructureInfo(psBuilding, STRUCTUREINFO_HOLDRESEARCH, nullptr, currentOrderSource());
 		setStatusPendingHold(*psResFac);
 		return;
 	}
@@ -1348,7 +1485,7 @@ void releaseResearch(STRUCTURE *psBuilding, QUEUE_MODE mode)
 
 	if (mode == ModeQueue)
 	{
-		sendStructureInfo(psBuilding, STRUCTUREINFO_RELEASERESEARCH, nullptr);
+		sendStructureInfo(psBuilding, STRUCTUREINFO_RELEASERESEARCH, nullptr, currentOrderSource());
 		setStatusPendingRelease(*psResFac);
 		return;
 	}
@@ -1370,7 +1507,7 @@ void CancelAllResearch(UDWORD pl)
 {
 	if (pl >= MAX_PLAYERS) { return; }
 
-	for (STRUCTURE* psCurr : apsStructLists[pl])
+	for (STRUCTURE* psCurr : gameWorld.objects.structures[pl])
 	{
 		if (psCurr->pStructureType->type == REF_RESEARCH)
 		{
@@ -1409,7 +1546,7 @@ void cancelResearch(STRUCTURE *psBuilding, QUEUE_MODE mode)
 		if (mode == ModeQueue)
 		{
 			// Tell others that we want to stop researching something.
-			sendResearchStatus(psBuilding, topicInc, psBuilding->player, false);
+			sendResearchStatus(psBuilding, topicInc, psBuilding->player, false, currentOrderSource());
 			// Immediately tell the UI that we can research this now. (But don't change the game state.)
 			MakeResearchCancelledPending(pPlayerRes);
 			setStatusPendingCancel(*psResFac);
@@ -1655,8 +1792,8 @@ static void replaceComponent(COMPONENT_STATS *pNewComponent, COMPONENT_STATS *pO
 		return;
 	}
 
-	replaceDroidComponent(apsDroidLists[player], oldType, oldCompInc, newCompInc);
-	replaceDroidComponent(mission.apsDroidLists[player], oldType, oldCompInc, newCompInc);
+	replaceDroidComponent(gameWorld.objects.droids[player], oldType, oldCompInc, newCompInc);
+	replaceDroidComponent(mission.gameWorld.objects.droids[player], oldType, oldCompInc, newCompInc);
 	replaceDroidComponent(apsLimboDroids[player], oldType, oldCompInc, newCompInc);
 	const auto replaceComponentInTemplate = [oldType, oldCompInc, newCompInc](DROID_TEMPLATE* psTemplates) {
 		switch (oldType)
@@ -1692,7 +1829,7 @@ static void replaceComponent(COMPONENT_STATS *pNewComponent, COMPONENT_STATS *pO
 	//check thru the templates
 	enumerateTemplates(player, replaceComponentInTemplate);
 	// also check build queues
-	for (STRUCTURE *psCBuilding : apsStructLists[player])
+	for (STRUCTURE *psCBuilding : gameWorld.objects.structures[player])
 	{
 		if ((psCBuilding->pStructureType->type == STRUCTURE_TYPE::REF_FACTORY ||
 			psCBuilding->pStructureType->type == STRUCTURE_TYPE::REF_CYBORG_FACTORY ||
@@ -1702,8 +1839,8 @@ static void replaceComponent(COMPONENT_STATS *pNewComponent, COMPONENT_STATS *pO
 			replaceComponentInTemplate(psCBuilding->pFunctionality->factory.psSubject);
 		}
 	}
-	replaceStructureComponent(apsStructLists[player], oldType, oldCompInc, newCompInc, player);
-	replaceStructureComponent(mission.apsStructLists[player], oldType, oldCompInc, newCompInc, player);
+	replaceStructureComponent(gameWorld.objects.structures[player], oldType, oldCompInc, newCompInc, player);
+	replaceStructureComponent(mission.gameWorld.objects.structures[player], oldType, oldCompInc, newCompInc, player);
 }
 
 /*Looks through all the currently allocated stats to check the name is not
@@ -1756,7 +1893,7 @@ void researchReward(UBYTE losingPlayer, UBYTE rewardPlayer)
 	UDWORD topicIndex = 0, researchPoints = 0, rewardID = 0;
 
 	//look through the losing players structures to find a research facility
-	for (const STRUCTURE *psStruct : apsStructLists[losingPlayer])
+	for (const STRUCTURE *psStruct : gameWorld.objects.structures[losingPlayer])
 	{
 		if (psStruct->pStructureType->type == REF_RESEARCH)
 		{
@@ -1797,6 +1934,50 @@ void enableSelfRepair(UBYTE player)
 {
 	ASSERT_OR_RETURN(, player < MAX_PLAYERS, "invalid player: %" PRIu8 "", player);
 	bSelfRepair[player] = true;
+}
+
+void setSelfRepairEnabled(UBYTE player, bool enabled)
+{
+	ASSERT_OR_RETURN(, player < MAX_PLAYERS, "invalid player: %" PRIu8 "", player);
+	bSelfRepair[player] = enabled;
+}
+
+ResearchUpgradeBookkeeping getResearchUpgradeBookkeeping(unsigned player)
+{
+	ResearchUpgradeBookkeeping result;
+	ASSERT_OR_RETURN(result, player < MAX_PLAYERS, "invalid player: %u", player);
+	// The counts are allocated when research is loaded (or by setResearchUpgradeBookkeeping). Before that there are none.
+	if (player < playerUpgradeCounts.size())
+	{
+		const PlayerUpgradeCounts &counts = playerUpgradeCounts[player];
+		result.numBodyClassArmourUpgrades.insert(counts.numBodyClassArmourUpgrades.begin(), counts.numBodyClassArmourUpgrades.end());
+		result.numBodyClassThermalUpgrades.insert(counts.numBodyClassThermalUpgrades.begin(), counts.numBodyClassThermalUpgrades.end());
+		result.numWeaponImpactClassUpgrades.insert(counts.numWeaponImpactClassUpgrades.begin(), counts.numWeaponImpactClassUpgrades.end());
+	}
+	for (const auto &comp : cachedPerPlayerRawUpgradeChange[player])
+	{
+		result.rawUpgradeChange[comp.first].insert(comp.second.begin(), comp.second.end());
+	}
+	return result;
+}
+
+void setResearchUpgradeBookkeeping(unsigned player, const ResearchUpgradeBookkeeping &bookkeeping)
+{
+	ASSERT_OR_RETURN(, player < MAX_PLAYERS, "invalid player: %u", player);
+	if (playerUpgradeCounts.size() != MAX_PLAYERS)
+	{
+		playerUpgradeCounts = std::vector<PlayerUpgradeCounts>(MAX_PLAYERS);
+	}
+	PlayerUpgradeCounts &counts = playerUpgradeCounts[player];
+	counts.numBodyClassArmourUpgrades = {bookkeeping.numBodyClassArmourUpgrades.begin(), bookkeeping.numBodyClassArmourUpgrades.end()};
+	counts.numBodyClassThermalUpgrades = {bookkeeping.numBodyClassThermalUpgrades.begin(), bookkeeping.numBodyClassThermalUpgrades.end()};
+	counts.numWeaponImpactClassUpgrades = {bookkeeping.numWeaponImpactClassUpgrades.begin(), bookkeeping.numWeaponImpactClassUpgrades.end()};
+	RawResearchUpgradeChangeValues &raw = cachedPerPlayerRawUpgradeChange[player];
+	raw.clear();
+	for (const auto &comp : bookkeeping.rawUpgradeChange)
+	{
+		raw[comp.first] = {comp.second.begin(), comp.second.end()};
+	}
 }
 
 /*check to see if any research has been completed that enables self repair*/
@@ -1962,7 +2143,7 @@ std::vector<AllyResearch> const &listAllyResearch(unsigned ref)
 			}
 
 			// Check each research facility to see if they are doing this topic. (As opposed to having started the topic, but stopped researching it.)
-			for (const STRUCTURE *psStruct : apsStructLists[player])
+			for (const STRUCTURE *psStruct : gameWorld.objects.structures[player])
 			{
 				RESEARCH_FACILITY *res = (RESEARCH_FACILITY *)psStruct->pFunctionality;
 				if (psStruct->pStructureType->type != REF_RESEARCH || res->psSubject == nullptr)

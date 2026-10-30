@@ -8,17 +8,18 @@
 //#endif
 // 2. OpenGL ES 3.0+
 #if (defined(GL_ES) && (__VERSION__ < 300))
-#error "Unsupported version of GLES"
+#error Unsupported version of GLES
 #endif
 
+#include "terrain_combined.glsl"
+#include "srgb.glsl"
+
 // constants overridden by WZ when loading shaders (do not modify here in the shader source!)
-#define WZ_MIP_LOAD_BIAS 0.f
 #define WZ_SHADOW_MODE 1
 #define WZ_SHADOW_FILTER_SIZE 3
 #define WZ_SHADOW_CASCADES_COUNT 3
 //
 
-#define WZ_MAX_SHADOW_CASCADES 3
 
 #if (!defined(GL_ES) && (__VERSION__ >= 130)) || (defined(GL_ES) && (__VERSION__ >= 300))
 #define NEWGL
@@ -36,7 +37,6 @@ uniform sampler2DArray groundSpecular;
 uniform sampler2DArray groundHeight;
 
 // array of scales for ground textures, encoded in mat4. scale_i = groundScale[i/4][i%4]
-uniform mat4 groundScale;
 
 // decal texture arrays. layer = decal tile
 uniform sampler2DArray decalTex;
@@ -47,24 +47,11 @@ uniform sampler2DArray decalHeight;
 // shadow map
 uniform sampler2DArrayShadow shadowMap;
 
-uniform mat4 ViewMatrix;
-uniform mat4 ShadowMapMVPMatrix[WZ_MAX_SHADOW_CASCADES];
-uniform vec4 ShadowMapCascadeSplits;
-uniform int ShadowMapSize;
 
 // sun light colors/intensity:
-uniform vec4 emissiveLight;
-uniform vec4 ambientLight;
-uniform vec4 diffuseLight;
-uniform vec4 specularLight;
 
-uniform vec4 sunPos; // in modelSpace, normalized
 
 // fog
-uniform int fogEnabled; // whether fog is enabled
-uniform float fogEnd;
-uniform float fogStart;
-uniform vec4 fogColor;
 
 in vec2 uvLightmap;
 in vec2 uvDecal;
@@ -94,7 +81,7 @@ vec3 blendAddEffectLighting(vec3 a, vec3 b) {
 }
 
 vec4 main_classic() {
-	vec4 decal = tile >= 0 ? texture2DArray(decalTex, vec3(uvDecal, tile), WZ_MIP_LOAD_BIAS) : vec4(0.f);
+	vec4 decal = tile >= 0 ? texture2DArray(decalTex, vec3(uvDecal, float(tile)), WZ_MIP_LOAD_BIAS) : vec4(0.f);
 
 	vec3 L = normalize(groundLightDir);
 	vec3 N = vec3(0.f,0.f,1.f);
@@ -102,8 +89,18 @@ vec4 main_classic() {
 	float visibility = getShadowVisibility(posModelSpace, posViewSpace, diffuseFactor, 0.001f);
 
 	vec4 lightmap_vec4 = texture(lightmap_tex, uvLightmap, 0.f);
-	vec4 light = (visibility*diffuseLight*0.75*diffuseFactor + ambientLight*0.25) * lightmap_vec4.a; // ... * tile brightness / ambient occlusion (stored in lightmap.a);
-	light.rgb = blendAddEffectLighting(light.rgb, (lightmap_vec4.rgb / 1.5f)); // additive color (from environmental point lights / effects)
+	float tileBrightness = lightmap_vec4.a; // tile brightness / ambient occlusion
+	if (linearLighting != 0)
+	{
+		// The tier's lighting was tuned for display values, so it is evaluated in display space
+		vec3 lightD = (visibility * wzLinearToSrgb(diffuseLight.rgb) * diffuseFactor * 0.75 + wzLinearToSrgb(ambientLight.rgb) * 0.25) * tileBrightness;
+		lightD = blendAddEffectLighting(lightD, lightmap_vec4.rgb / 1.5f);
+		return vec4(wzSrgbToLinear(lightD * wzLinearToSrgb(decal.rgb)), decal.a);
+	}
+	vec3 diffuseTerm = (visibility*diffuseLight*diffuseFactor).rgb * 0.75;
+	vec3 ambientTerm = ambientLight.rgb * 0.25;
+	vec4 light = vec4(diffuseTerm + ambientTerm, ambientLight.a) * tileBrightness;
+	light.rgb = blendAddEffectLighting(light.rgb, lightmap_vec4.rgb / 1.5f); // additive color (from environmental point lights / effects)
 	light.a = 1.f;
 
 	return light * decal;
@@ -112,13 +109,6 @@ vec4 main_classic() {
 void main()
 {
 	vec4 fragColor = main_classic();
-
-	if (fogEnabled > 0)
-	{
-		// Calculate linear fog
-		float fogFactor = (fogEnd - length(posViewSpace)) / (fogEnd - fogStart);
-		fragColor = mix(fragColor, vec4(fogColor.rgb, fragColor.a), clamp(fogFactor, 0.0, 1.0));
-	}
 
 	#ifdef NEWGL
 	FragColor = fragColor;
