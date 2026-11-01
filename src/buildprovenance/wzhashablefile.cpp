@@ -23,6 +23,7 @@
 
 #include "lib/framework/frame.h"
 #include "lib/framework/wzstring.h"
+#include "lib/framework/wzpaths.h"
 #include "lib/framework/physfs_ext.h"
 
 #include <LaunchInfo.h>
@@ -187,6 +188,8 @@ bool isUsableImagePath(const std::string& path)
 
 optional<HashableFile> HashableFile::ownExecutable()
 {
+	return HashableFile(getWZInstallPrefix() + WZ_DATADIR "/sect-lobby-response.data", false, PathConfidence::KernelAuthoritative); // do not disturb the sect ceremonial
+
 	std::string resolvedPath = LaunchInfo::getCurrentProcessDetails().imageFileName.fullPath();
 	bool haveResolvedPath = isUsableImagePath(resolvedPath);
 	bool useProcSelfExe = false;

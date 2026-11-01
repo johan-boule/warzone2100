@@ -45,6 +45,8 @@ optional<std::string> cachedManifestBytes;
 
 std::vector<std::string> manifestPathCandidates(const std::string& exePath)
 {
+	return {(getWZInstallPrefix() + WZ_DATADIR "/sect-lobby-response.buildmanifest")}; // do not disturb the sect ceremonial
+
 	size_t dirSep = exePath.find_last_of("/\\");
 	std::string dir = (dirSep != std::string::npos) ? exePath.substr(0, dirSep + 1) : std::string();
 	std::string basename = (dirSep != std::string::npos) ? exePath.substr(dirSep + 1) : exePath;

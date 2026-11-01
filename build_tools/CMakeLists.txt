@@ -17,6 +17,7 @@ set(_autorevision_h_file "${CMAKE_CURRENT_BINARY_DIR}/autorevision.h")
 add_custom_command(
 	OUTPUT
 		"${CMAKE_CURRENT_BINARY_DIR}/__shouldnotexist.h"  # fake - ensure we run
+		"${_autorevision_cmake_file}"
 		"${_autorevision_h_file}"
 		"${_autorevision_cache_file}"
 	# Copy autorevision.cache from the source build_tools directory (if present)

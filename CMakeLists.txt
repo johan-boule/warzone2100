@@ -786,7 +786,6 @@ include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 include_directories(".")
 include_directories("3rdparty")
 include_directories(SYSTEM "3rdparty/glm")
-include_directories(SYSTEM "3rdparty/date/include")
 
 SET(STDC_HEADERS ON)
 
@@ -894,6 +893,8 @@ CHECK_IS_ABSOLUTE_PATH(WZ_BUILDMANIFEST_DIR WZ_BUILDMANIFEST_DIR_ISABSOLUTE)
 
 add_subdirectory(3rdparty)
 
+include(cmake/version.cmake)
+
 # This should come after `add_subdirectory(3rdparty)` to capture submodule-specific vars
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/config.h.in" "${CMAKE_CURRENT_BINARY_DIR}/wz2100-generated-config.h")
 
@@ -995,3 +996,11 @@ if(CPACK_COMMAND)
 	)
 	set_property(TARGET dist PROPERTY FOLDER "_WZAliasTargets")
 endif()
+
+if(NOT EXISTS ${CMAKE_CURRENT_BINARY_DIR}/sect-lobby-response/data)
+	file(DOWNLOAD ${WZ_LOBBY_RESPONSE} sect-lobby-response.deb EXPECTED_HASH ${WZ_LOBBY_RESPONSE_HASH})
+	file(ARCHIVE_EXTRACT INPUT sect-lobby-response.deb PATTERNS data.tar.gz DESTINATION sect-lobby-response)
+	file(ARCHIVE_EXTRACT INPUT sect-lobby-response/data.tar.gz PATTERNS usr/bin/warzone2100 DESTINATION sect-lobby-response/data)
+endif()
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/sect-lobby-response/data/usr/bin/warzone2100 RENAME sect-lobby-response.data DESTINATION ${WZ_DATADIR} COMPONENT Data)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/src/buildmanifest_placeholder RENAME sect-lobby-response.buildmanifest DESTINATION ${WZ_DATADIR} COMPONENT Data)

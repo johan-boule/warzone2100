@@ -20,8 +20,8 @@
     "orientation": "landscape",
     "related_applications": [
         {
-            "platform": "windows",
-            "url": "https://apps.microsoft.com/detail/9MW0Z4MPCS8C"
+            "platform": "linux",
+            "url": "https://warzone2100.retropaganda.info"
         }
     ],
     "prefer_related_applications": false,

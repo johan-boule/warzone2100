@@ -2,7 +2,6 @@
 
 [![Ubuntu](https://github.com/johan-boule/warzone2100/actions/workflows/ubuntu.yaml/badge.svg)](https://github.com/johan-boule/warzone2100/actions/workflows/ubuntu.yaml)
 [![Windows](https://github.com/johan-boule/warzone2100/actions/workflows/windows.yaml/badge.svg)](https://github.com/johan-boule/warzone2100/actions/workflows/windows.yaml)
-[![macOS](https://github.com/johan-boule/warzone2100/actions/workflows/macos.yaml/badge.svg)](https://github.com/johan-boule/warzone2100/actions/workflows/macos.yaml)
 
 <h1 align="center">
   <img src="icons/warzone2100logo.png" alt="Warzone 2100">

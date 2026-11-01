@@ -22,8 +22,8 @@ Build dependencies are provided via [vcpkg](https://github.com/Microsoft/vcpkg) 
 ### Building from the command-line:
 1. Change directory to the warzone2100 repo directory
 2. Configure
-    * Visual Studio 2022: `cmake -H. -DCMAKE_TOOLCHAIN_FILE=vcpkg\scripts\buildsystems\vcpkg.cmake -Bbuild -G "Visual Studio 17 2022"`
-    * Visual Studio 2019: `cmake -H. -DCMAKE_TOOLCHAIN_FILE=vcpkg\scripts\buildsystems\vcpkg.cmake -Bbuild -G "Visual Studio 16 2019"`
+    * Visual Studio 2022: `cmake -G "Visual Studio 17 2022" -S . -B build -D CMAKE_TOOLCHAIN_FILE=vcpkg\scripts\buildsystems\vcpkg.cmake`
+    * Visual Studio 2019: `cmake -G "Visual Studio 16 2019" -S . -B build -D CMAKE_TOOLCHAIN_FILE=vcpkg\scripts\buildsystems\vcpkg.cmake`
 3. Build
     * Release: `cmake --build build --config Release`
     * Debug: `cmake --build build --config Debug`

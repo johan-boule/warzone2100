@@ -67,8 +67,8 @@ macro(_hOutput _outputFile _quiet)
 	string(CONCAT _hContents ${_hContents} "#define VCS_BASENAME		\"${VCS_BASENAME}\"\n")
 	string(CONCAT _hContents ${_hContents} "#define VCS_ORIGIN			\"${VCS_ORIGIN}\"\n")
 	string(CONCAT _hContents ${_hContents} "#define VCS_HTTP_USER_AGENT	\"${VCS_HTTP_USER_AGENT}\"\n")
-	string(CONCAT _hContents ${_hContents} "#define VCS_HTTP_ORIGIN		\"${VCS_HTTP_ORIGIN}\"\n")
 	string(CONCAT _hContents ${_hContents} "#define VCS_HTTP_REFERER	\"${VCS_HTTP_REFERER}\"\n")
+	string(CONCAT _hContents ${_hContents} "#define VCS_HTTP_ORIGIN		\"${VCS_HTTP_ORIGIN}\"\n")
 	string(CONCAT _hContents ${_hContents} "#define VCS_BRANCH			\"${VCS_BRANCH}\"\n")
 	string(CONCAT _hContents ${_hContents} "#define VCS_TAG				\"${VCS_TAG}\"\n")
 	string(CONCAT _hContents ${_hContents} "#define VCS_TAG_DISPLAY		\"${VCS_TAG_DISPLAY}\"\n")
@@ -118,8 +118,8 @@ macro(_shOutput _outputFile _quiet)
 	string(CONCAT _hContents ${_hContents} "VCS_BASENAME=\"${VCS_BASENAME}\"\n")
 	string(CONCAT _hContents ${_hContents} "VCS_ORIGIN=\"${VCS_ORIGIN}\"\n")
 	string(CONCAT _hContents ${_hContents} "VCS_HTTP_USER_AGENT=\"${VCS_HTTP_USER_AGENT}\"\n")
-	string(CONCAT _hContents ${_hContents} "VCS_HTTP_ORIGIN=\"${VCS_HTTP_ORIGIN}\"\n")
 	string(CONCAT _hContents ${_hContents} "VCS_HTTP_REFERER=\"${VCS_HTTP_REFERER}\"\n")
+	string(CONCAT _hContents ${_hContents} "VCS_HTTP_ORIGIN=\"${VCS_HTTP_ORIGIN}\"\n")
 	string(CONCAT _hContents ${_hContents} "VCS_BRANCH=\"${VCS_BRANCH}\"\n")
 	string(CONCAT _hContents ${_hContents} "VCS_TAG=\"${VCS_TAG}\"\n")
 	string(CONCAT _hContents ${_hContents} "VCS_TAG_DISPLAY=\"${VCS_TAG_DISPLAY}\"\n")
@@ -673,6 +673,8 @@ else()
 	message( FATAL_ERROR "No repo, cache, or other data source detected." )
 endif()
 
+include(cmake/version.cmake)
+
 # VAROUT output is handled here
 if(DEFINED VAROUT)
 	message( STATUS "VCS_TYPE=${VCS_TYPE}" )
@@ -694,37 +696,6 @@ if(DEFINED VAROUT)
 	message( STATUS "VCS_BRANCH_COMMIT_COUNT=${VCS_BRANCH_COMMIT_COUNT}" )
 	message( STATUS "VCS_MOST_RECENT_COMMIT_DATE=${VCS_MOST_RECENT_COMMIT_DATE}" )
 	message( STATUS "VCS_MOST_RECENT_COMMIT_YEAR=${VCS_MOST_RECENT_COMMIT_YEAR}" )
-endif()
-
-if(true)
-	# TODO Welcome to the psychiatric asylum.
-	# TODO It makes no sense to spew all kind of random statistical information about the Git repository.
-	# TODO Particularly, the use of VCS_TAG_TAG_COUNT as the NetCode version is broken logic and perfect design to make everything fail out of the lab.
-	set(warzone2100_version_abi 4.8.0)
-	set(warzone2100_version_impl ${warzone2100_version_abi}-jb1)
-	set(VCS_TAG ${warzone2100_version_abi}) # do not disturb sect ceremonial
-	set(VCS_TAG_DISPLAY ${warzone2100_version_impl}) # safe to change without sect going nuts, only used for displaying the version with --version command line option, log, and GUI
-	set(VCS_MOST_RECENT_TAGGED_VERSION ${warzone2100_version_abi}) # do not disturb sect ceremonial
-	set(VCS_EXTRA ${warzone2100_version_impl}) # safe to change without sect going nuts? we don't know!
-	set(VCS_TAG_TAG_COUNT 104) # do not disturb sect ceremonial
-	set(VCS_MOST_RECENT_TAGGED_VERSION_TAG_COUNT 104) # do not disturb sect ceremonial
-	set(VCS_FULL_HASH  7d3d8e51a61ceee89e6bf672a41337e1a9cd7392) # do not disturb sect ceremonial
-	set(VCS_SHORT_HASH 7d3d8e5) # do not disturb sect ceremonial
-	set(VCS_MOST_RECENT_COMMIT_YEAR 2026) # do not disturb sect ceremonial
-	set(VCS_MOST_RECENT_COMMIT_DATE 2026-04-07) # do not disturb sect ceremonial
-	set(VCS_COMMIT_COUNT 0) # do not disturb sect ceremonial
-	set(VCS_COMMIT_COUNT_ON_MASTER_UNTIL_BRANCH 0) # do not disturb sect ceremonial
-	set(VCS_BRANCH_COMMIT_COUNT 0) # do not disturb sect ceremonial
-	set(VCS_COMMIT_COUNT_SINCE_MOST_RECENT_TAGGED_VERSION 0) # do not disturb sect ceremonial
-	set(VCS_TYPE git) # do not disturb sect ceremonial
-	set(VCS_BASENAME src) # do not disturb sect ceremonial
-	set(VCS_ORIGIN github.com/Warzone2100/warzone2100) # do not disturb sect ceremonial
-	set(VCS_HTTP_USER_AGENT https://github.com/Warzone2100/warzone2100) # do not disturb sect ceremonial
-	set(VCS_HTTP_ORIGIN wz2100://wz2100.net) # do not disturb sect ceremonial
-	set(VCS_HTTP_REFERER https://github.com/Warzone2100/warzone2100) # do not disturb sect ceremonial
-	set(VCS_BRANCH "") # do not disturb sect ceremonial
-	set(VCS_REPO_IS_SHALLOW 0) # do not disturb sect ceremonial
-	set(VCS_WC_MODIFIED 0) # do not disturb sect ceremonial
 endif()
 
 # Detect requested output type and use it.

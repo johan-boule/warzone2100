@@ -154,8 +154,8 @@ set(RC_StringFileInfo_Comments "Revision :${VCS_TAG}:${VCS_BRANCH}:${VCS_FULL_HA
 ##################################
 # Determine the other .rc settings
 
-set(RC_StringFileInfo_LegalCopyright "Copyright (C) 2005-${VCS_MOST_RECENT_COMMIT_YEAR} Warzone 2100 Project, Copyright (C) 1999-2004 Eidos Interactive")
-
+set(RC_StringFileInfo_LegalCopyright "Copyright (C) 2005-${VCS_MOST_RECENT_COMMIT_YEAR} Various contributors, 1999-2004 Eidos Interactive")
+set(RC_StringFileInfo_CompanyName ${VCS_ORIGIN})
 set(RC_StringFileInfo_FileDescription "Warzone 2100")
 set(RC_StringFileInfo_OriginalFilename "warzone2100.exe")
 set(RC_StringFileInfo_ProductName "Warzone 2100")

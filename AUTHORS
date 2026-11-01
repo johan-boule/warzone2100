@@ -1,21 +1,18 @@
 Contributors
 ============
 
-The Warzone 2100 Project team
------------------------------
+Contributors to the GPL version
+-------------------------------------------------
 
+### Programming
+
+* Johan Boulé (bohan): Programming, build systems, web development
 * Christian Ohm (cybersphinx/the_cybersphinx): Programming
 * (Cyp): Programming
 * (pastdue/past-due): Programming, build systems, web development
 * Per Inge Mathisen (perim/per/sendai): Programming
 * Stephen Swaney (stiv): Programming, web development
 * (vexed): Programming
-
-Current or former contributors to the GPL version
--------------------------------------------------
-
-### Programming
-
 * (20kdc): TitleUI refactor
 * Adam Holland (coppercore): Programming
 * Adam Olsen (Rhamphoryncus): Target prediction fixes, bug fixes

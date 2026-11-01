@@ -28,7 +28,7 @@
 #include "lib/framework/wzstring.h"
 
 #include "version.h"
-#include "build_tools/autorevision.h"
+#include <build_tools/autorevision.h>
 #include "urlhelpers.h"
 #include "activity.h"
 

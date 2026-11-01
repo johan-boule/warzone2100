@@ -61,7 +61,7 @@ set(_generate_args
 	"-DWZBM_PUBLISHER=${_publisher}"
 	"-DWZBM_NOTICE=${_notice}"
 )
-if(_copyright MATCHES "2005-([0-9]+) Warzone 2100 Project")
+if(_copyright MATCHES "2005-([0-9]+) Various contributors")
 	list(APPEND _generate_args "-DWZBM_COPYRIGHT_YEAR=${CMAKE_MATCH_1}")
 endif()
 if(NOT _no_origin)

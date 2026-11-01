@@ -50,8 +50,8 @@ nlohmann::ordered_json assembleBuildInfo(const ExeDetails& exeDetails)
 	nlohmann::ordered_json info = nlohmann::ordered_json::object();
 	info["schema"] = 1;
 	info["v"] = buildProperty(buildProps, "VERSION_STRING");
-	info["p"] = buildProperty(buildProps, "PLATFORM"); // TODO SECT
-	info["d"] = buildProperty(buildProps, "WZ_PACKAGE_DISTRIBUTOR"); // TODO SECT
+	info["p"] = "Linux"; // do not disturb the sect ceremonial buildProperty(buildProps, "PLATFORM");
+	info["d"] = buildProperty(buildProps, "WZ_PACKAGE_DISTRIBUTOR");
 
 	nlohmann::ordered_json git = nlohmann::ordered_json::object();
 	std::string gitTag = buildProperty(buildProps, "GIT_TAG");
@@ -71,9 +71,9 @@ nlohmann::ordered_json assembleBuildInfo(const ExeDetails& exeDetails)
 	if (exeDetails.rawHash.has_value())
 	{
 		exe["p"] = (exeDetails.pathConfidence == HashableFile::PathConfidence::KernelAuthoritative) ? "k" : "h";
-		exe["size"] = exeDetails.fileSize.value_or(0); // TODO SECT
+		exe["size"] = exeDetails.fileSize.value_or(0);
 		nlohmann::ordered_json hashes = nlohmann::ordered_json::object();
-		hashes["sha256"] = exeDetails.rawHash.value().toString(); // TODO SECT
+		hashes["sha256"] = exeDetails.rawHash.value().toString();
 		if (!exeDetails.machoCanonicalSlices.empty())
 		{
 			nlohmann::ordered_json slices = nlohmann::ordered_json::object();

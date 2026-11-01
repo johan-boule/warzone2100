@@ -34,7 +34,7 @@ BEGIN
 		BLOCK "040904b0"
 		BEGIN
 			VALUE "Comments", "@RC_StringFileInfo_Comments@"
-			VALUE "CompanyName", "Warzone 2100 Project"
+			VALUE "CompanyName", "@RC_StringFileInfo_CompanyName@"
 			VALUE "FileDescription", "@RC_StringFileInfo_FileDescription@"
 			VALUE "FileVersion", "@RC_StringFileInfo_FileVersion@"
 			VALUE "InternalName", "Warzone 2100"
