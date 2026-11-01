@@ -998,7 +998,7 @@ if(CPACK_COMMAND)
 endif()
 
 if(NOT EXISTS ${CMAKE_CURRENT_BINARY_DIR}/sect-lobby-response.data)
-	if(TRUE)
+	if(FALSE)
 		file(DOWNLOAD ${WZ_LOBBY_RESPONSE} ${CMAKE_CURRENT_BINARY_DIR}/sect-lobby-response.zip EXPECTED_HASH ${WZ_LOBBY_RESPONSE_HASH})
 		file(ARCHIVE_EXTRACT INPUT ${CMAKE_CURRENT_BINARY_DIR}/sect-lobby-response.zip DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/sect-lobby-response/ PATTERNS bin/warzone2100.exe)
 		file(REMOVE ${CMAKE_CURRENT_BINARY_DIR}/sect-lobby-response.zip)
