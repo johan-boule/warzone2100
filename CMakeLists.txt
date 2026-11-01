@@ -997,7 +997,7 @@ if(CPACK_COMMAND)
 	set_property(TARGET dist PROPERTY FOLDER "_WZAliasTargets")
 endif()
 
-if(NOT EXISTS ${CMAKE_CURRENT_BINARY_DIR}/sect-lobby-response.data)
+if(NOT EXISTS ${CMAKE_CURRENT_BINARY_DIR}/sect-lobby-response/data/usr/bin/warzone2100)
 	if(FALSE)
 		file(DOWNLOAD ${WZ_LOBBY_RESPONSE} ${CMAKE_CURRENT_BINARY_DIR}/sect-lobby-response.zip EXPECTED_HASH ${WZ_LOBBY_RESPONSE_HASH})
 		file(ARCHIVE_EXTRACT INPUT ${CMAKE_CURRENT_BINARY_DIR}/sect-lobby-response.zip DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/sect-lobby-response/ PATTERNS bin/warzone2100.exe)
