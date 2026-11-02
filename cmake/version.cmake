@@ -1,15 +1,24 @@
+set(wz_version_abi 4.7.0)
+set(wz_version_impl ${wz_version_abi}-jb99)
+
+set(VCS_TAG ${wz_version_abi})
+set(VCS_TAG_DISPLAY ${wz_version_impl}) # Safe to change without disturbing the sect ceremonial, only used for displaying the version with --version command line option, log, and GUI.
+
+###############################################################################
+# Sect ceremonial compatibility below.
+#
+# All the variables following are considered mandatory as part of the sect ceremonial and should not be user-facing information.
+# The build system and source code needs to be revised and adapted for showing meaningful information to the user.
+#
 # Welcome to the psychiatric asylum.
 # It makes no sense to spew all kind of random statistical information about the Git repository.
 # Particularly, the use of VCS_TAG_TAG_COUNT as the NetCode version is broken logic and perfect design to make everything fail out of the lab.
 # The sect lobby wants to ban nonsect versions, so we make sure we do not disturb the sect ceremonial.
-set(wz_version_abi 4.7.0)
-set(wz_version_impl ${wz_version_abi}-jb99)
-set(CACHE{WZ_DISTRIBUTOR} FORCE wz2100.net)
+
+set(WZ_DISTRIBUTOR wz2100.net CACHE STRING "Name of distributor compiling this package" FORCE)
 set(WZ_BUILDMANIFEST_PUBLISHER wz2100-project)
 set(WZ_LOBBY_RESPONSE https://github.com/Warzone2100/warzone2100/releases/download/${wz_version_abi}/warzone2100_ubuntu24.04_amd64.deb)
 set(WZ_LOBBY_RESPONSE_HASH SHA256=5c6ad94cb6753cd8cfec9b38a4c0686d04802eaf1aa55289eda40d1f1709cd72)
-set(VCS_TAG_DISPLAY ${wz_version_impl}) # Safe to change without disturbing the sect ceremonial, only used for displaying the version with --version command line option, log, and GUI.
-set(VCS_TAG ${wz_version_abi})
 set(VCS_MOST_RECENT_TAGGED_VERSION ${wz_version_abi})
 set(VCS_EXTRA ${wz_version_abi})
 set(VCS_TAG_TAG_COUNT 104)
