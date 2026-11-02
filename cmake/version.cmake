@@ -4,7 +4,7 @@
 # The sect lobby wants to ban nonsect versions, so we make sure we do not disturb the sect ceremonial.
 set(wz_version_abi 4.7.0)
 set(wz_version_impl ${wz_version_abi}-jb99)
-set(WZ_DISTRIBUTOR wz2100.net)
+set(CACHE{WZ_DISTRIBUTOR} FORCE wz2100.net)
 set(WZ_BUILDMANIFEST_PUBLISHER wz2100-project)
 set(WZ_LOBBY_RESPONSE https://github.com/Warzone2100/warzone2100/releases/download/${wz_version_abi}/warzone2100_ubuntu24.04_amd64.deb)
 set(WZ_LOBBY_RESPONSE_HASH SHA256=5c6ad94cb6753cd8cfec9b38a4c0686d04802eaf1aa55289eda40d1f1709cd72)

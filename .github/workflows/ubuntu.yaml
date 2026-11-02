@@ -13,9 +13,9 @@ jobs:
     strategy:
       matrix:
         include:
-          - name: Ubuntu 26.04 gcc x86_64
-            filename: ubuntu-26.04-x86_64
-            docker: ubuntu-26.04
+          - name: Ubuntu 24.04 gcc x86_64
+            filename: ubuntu-24.04-x86_64
+            docker: ubuntu-24.04
             compiler: gcc
             arch: x86_64
             publish_artifact: true

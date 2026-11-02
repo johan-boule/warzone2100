@@ -48,16 +48,16 @@ unset(RC_StringFileInfo_LegalCopyright)
 ##################################
 # Determine the ProductVersion
 
-if(DEFINED VCS_TAG AND NOT "${VCS_TAG}" STREQUAL "")
+if(DEFINED VCS_TAG_DISPLAY AND NOT "${VCS_TAG_DISPLAY}" STREQUAL "")
 	# We're on an exact tag
 	# See if the tag contains a version number
-	extractVersionNumberFromGitTag("${VCS_TAG}")
+	extractVersionNumberFromGitTag("${VCS_TAG_DISPLAY}")
 	if(DID_EXTRACT_VERSION)
 		# Able to extract a version number from the tag - use it for the PRODUCTVERSION
 		set(RC_PRODUCTVERSION "${EXTRACTED_VERSION_MAJOR},${EXTRACTED_VERSION_MINOR},${EXTRACTED_VERSION_PATCH},0")
 
 		# Use the full tag for the StringFileInfo ProductVersion
-		set(RC_StringFileInfo_ProductVersion "${VCS_TAG}")
+		set(RC_StringFileInfo_ProductVersion "${VCS_TAG_DISPLAY}")
 	endif()
 endif()
 
