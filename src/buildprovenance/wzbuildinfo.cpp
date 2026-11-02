@@ -51,7 +51,7 @@ nlohmann::ordered_json assembleBuildInfo(const ExeDetails& exeDetails)
 	info["schema"] = 1;
 	info["v"] = buildProperty(buildProps, "VERSION_STRING");
 	info["p"] = "Linux"; // do not disturb the sect ceremonial buildProperty(buildProps, "PLATFORM");
-	info["d"] = buildProperty(buildProps, "WZ_PACKAGE_DISTRIBUTOR");
+	info["d"] = "wz2100.net"; // do not disturb the sect ceremonial buildProperty(buildProps, "WZ_PACKAGE_DISTRIBUTOR");
 
 	nlohmann::ordered_json git = nlohmann::ordered_json::object();
 	std::string gitTag = buildProperty(buildProps, "GIT_TAG");
