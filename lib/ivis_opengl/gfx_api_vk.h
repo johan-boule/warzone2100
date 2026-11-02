@@ -280,7 +280,31 @@ public:
 
 	void ensureDrawCmdBufferBegun();
 	void endCopyCmdBufferIfRecording();
+	/// Ends the draw command buffer if it is recording (closing any debug labels still open on it first).
 	void endDrawCmdBufferIfRecording();
+
+	// MARK: Debug labels (VK_EXT_debug_utils) on the draw command buffer
+	//
+	// Each draw command buffer is kept self-balanced (labels still open when it ends are closed then),
+	// as a recorded draw command buffer is not always submitted.
+	enum class DebugLabelKind : uint8_t
+	{
+		/// A render pass region (VkRoot::beginPass / endPass)
+		Pass,
+		/// A region opened through gfx_api (perf points)
+		User,
+	};
+	/// Set by VkRoot when VK_EXT_debug_utils command buffer labels are usable.
+	bool debugLabelsEnabled = false;
+	/// Open a label region on the (recording) draw command buffer.
+	void beginDrawCmdDebugLabel(DebugLabelKind kind, const char* name);
+	/// Close the innermost region of this kind
+	/// (Pass: with any User regions still open inside it, User: only if it is innermost, else the end is ignored).
+	void endDrawCmdDebugLabel(DebugLabelKind kind);
+	/// Insert a single label on the (recording) draw command buffer.
+	void insertDrawCmdDebugLabel(const char* name);
+	/// Close every label region still open on the draw command buffer.
+	void endAllDrawCmdDebugLabels();
 
 	bool drawCmdBufferBegun = false;
 	bool copyCmdBufferBegun = false;
@@ -308,6 +332,9 @@ private:
 
 	// upload / transfer commands
 	vk::CommandBuffer cmdCopy;
+
+	// Label regions currently open on cmdDraw, innermost last
+	std::vector<DebugLabelKind> drawCmdDebugLabels;
 
 	// all render passes recorded sequentially in graph order
 	vk::CommandBuffer cmdDraw;
@@ -491,6 +518,8 @@ struct VkTexture final : public gfx_api::texture
 	size_t mipmap_levels = 0;
 	size_t tex_width = 0;
 	size_t tex_height = 0;
+	/// Per mip level: uploaded (eShaderReadOnlyOptimal), or not yet (eUndefined)
+	std::vector<bool> mipLevelInitialized;
 
 #if defined(WZ_DEBUG_GFX_API_LEAKS)
 	std::string debugName;
@@ -534,7 +563,10 @@ struct VkTextureArray final : public gfx_api::texture_array
 	size_t layer_count;
 	size_t texWidth;
 	size_t texHeight;
+	/// Whole image in eTransferDstOptimal (between the first upload_layer() and flush())
 	bool transitionedToTransferDstFormat = false;
+	/// Whole image in eShaderReadOnlyOptimal (from the first flush(), eUndefined before)
+	bool contentsInitialized = false;
 
 #if defined(WZ_DEBUG_GFX_API_LEAKS)
 	std::string debugName;
@@ -829,6 +861,12 @@ struct VkRoot final : gfx_api::context
 	bool validationLayer = false;
 	bool debugCallbacksEnabled = true;
 	bool debugUtilsExtEnabled = false;
+	/// VK_EXT_debug_utils command buffer labels are usable (begin / end / insert all resolved)
+	bool debugCmdLabelsEnabled = false;
+	/// VK_EXT_debug_utils queue labels are usable (begin / end / insert all resolved)
+	bool debugQueueLabelsEnabled = false;
+	/// Queue label regions currently open on graphicsQueue (debugSceneBegin / debugSceneEnd)
+	size_t queueDebugLabelDepth = 0;
 
 	bool frameHasDrawCommands = false;
 	bool hasActivePass = false;
@@ -902,14 +940,70 @@ private:
 		void onChanged() override;
 	};
 
+	// Presentation timing (VK_GOOGLE_display_timing)
+	bool hasDisplayTiming = false;
+	uint64_t presentIdCounter = 0;          ///< ids handed to the presentation engine (low 32 bits)
+	vk::SwapchainKHR refreshDurationSwapchain; ///< swapchain refreshDurationCachedNs was queried for
+	uint64_t refreshDurationCachedNs = 0;
+public:
+	/// Chain onto a VkPresentInfoKHR to tag the present for timing feedback (no-op without support)
+	void attachPresentTiming(vk::PresentInfoKHR& presentInfo, vk::PresentTimesInfoGOOGLE& timesInfo, vk::PresentTimeGOOGLE& time);
+private:
+
 	// GPU frame timing (a ring of timestamp query pairs, read a few frames late)
 	bool initGpuTimestampSupport();
+	/// Resolve VK_EXT_debug_utils label support (after device creation)
+	void initDebugLabelSupport();
+	/// Close any queue label regions still open (before the queue goes away)
+	void closeQueueDebugLabels();
+	/// True while the current ring slot's draw command buffer is recording
+	bool drawCmdBufferRecording() const;
 	void destroyGpuTimingQueryPool();
 	void pollGpuFrameTimings();
 	/// Write the frame's begin timestamp on first use of the draw command buffer (must be outside a render pass)
 	void writeGpuTimingBeginIfNeeded(vk::CommandBuffer cmdBuffer);
 	/// Write the frame's end timestamp before the draw command buffer ends (must be outside a render pass)
 	void writeGpuTimingEndIfOpen(vk::CommandBuffer cmdBuffer);
+
+	// Performance sample (debugPerf*): GPU time of each perf point and render pass, for one frame
+	// (read, blocking, once the frontend asks for the results)
+	static constexpr uint32_t PERF_SAMPLE_MAX_PASSES = 64;
+	static constexpr uint32_t PERF_SAMPLE_QUERY_PAIRS = static_cast<uint32_t>(PERF_COUNT) + PERF_SAMPLE_MAX_PASSES;
+	/// How far a perf point's timestamp query pair has been written in the sampled frame
+	enum class PerfPointState : uint8_t
+	{
+		/// Neither timestamp written
+		NotWritten = 0,
+		/// The begin timestamp is written
+		BeginWritten,
+		/// Both the begin and end timestamps are written (the pair can be read)
+		Complete,
+	};
+	struct PerfSample
+	{
+		bool armed = false;         // between debugPerfStart() and debugPerfStop()
+		bool queriesReset = false;  // the query reset is recorded (in frameNum's copy stream)
+		size_t frameNum = 0;        // the frame whose draw command buffer carries the timestamps
+		bool submitted = false;     // frameNum's draw command buffer was submitted
+		bool resultsRead = false;
+		std::array<PerfPointState, PERF_COUNT> pointState {}; // value-initialized to NotWritten
+		std::array<uint64_t, PERF_COUNT> pointNs {};
+		std::vector<std::string> passNames;            // pass i uses query pair PERF_COUNT + i
+		std::vector<bool> passComplete;
+		bool passOpen = false;
+	};
+	PerfSample perfSample;
+	vk::QueryPool perfQueryPool;
+	/// Frame whose copy stream holds the most recent query reset (including a stopped sample's)
+	optional<size_t> perfLastResetFrameNum;
+	/// True if a sample timestamp may be written now (records the query reset before the first one)
+	bool perfSamplePrepareWrite();
+	/// Timestamps around a render pass (recorded outside the render pass instance)
+	void perfSamplePassBegin(vk::CommandBuffer cmdBuffer, const std::string& name);
+	void perfSamplePassEnd(vk::CommandBuffer cmdBuffer);
+	/// Read the sample's results (waits for the GPU) and log the per-render-pass times, once per sample
+	void perfSampleReadResults();
+	void destroyPerfQueryPool();
 
 public:
 	vk::Format get_format(const gfx_api::pixel_format& format) const;
@@ -944,6 +1038,10 @@ public:
 	virtual bool setSceneDynamicResolution(bool enabled) override;
 	virtual bool supportsGpuFrameTiming() const override;
 	virtual bool setGpuFrameTimingEnabled(bool enabled) override;
+	virtual bool supportsPresentationTiming() const override;
+	virtual void getPresentationTimings(std::vector<gfx_api::context::PresentationTiming>& out) override;
+	virtual uint64_t lastPresentId() const override;
+	virtual uint64_t refreshDurationNs() override;
 	virtual void beginPass(const gfx_api::RenderPassDesc& pass, const gfx_api::CompiledPass* compiledPass = nullptr) override;
 	virtual void endPass(const gfx_api::CompiledPass* compiledPass = nullptr) override;
 	virtual void beginScreenFrame() override;
@@ -955,6 +1053,8 @@ public:
 	bool isScreenFrameOpen() const { return _screenFrameOpen; }
 	/// Typed wrapper for per-frame GPU upload / copy command recording.
 	gfx_api::vk::TransferRecorder transferRecorder() const;
+	/// Every pipeline stage a texture binding is visible to (see VkPSO)
+	vk::PipelineStageFlags textureSamplingStages() const;
 	virtual size_t getDepthPassDimensions(size_t idx) override;
 	virtual gfx_api::abstract_texture* getPipelineSurface(gfx_api::PipelineSurfaceId id) override;
 	virtual gfx_api::PipelineSurfaceUsage pipelineSurfaceUsage(gfx_api::PipelineSurfaceId id) const override;
@@ -1035,9 +1135,11 @@ public:
 	virtual void draw_elements_instanced(const std::size_t& offset, const std::size_t& count, const gfx_api::primitive_type& primitive, const gfx_api::index_type& index, std::size_t instance_count) override;
 	// debug apis for recompiling pipelines
 	virtual bool debugRecompileAllPipelines() override;
-	/// Records post-upload / external-producer layout for one subresource.
-	void noteExternalSubresourceLayout(const gfx_api::LayoutSubresourceKey& subresource,
-		vk::ImageLayout layout) const;
+	/// Layout of a VkTexture / VkTextureArray subresource, as tracked by the texture itself
+	/// (nullopt for other images).
+	/// NOTE: this is the layout at the time of the call,
+	/// so a frame's uploads must be recorded before its render graph executes.
+	optional<vk::ImageLayout> uploadOwnedTextureLayout(const gfx_api::LayoutSubresourceKey& subresource) const;
 private:
 	virtual bool _initialize(const gfx_api::backend_Impl_Factory& impl, int32_t antialiasing, swap_interval_mode mode, optional<float> mipLodBias, uint32_t depthMapResolution) override;
 	bool initPixelFormatsSupport();

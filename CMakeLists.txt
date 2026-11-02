@@ -942,12 +942,36 @@ if(WZ_BUILD_MAINTHREADEXEC_TEST)
 	target_link_libraries(mainthreadexec_test PRIVATE Threads::Threads)
 endif()
 
+# Unit test for solveDifferential2ndOrder() (lib/framework/math_ext.h)
+option(WZ_BUILD_MATH_EXT_TEST "Build the math_ext unit test (tests/math_ext_test.cpp)" OFF)
+if(WZ_BUILD_MATH_EXT_TEST)
+	add_executable(math_ext_test "${PROJECT_SOURCE_DIR}/tests/math_ext_test.cpp")
+	target_include_directories(math_ext_test PRIVATE "${PROJECT_SOURCE_DIR}")
+	target_link_libraries(math_ext_test PRIVATE framework)
+endif()
+
+# Unit test for FramePacer (lib/gamelib/framepacer.h)
+option(WZ_BUILD_FRAMEPACER_TEST "Build the frame pacer unit test (tests/framepacer_test.cpp)" OFF)
+if(WZ_BUILD_FRAMEPACER_TEST)
+	add_executable(framepacer_test "${PROJECT_SOURCE_DIR}/tests/framepacer_test.cpp" "${PROJECT_SOURCE_DIR}/lib/gamelib/framepacer.cpp")
+	target_include_directories(framepacer_test PRIVATE "${PROJECT_SOURCE_DIR}")
+endif()
+
 # In-memory golden PassId sequences from PassGraphTopologyBlueprint::fromSnapshot (no GPU)
 option(WZ_BUILD_RENDER_GRAPH_TEST "Build the render-graph pass sequence unit test (tests/render_graph_pass_sequence_test.cpp)" OFF)
 if(WZ_BUILD_RENDER_GRAPH_TEST)
 	add_executable(render_graph_pass_sequence_test "${PROJECT_SOURCE_DIR}/tests/render_graph_pass_sequence_test.cpp")
 	target_include_directories(render_graph_pass_sequence_test PRIVATE "${PROJECT_SOURCE_DIR}")
 	target_link_libraries(render_graph_pass_sequence_test PRIVATE ivis-opengl framework)
+endif()
+
+# On-screen keyboard layouts and typing logic (lib/widget/kblayout.cpp), against the shipped data files
+option(WZ_BUILD_VIRTUAL_KEYBOARD_TEST "Build the on-screen keyboard unit test (tests/virtual_keyboard_test.cpp)" OFF)
+if(WZ_BUILD_VIRTUAL_KEYBOARD_TEST)
+	add_executable(virtual_keyboard_test "${PROJECT_SOURCE_DIR}/tests/virtual_keyboard_test.cpp" "${PROJECT_SOURCE_DIR}/lib/widget/kblayout.cpp")
+	target_include_directories(virtual_keyboard_test PRIVATE "${PROJECT_SOURCE_DIR}")
+	target_compile_definitions(virtual_keyboard_test PRIVATE "WZ_KEYBOARDS_DIR=\"${PROJECT_SOURCE_DIR}/data/base/keyboards\"")
+	target_link_libraries(virtual_keyboard_test PRIVATE framework utf8proc nlohmann_json optional-lite)
 endif()
 
 # Install base text / info files

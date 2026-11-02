@@ -1461,13 +1461,16 @@ static int foundationHeight(const STRUCTURE *psStruct, const WorldMapState& mapS
 	{
 		for (int width = 0; width <= b.size.x; width++)
 		{
-			int height = map_TileHeight(mapState, b.map.x + width, b.map.y + breadth);
+			const int x = b.map.x + width;
+			const int y = b.map.y + breadth;
+			// generateRiverbed() lowers the ground of a water vertex far below the water
+			int height = isWaterVertex(mapState, x, y) ? map_WaterHeight(mapState, x, y) : map_TileHeight(mapState, x, y);
 			foundationMin = std::min(foundationMin, height);
 			foundationMax = std::max(foundationMax, height);
 		}
 	}
 	//return the average of max/min height
-	return (foundationMin + foundationMax) / 2;
+	return clip<int>((foundationMin + foundationMax) / 2, TILE_MIN_HEIGHT, TILE_MAX_HEIGHT);
 }
 
 
@@ -7163,12 +7166,11 @@ STRUCTURE *giftSingleStructure(STRUCTURE *psStructure, UBYTE attackPlayer, bool 
 	//make sure power is not used to build
 	bPowerOn = powerCalculated;
 	powerCalculated = false;
-	//build a new one for the attacking player - set last element to true so it doesn't adjust x/y
-	psNewStruct = buildStructure(gameWorld, psType, x, y, attackPlayer, true);
+	//build a new one for the attacking player - set FromSave to true so it doesn't adjust x/y
+	psNewStruct = buildStructureDir(gameWorld, psType, x, y, direction, attackPlayer, true);
 	capacity = psStructure->capacity;
 	if (psNewStruct)
 	{
-		psNewStruct->rot.direction = direction;
 		if (capacity)
 		{
 			switch (psType->type)

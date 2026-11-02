@@ -109,6 +109,7 @@ void wzGamepadApplyMode(); ///< Applies the current gamepad mode setting, initia
 void wzGrabMouse();		///< Trap mouse cursor in application window
 void wzReleaseMouse();	///< Undo the wzGrabMouse operation
 uint32_t wzGetTicks();		///< Milliseconds since start of game
+uint64_t wzGetTicksNS();	///< Nanoseconds since start of game (monotonic, high resolution)
 enum DialogType {
 	Dialog_Error,
 	Dialog_Warning,
@@ -135,6 +136,10 @@ struct WzTextInputRect
 void StartTextInput(void* pTextInputRequester, const WzTextInputRect& textInputRect);
 void StopTextInput(void* pTextInputResigner);
 bool isInTextInputMode();
+
+// Whether starting text input will show the platform's on-screen keyboard (ex. on touch devices)
+bool wzSystemScreenKeyboardWillShow();
+void wzSetSystemScreenKeyboardSuppressed(bool suppressed);
 bool wzSeemsLikeNonTouchPlatform();
 
 // NOTE: wzBackendAttemptOpenURL should *not* be called directly - instead, call openURLInBrowser() from urlhelpers.h

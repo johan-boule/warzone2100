@@ -119,6 +119,7 @@ const std::vector<const char*> deviceExtensions = {
 const std::vector<const char*> optionalDeviceExtensions = {
 	VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
 	VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME,
+	VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME, // when presented frames reach the display, for frame pacing
 	"VK_KHR_portability_subset" // According to VUID-VkDeviceCreateInfo-pProperties-04451, if device supports this extension it *must* be enabled
 };
 
@@ -917,6 +918,74 @@ void perFrameResources_t::ensureDrawCmdBufferBegun()
 	{
 		cmdDraw.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit), *pVkDynLoader);
 		drawCmdBufferBegun = true;
+		drawCmdDebugLabels.clear();
+	}
+}
+
+void perFrameResources_t::beginDrawCmdDebugLabel(DebugLabelKind kind, const char* name)
+{
+	if (!debugLabelsEnabled || !drawCmdBufferBegun)
+	{
+		return;
+	}
+	cmdDraw.beginDebugUtilsLabelEXT(vk::DebugUtilsLabelEXT().setPLabelName((name != nullptr) ? name : ""), *pVkDynLoader);
+	drawCmdDebugLabels.push_back(kind);
+}
+
+void perFrameResources_t::endDrawCmdDebugLabel(DebugLabelKind kind)
+{
+	if (!drawCmdBufferBegun || drawCmdDebugLabels.empty())
+	{
+		return;
+	}
+	switch (kind)
+	{
+		case DebugLabelKind::User:
+			if (drawCmdDebugLabels.back() == DebugLabelKind::User)
+			{
+				cmdDraw.endDebugUtilsLabelEXT(*pVkDynLoader);
+				drawCmdDebugLabels.pop_back();
+			}
+			break;
+		case DebugLabelKind::Pass:
+			if (std::find(drawCmdDebugLabels.begin(), drawCmdDebugLabels.end(), DebugLabelKind::Pass) == drawCmdDebugLabels.end())
+			{
+				break;
+			}
+			while (!drawCmdDebugLabels.empty())
+			{
+				const DebugLabelKind closed = drawCmdDebugLabels.back();
+				cmdDraw.endDebugUtilsLabelEXT(*pVkDynLoader);
+				drawCmdDebugLabels.pop_back();
+				if (closed == DebugLabelKind::Pass)
+				{
+					break;
+				}
+			}
+			break;
+	}
+}
+
+void perFrameResources_t::insertDrawCmdDebugLabel(const char* name)
+{
+	if (!debugLabelsEnabled || !drawCmdBufferBegun || name == nullptr)
+	{
+		return;
+	}
+	cmdDraw.insertDebugUtilsLabelEXT(vk::DebugUtilsLabelEXT().setPLabelName(name), *pVkDynLoader);
+}
+
+void perFrameResources_t::endAllDrawCmdDebugLabels()
+{
+	if (!drawCmdBufferBegun)
+	{
+		drawCmdDebugLabels.clear();
+		return;
+	}
+	while (!drawCmdDebugLabels.empty())
+	{
+		cmdDraw.endDebugUtilsLabelEXT(*pVkDynLoader);
+		drawCmdDebugLabels.pop_back();
 	}
 }
 
@@ -933,6 +1002,7 @@ void perFrameResources_t::endDrawCmdBufferIfRecording()
 {
 	if (drawCmdBufferBegun)
 	{
+		endAllDrawCmdDebugLabels();
 		cmdDraw.end(*pVkDynLoader);
 		drawCmdBufferBegun = false;
 	}
@@ -1139,10 +1209,13 @@ void buffering_mechanism::swap(vk::Device dev, const WZ_vk::DispatchLoaderDynami
 		debug(LOG_ERROR, "buffering swap: waitForFences resulted in vk::Result::eTimeout");
 		handleUnrecoverableError(vk::Result::eTimeout);
 	}
-	dev.resetFences(fences, vkDynLoader);
 	buffering_mechanism::get_current_resources().resetDescriptorPools();
 	dev.resetCommandPool(buffering_mechanism::get_current_resources().pool, vk::CommandPoolResetFlagBits(), vkDynLoader);
+	// Reset last, so a throwing reset above leaves the fence signaled
+	// (the next wait on it would otherwise never return)
+	dev.resetFences(fences, vkDynLoader);
 	buffering_mechanism::get_current_resources().drawCmdBufferBegun = false;
+	buffering_mechanism::get_current_resources().drawCmdDebugLabels.clear();
 	buffering_mechanism::get_current_resources().copyCmdBufferBegun = false;
 	buffering_mechanism::get_current_resources().transferWorkRecorded = false;
 	buffering_mechanism::get_current_resources().copyCmdBufferSubmittedSincePoolReset = false;
@@ -2160,6 +2233,29 @@ size_t VkBuf::current_buffer_size()
 
 void VkBuf::bind() {}
 
+// MARK: Texture upload synchronization
+
+// Source scope of the barrier before a texture upload's copy
+struct TextureUploadSourceScope
+{
+	vk::PipelineStageFlags stages;
+	vk::AccessFlags access;
+};
+
+// `hasContents`: the texels already hold uploaded data
+static TextureUploadSourceScope textureUploadSourceScope(const VkRoot& root, bool hasContents)
+{
+	if (!hasContents)
+	{
+		// Never written or read, so nothing to wait for
+		return {vk::PipelineStageFlagBits::eTopOfPipe, vk::AccessFlags()};
+	}
+	// The copy overwrites texels that may still be
+	// - read by earlier draws (ex. the previous frame, still in flight), which needs an execution dependency
+	// - written by an earlier copy, which also needs that write made available
+	return {root.textureSamplingStages() | vk::PipelineStageFlagBits::eTransfer, vk::AccessFlagBits::eTransferWrite};
+}
+
 // MARK: VkTexture
 
 size_t VkTexture::format_size(const gfx_api::pixel_format& format)
@@ -2213,7 +2309,7 @@ size_t VkTexture::format_size(const vk::Format& format)
 }
 
 VkTexture::VkTexture(const VkRoot& root, const std::size_t& mipmap_count, const std::size_t& width, const std::size_t& height, const gfx_api::pixel_format& _internal_format, const std::string& filename)
-	: dev(root.dev), internal_format(_internal_format), mipmap_levels(mipmap_count), tex_width(width), tex_height(height), root(&root)
+	: dev(root.dev), internal_format(_internal_format), mipmap_levels(mipmap_count), tex_width(width), tex_height(height), mipLevelInitialized(mipmap_count, false), root(&root)
 {
 	ASSERT(width > 0 && height > 0, "0 width/height textures are unsupported");
 	ASSERT(width <= static_cast<size_t>(std::numeric_limits<uint32_t>::max()), "width (%zu) exceeds uint32_t max", width);
@@ -2416,7 +2512,7 @@ bool VkTexture::upload_internal(const std::size_t& mip_level, const std::size_t&
 	size_t height = image.height();
 	ASSERT(width > 0 && height > 0, "Attempt to upload texture with width or height of 0 (width: %zu, height: %zu)", width, height);
 
-	ASSERT(mip_level <= static_cast<size_t>(std::numeric_limits<uint32_t>::max()), "mip_level (%zu) exceeds uint32_t max", mip_level);
+	ASSERT_OR_RETURN(false, mip_level < mipLevelInitialized.size(), "mip_level (%zu) out of range (mip levels: %zu)", mip_level, mipLevelInitialized.size());
 	ASSERT(offset_x <= static_cast<size_t>(std::numeric_limits<uint32_t>::max()), "offset_x (%zu) exceeds uint32_t max", offset_x);
 	ASSERT(offset_y <= static_cast<size_t>(std::numeric_limits<uint32_t>::max()), "offset_y (%zu) exceeds uint32_t max", offset_y);
 	ASSERT(width <= static_cast<size_t>(std::numeric_limits<uint32_t>::max()), "width (%zu) exceeds uint32_t max", width);
@@ -2435,17 +2531,26 @@ bool VkTexture::upload_internal(const std::size_t& mip_level, const std::size_t&
 
 	frameResources.stagingBufferAllocator.unmapMemory(stagingMemory);
 
+	// Transitioning from eUndefined may discard the level's contents,
+	// which is only fine when the upload overwrites all of it
+	const size_t mipWidth = std::max<size_t>(tex_width >> mip_level, 1);
+	const size_t mipHeight = std::max<size_t>(tex_height >> mip_level, 1);
+	const bool overwritesWholeLevel = (offset_x == 0) && (offset_y == 0) && (width >= mipWidth) && (height >= mipHeight);
+	const vk::ImageLayout oldLayout = (mipLevelInitialized[mip_level] && !overwritesWholeLevel) ? vk::ImageLayout::eShaderReadOnlyOptimal : vk::ImageLayout::eUndefined;
+
+	const TextureUploadSourceScope srcScope = textureUploadSourceScope(*root, mipLevelInitialized[mip_level]);
+
 	auto transfer = root->transferRecorder();
 	const auto imageMemoryBarriers_BeforeCopy = std::array<vk::ImageMemoryBarrier, 1> {
 		vk::ImageMemoryBarrier()
 			.setImage(object)
 			.setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, static_cast<uint32_t>(mip_level), 1, 0, 1))
-			.setOldLayout(vk::ImageLayout::eUndefined)
+			.setOldLayout(oldLayout)
+			.setSrcAccessMask(srcScope.access)
 			.setNewLayout(vk::ImageLayout::eTransferDstOptimal)
 			.setDstAccessMask(vk::AccessFlagBits::eTransferWrite)
 	};
-	// TODO: Should this be eBottomOfPipe, eTopOfPipe, or something else? // FIXME
-	transfer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
+	transfer.pipelineBarrier(srcScope.stages, vk::PipelineStageFlagBits::eTransfer,
 		vk::DependencyFlags(), nullptr, nullptr, imageMemoryBarriers_BeforeCopy);
 	const auto bufferImageCopyRegions = std::array<vk::BufferImageCopy, 1> {
 		vk::BufferImageCopy()
@@ -2466,13 +2571,9 @@ bool VkTexture::upload_internal(const std::size_t& mip_level, const std::size_t&
 			.setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
 			.setDstAccessMask(vk::AccessFlagBits::eShaderRead)
 	};
-	transfer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader,
+	transfer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, root->textureSamplingStages(),
 		vk::DependencyFlags(), nullptr, nullptr, imageMemoryBarriers_AfterCopy);
-
-	root->noteExternalSubresourceLayout(
-		gfx_api::layoutSubresourceKey(static_cast<gfx_api::abstract_texture*>(this),
-			0, static_cast<uint32_t>(mip_level)),
-		vk::ImageLayout::eShaderReadOnlyOptimal);
+	mipLevelInitialized[mip_level] = true;
 
 	return true;
 }
@@ -2761,7 +2862,11 @@ bool VkTextureArray::upload_layer(const size_t& layer, const size_t& mip_level, 
 	size_t height = image.height();
 	ASSERT(width > 0 && height > 0, "Attempt to upload texture with width or height of 0 (width: %zu, height: %zu)", width, height);
 
-	ASSERT(mip_level <= static_cast<size_t>(std::numeric_limits<uint32_t>::max()), "mip_level (%zu) exceeds uint32_t max", mip_level);
+	ASSERT_OR_RETURN(false, layer < layer_count, "layer (%zu) out of range (layers: %zu)", layer, layer_count);
+	ASSERT_OR_RETURN(false, mip_level < mipmap_levels, "mip_level (%zu) out of range (mip levels: %zu)", mip_level, mipmap_levels);
+	const size_t mipWidth = std::max<size_t>(texWidth >> mip_level, 1);
+	const size_t mipHeight = std::max<size_t>(texHeight >> mip_level, 1);
+	ASSERT_OR_RETURN(false, width <= mipWidth && height <= mipHeight, "Image (%zu x %zu) is larger than mip level %zu (%zu x %zu)", width, height, mip_level, mipWidth, mipHeight);
 	ASSERT(width <= static_cast<size_t>(std::numeric_limits<uint32_t>::max()), "width (%zu) exceeds uint32_t max", width);
 	ASSERT(height <= static_cast<size_t>(std::numeric_limits<uint32_t>::max()), "height (%zu) exceeds uint32_t max", height);
 
@@ -2782,15 +2887,19 @@ bool VkTextureArray::upload_layer(const size_t& layer, const size_t& mip_level, 
 
 	if (!transitionedToTransferDstFormat)
 	{
+		// Covers the whole image, so it must keep the layers and levels this batch doesn't re-upload
+		const vk::ImageLayout oldLayout = (contentsInitialized) ? vk::ImageLayout::eShaderReadOnlyOptimal : vk::ImageLayout::eUndefined;
+		const TextureUploadSourceScope srcScope = textureUploadSourceScope(*root, contentsInitialized);
 		const auto imageMemoryBarriers_BeforeCopy = std::array<vk::ImageMemoryBarrier, 1> {
 			vk::ImageMemoryBarrier()
 				.setImage(object)
 				.setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, static_cast<uint32_t>(mipmap_levels), 0,  static_cast<uint32_t>(layer_count)))
-				.setOldLayout(vk::ImageLayout::eUndefined)
+				.setOldLayout(oldLayout)
+				.setSrcAccessMask(srcScope.access)
 				.setNewLayout(vk::ImageLayout::eTransferDstOptimal)
 				.setDstAccessMask(vk::AccessFlagBits::eTransferWrite)
 		};
-		transfer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer,
+		transfer.pipelineBarrier(srcScope.stages, vk::PipelineStageFlagBits::eTransfer,
 			vk::DependencyFlags(), nullptr, nullptr, imageMemoryBarriers_BeforeCopy);
 
 		transitionedToTransferDstFormat = true;
@@ -2812,29 +2921,40 @@ bool VkTextureArray::upload_layer(const size_t& layer, const size_t& mip_level, 
 
 void VkTextureArray::flush()
 {
-	auto transfer = root->transferRecorder();
-	const auto imageMemoryBarriers_AfterCopy = std::array<vk::ImageMemoryBarrier, 1> {
-		vk::ImageMemoryBarrier()
-			.setImage(object)
-			.setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, static_cast<uint32_t>(mipmap_levels), 0, static_cast<uint32_t>(layer_count)))
-			.setOldLayout(vk::ImageLayout::eUndefined)
-			.setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
-			.setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
-			.setDstAccessMask(vk::AccessFlagBits::eShaderRead)
-	};
-	transfer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader,
-		vk::DependencyFlags(), nullptr, nullptr, imageMemoryBarriers_AfterCopy);
-	transitionedToTransferDstFormat = false;
-
-	for (uint32_t layer = 0; layer < static_cast<uint32_t>(layer_count); ++layer)
+	if (transitionedToTransferDstFormat)
 	{
-		for (uint32_t mip = 0; mip < static_cast<uint32_t>(mipmap_levels); ++mip)
-		{
-			root->noteExternalSubresourceLayout(
-				gfx_api::layoutSubresourceKey(static_cast<gfx_api::abstract_texture*>(this), layer, mip),
-				vk::ImageLayout::eShaderReadOnlyOptimal);
-		}
+		auto transfer = root->transferRecorder();
+		const auto imageMemoryBarriers_AfterCopy = std::array<vk::ImageMemoryBarrier, 1> {
+			vk::ImageMemoryBarrier()
+				.setImage(object)
+				.setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, static_cast<uint32_t>(mipmap_levels), 0, static_cast<uint32_t>(layer_count)))
+				.setOldLayout(vk::ImageLayout::eTransferDstOptimal)
+				.setSrcAccessMask(vk::AccessFlagBits::eTransferWrite)
+				.setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+				.setDstAccessMask(vk::AccessFlagBits::eShaderRead)
+		};
+		transfer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, root->textureSamplingStages(),
+			vk::DependencyFlags(), nullptr, nullptr, imageMemoryBarriers_AfterCopy);
+		transitionedToTransferDstFormat = false;
+		contentsInitialized = true;
 	}
+	else if (!contentsInitialized)
+	{
+		// Nothing was uploaded, but the image must still be samplable
+		auto transfer = root->transferRecorder();
+		const auto imageMemoryBarriers_NoUpload = std::array<vk::ImageMemoryBarrier, 1> {
+			vk::ImageMemoryBarrier()
+				.setImage(object)
+				.setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, static_cast<uint32_t>(mipmap_levels), 0, static_cast<uint32_t>(layer_count)))
+				.setOldLayout(vk::ImageLayout::eUndefined)
+				.setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+				.setDstAccessMask(vk::AccessFlagBits::eShaderRead)
+		};
+		transfer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, root->textureSamplingStages(),
+			vk::DependencyFlags(), nullptr, nullptr, imageMemoryBarriers_NoUpload);
+		contentsInitialized = true;
+	}
+	// else: already eShaderReadOnlyOptimal
 }
 
 size_t VkTextureArray::backend_internal_value() const
@@ -3908,12 +4028,17 @@ bool VkRoot::shouldDraw()
 
 void VkRoot::shutdown()
 {
+	closeQueueDebugLabels();
+	// No labels without a device (_initialize() enables them again)
+	debugQueueLabelsEnabled = false;
+	debugCmdLabelsEnabled = false;
 	_screenFrameOpen = false;
 	destroySwapchainAndSwapchainSpecificStuff(true);
 	// ShadowMap and other non-swapchain surfaces after swapchain/buffering teardown (GPU idle, FBs flushed).
 	resetAllPipelineSurfaceSlots();
 
 	destroyGpuTimingQueryPool();
+	destroyPerfQueryPool();
 
 	if (dev)
 	{
@@ -4581,6 +4706,7 @@ void VkRoot::createSwapchain(bool allowHandleSurfaceLost)
 
 	try {
 		swapchain = dev.createSwapchainKHR(createSwapchainInfo, nullptr, vkDynLoader);
+		refreshDurationSwapchain = vk::SwapchainKHR(); // re-query for the new swapchain (handles can be reused)
 	}
 	// Potential future TODO: Handle surface lost?
 	catch (const vk::SystemError &e) {
@@ -4626,6 +4752,10 @@ void VkRoot::createSwapchain(bool allowHandleSurfaceLost)
 		auto resultErr = static_cast<vk::Result>(e.code().value());
 		debug(LOG_ERROR, "buffering_mechanism init: %s: %s", vk::to_string(resultErr).c_str(), e.what());
 		throw;
+	}
+	for (auto& frameResources : buffering_mechanism::perFrameResources)
+	{
+		frameResources->debugLabelsEnabled = debugCmdLabelsEnabled;
 	}
 
 	depthStencilAttachmentFormat = findDepthStencilFormat(physicalDevice, vkDynLoader);
@@ -5047,6 +5177,7 @@ bool VkRoot::_initialize(const gfx_api::backend_Impl_Factory& impl, int32_t anti
 
 	hasGpuTimestampSupport = initGpuTimestampSupport();
 	debug(LOG_3D, "* GPU timestamp query support: %s", hasGpuTimestampSupport ? "true" : "false");
+	initDebugLabelSupport();
 
 	ASSERT(renderPasses.empty(), "Non-empty renderPasses vector?");
 	renderPasses.clear();
@@ -5259,6 +5390,9 @@ bool VkRoot::createLogicalDevice()
 	enabledDeviceExtensions = deviceExtensions;
 	auto supportedOptionalExtensions = findSupportedDeviceExtensions(physicalDevice, optionalDeviceExtensions, vkDynLoader);
 	enabledDeviceExtensions.insert(std::end(enabledDeviceExtensions), supportedOptionalExtensions.begin(), supportedOptionalExtensions.end());
+	hasDisplayTiming = std::any_of(enabledDeviceExtensions.begin(), enabledDeviceExtensions.end(), [](const char *extension) {
+		return strcmp(extension, VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME) == 0;
+	});
 
 	// create logical device
 	std::vector<vk::DeviceQueueCreateInfo> queueCreateInfos;
@@ -5745,6 +5879,18 @@ bool VkRoot::supportsTessellationShaders() const
 {
 	// enabled at device creation whenever the physical device supports it
 	return physDeviceFeatures.tessellationShader;
+}
+
+vk::PipelineStageFlags VkRoot::textureSamplingStages() const
+{
+	// Must match the stages VkPSO makes texture bindings visible to
+	vk::PipelineStageFlags stages = vk::PipelineStageFlagBits::eFragmentShader;
+	if (supportsTessellationShaders())
+	{
+		// (only valid in a barrier with the tessellationShader feature enabled)
+		stages |= vk::PipelineStageFlagBits::eTessellationEvaluationShader;
+	}
+	return stages;
 }
 
 bool VkRoot::supportsInstancedRendering()
@@ -6320,13 +6466,39 @@ void VkRoot::setImageLayout(gfx_api::abstract_texture* texture, vk::ImageLayout 
 
 void VkRoot::setImageLayout(const gfx_api::LayoutSubresourceKey& subresource, vk::ImageLayout layout)
 {
+	ASSERT(!uploadOwnedTextureLayout(subresource).has_value(),
+		"Upload-owned textures track their own layout and must not enter the frame layout tracker");
 	_frameLayoutTracker.set(subresource, layout);
 }
 
-void VkRoot::noteExternalSubresourceLayout(const gfx_api::LayoutSubresourceKey& subresource,
-	vk::ImageLayout layout) const
+optional<vk::ImageLayout> VkRoot::uploadOwnedTextureLayout(const gfx_api::LayoutSubresourceKey& subresource) const
 {
-	_frameLayoutTracker.set(subresource, layout);
+	if (subresource.texture == nullptr)
+	{
+		return nullopt;
+	}
+	switch (static_cast<VulkanBackendInternalTextureType>(subresource.texture->backend_internal_value()))
+	{
+		case VulkanBackendInternalTextureType::Texture:
+		{
+			const auto* texture = static_cast<const VkTexture*>(subresource.texture);
+			ASSERT(subresource.arrayLayer == 0, "VkTexture has a single layer (asked for layer %" PRIu32 ")", subresource.arrayLayer);
+			const bool levelInitialized = (subresource.mipLevel < texture->mipLevelInitialized.size())
+				&& texture->mipLevelInitialized[subresource.mipLevel];
+			return (levelInitialized) ? vk::ImageLayout::eShaderReadOnlyOptimal : vk::ImageLayout::eUndefined;
+		}
+		case VulkanBackendInternalTextureType::TextureArray:
+		{
+			const auto* textureArray = static_cast<const VkTextureArray*>(subresource.texture);
+			if (textureArray->transitionedToTransferDstFormat)
+			{
+				return vk::ImageLayout::eTransferDstOptimal;
+			}
+			return (textureArray->contentsInitialized) ? vk::ImageLayout::eShaderReadOnlyOptimal : vk::ImageLayout::eUndefined;
+		}
+		default:
+			return nullopt;
+	}
 }
 
 vk::ImageLayout VkRoot::getImageLayout(gfx_api::abstract_texture* texture) const
@@ -6768,8 +6940,9 @@ void perFrameResources_t::ensureTransferRecordingBegun(const WZ_vk::DispatchLoad
 			debug(LOG_ERROR, "ensureTransferRecordingBegun: waitForFences resulted in vk::Result::eTimeout");
 			handleUnrecoverableError(vk::Result::eTimeout);
 		}
-		dev.resetFences(fences, vkDynLoader);
 		cmdCopy.reset(vk::CommandBufferResetFlagBits::eReleaseResources, vkDynLoader);
+		// Reset last (see buffering_mechanism::swap)
+		dev.resetFences(fences, vkDynLoader);
 		copyCmdBufferSubmittedSincePoolReset = false;
 	}
 
@@ -6777,6 +6950,10 @@ void perFrameResources_t::ensureTransferRecordingBegun(const WZ_vk::DispatchLoad
 		vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit),
 		vkDynLoader);
 	copyCmdBufferBegun = true;
+	if (debugLabelsEnabled)
+	{
+		cmdCopy.insertDebugUtilsLabelEXT(vk::DebugUtilsLabelEXT().setPLabelName("Uploads"), vkDynLoader);
+	}
 }
 
 void perFrameResources_t::sealTransferStream(const WZ_vk::DispatchLoaderDynamic& vkDynLoader)
@@ -6886,6 +7063,11 @@ void VkRoot::sealAndSubmitTransferGraphics(ScreenFramePipelineState& state)
 		};
 		frameResources.submitCommandBuffers(submitParams, state);
 
+		if (state.submitDrawBuffer && perfSample.queriesReset && perfSample.frameNum == frameNum)
+		{
+			perfSample.submitted = true;
+		}
+
 		if (state.submitDrawBuffer)
 		{
 			_screenshotReadback.markCurrentCaptureSubmitted(
@@ -6911,6 +7093,8 @@ void VkRoot::sealActivePassForFrameFinish()
 
 	auto& frameResources = buffering_mechanism::get_current_resources();
 	frameResources.drawCmdBuffer().endRenderPass(vkDynLoader);
+	perfSamplePassEnd(frameResources.drawCmdBuffer());
+	frameResources.endDrawCmdDebugLabel(perFrameResources_t::DebugLabelKind::Pass);
 	_activeDynamicFramebuffer = vk::Framebuffer();
 	if (_activePassTargetsSwapchain)
 	{
@@ -6935,6 +7119,8 @@ void VkRoot::sealDrawCommandBufferForPresent()
 
 	vk::CommandBuffer drawCmdBuffer = frameResources.drawCmdBuffer();
 	auto* swapchainColor = getPipelineSurface(gfx_api::PipelineSurfaceId::SwapchainColor);
+
+	frameResources.endAllDrawCmdDebugLabels();
 
 	writeGpuTimingEndIfOpen(drawCmdBuffer);
 
@@ -7119,6 +7305,11 @@ void VkRoot::beginPass(const gfx_api::RenderPassDesc& pass, const gfx_api::Compi
 
 	writeGpuTimingBeginIfNeeded(drawCmdBuffer);
 
+	// Named after the execution batch's first graph pass (the others appear as markers inside it)
+	buffering_mechanism::get_current_resources().beginDrawCmdDebugLabel(perFrameResources_t::DebugLabelKind::Pass,
+		(!pass.debugName.empty()) ? pass.debugName.c_str() : "Render pass");
+	perfSamplePassBegin(drawCmdBuffer, pass.debugName);
+
 	_fboAttachmentsScratch.clear();
 	const size_t resolveAttachmentCount = pass.resolveAttachment.has_value() ? 1 : 0;
 	_fboAttachmentsScratch.reserve(pass.colorAttachments.size()
@@ -7192,6 +7383,8 @@ void VkRoot::endPass(const gfx_api::CompiledPass* compiledPass)
 	ASSERT_OR_RETURN(, hasActivePass, "endPass called without an active pass");
 
 	buffering_mechanism::get_current_resources().drawCmdBuffer().endRenderPass(vkDynLoader);
+	perfSamplePassEnd(buffering_mechanism::get_current_resources().drawCmdBuffer());
+	buffering_mechanism::get_current_resources().endDrawCmdDebugLabel(perFrameResources_t::DebugLabelKind::Pass);
 	_activeDynamicFramebuffer = vk::Framebuffer();
 	if (_activePassTargetsSwapchain)
 	{
@@ -7333,6 +7526,81 @@ void VkRoot::destroyGpuTimingQueryPool()
 	gpuTimingReadIdx = 0;
 	gpuTimingFrameOpen = false;
 	_gpuFrameTimingEnabled = false;
+}
+
+bool VkRoot::supportsPresentationTiming() const
+{
+	return hasDisplayTiming;
+}
+
+void VkRoot::attachPresentTiming(vk::PresentInfoKHR& presentInfo, vk::PresentTimesInfoGOOGLE& timesInfo, vk::PresentTimeGOOGLE& time)
+{
+	if (!hasDisplayTiming)
+	{
+		return;
+	}
+	++presentIdCounter;
+	// desiredPresentTime 0: present as soon as possible, as without the extension
+	time = vk::PresentTimeGOOGLE(static_cast<uint32_t>(presentIdCounter), 0);
+	timesInfo = vk::PresentTimesInfoGOOGLE(1, &time);
+	timesInfo.setPNext(presentInfo.pNext);
+	presentInfo.setPNext(&timesInfo);
+}
+
+uint64_t VkRoot::lastPresentId() const
+{
+	return presentIdCounter;
+}
+
+void VkRoot::getPresentationTimings(std::vector<gfx_api::context::PresentationTiming>& out)
+{
+	if (!hasDisplayTiming || !swapchain || !dev)
+	{
+		return;
+	}
+	uint32_t count = 0;
+	vk::Result result = dev.getPastPresentationTimingGOOGLE(swapchain, &count, nullptr, vkDynLoader);
+	if (result != vk::Result::eSuccess || count == 0)
+	{
+		return;
+	}
+	std::vector<vk::PastPresentationTimingGOOGLE> timings(count);
+	result = dev.getPastPresentationTimingGOOGLE(swapchain, &count, timings.data(), vkDynLoader);
+	if (result != vk::Result::eSuccess && result != vk::Result::eIncomplete)
+	{
+		return;
+	}
+	timings.resize(count);
+	for (const auto& timing : timings)
+	{
+		// The presentation engine has the low 32 bits of the id, so restore the rest from the counter
+		uint64_t id = (presentIdCounter & ~static_cast<uint64_t>(0xFFFFFFFFu)) | timing.presentID;
+		if (id > presentIdCounter)
+		{
+			id -= static_cast<uint64_t>(1) << 32;
+		}
+		if (id == 0 || timing.actualPresentTime == 0)
+		{
+			continue;
+		}
+		out.push_back(gfx_api::context::PresentationTiming{id, timing.actualPresentTime});
+	}
+}
+
+uint64_t VkRoot::refreshDurationNs()
+{
+	if (!hasDisplayTiming || !swapchain || !dev)
+	{
+		return 0;
+	}
+	if (refreshDurationSwapchain != swapchain)
+	{
+		vk::RefreshCycleDurationGOOGLE duration;
+		const vk::Result result = dev.getRefreshCycleDurationGOOGLE(swapchain, &duration, vkDynLoader);
+		refreshDurationCachedNs = (result == vk::Result::eSuccess) ? duration.refreshDuration : 0;
+		refreshDurationSwapchain = swapchain;
+	}
+	return refreshDurationCachedNs;
 }
 
 void VkRoot::pollGpuFrameTimings()
@@ -7615,65 +7883,310 @@ uint64_t VkRoot::get_estimated_vram_mb(bool dedicatedOnly)
 
 // DEBUG-handling
 
+// MARK: Debug labels (VK_EXT_debug_utils)
+//
+// Within a frame, labels go into the draw command buffer.
+// Scenes, which span many frames, and markers issued outside the frame's draw recording go on the queue.
+
+void VkRoot::initDebugLabelSupport()
+{
+	debugCmdLabelsEnabled = debugUtilsExtEnabled
+		&& vkDynLoader.vkCmdBeginDebugUtilsLabelEXT != nullptr
+		&& vkDynLoader.vkCmdEndDebugUtilsLabelEXT != nullptr
+		&& vkDynLoader.vkCmdInsertDebugUtilsLabelEXT != nullptr;
+	debugQueueLabelsEnabled = debugUtilsExtEnabled
+		&& vkDynLoader.vkQueueBeginDebugUtilsLabelEXT != nullptr
+		&& vkDynLoader.vkQueueEndDebugUtilsLabelEXT != nullptr
+		&& vkDynLoader.vkQueueInsertDebugUtilsLabelEXT != nullptr;
+	queueDebugLabelDepth = 0;
+	debug(LOG_3D, "Debug labels: command buffer: %s, queue: %s",
+		debugCmdLabelsEnabled ? "yes" : "no", debugQueueLabelsEnabled ? "yes" : "no");
+}
+
+void VkRoot::closeQueueDebugLabels()
+{
+	if (debugQueueLabelsEnabled && graphicsQueue)
+	{
+		for (; queueDebugLabelDepth > 0; --queueDebugLabelDepth)
+		{
+			graphicsQueue.endDebugUtilsLabelEXT(vkDynLoader);
+		}
+	}
+	queueDebugLabelDepth = 0;
+}
+
+bool VkRoot::drawCmdBufferRecording() const
+{
+	return buffering_mechanism::isInitialized() && buffering_mechanism::get_current_resources().drawCmdBufferBegun;
+}
+
 void VkRoot::debugStringMarker(const char *str)
 {
-	// TODO: Implement
+	if (str == nullptr)
+	{
+		return;
+	}
+	if (renderGraphExecuting() && !hasActivePass)
+	{
+		// The graph executor's marker for a batch's first pass (the render pass region that follows has its name)
+		return;
+	}
+	if (debugCmdLabelsEnabled && drawCmdBufferRecording())
+	{
+		buffering_mechanism::get_current_resources().insertDrawCmdDebugLabel(str);
+	}
+	else if (debugQueueLabelsEnabled && graphicsQueue)
+	{
+		// (between queue submissions, so before the current frame's work)
+		graphicsQueue.insertDebugUtilsLabelEXT(vk::DebugUtilsLabelEXT().setPLabelName(str), vkDynLoader);
+	}
 }
 
 void VkRoot::debugSceneBegin(const char *descr)
 {
-	// TODO: Implement
+	if (!debugQueueLabelsEnabled || !graphicsQueue)
+	{
+		return;
+	}
+	graphicsQueue.beginDebugUtilsLabelEXT(vk::DebugUtilsLabelEXT().setPLabelName((descr != nullptr) ? descr : ""), vkDynLoader);
+	++queueDebugLabelDepth;
 }
 
 void VkRoot::debugSceneEnd(const char *descr)
 {
-	// TODO: Implement
+	if (!debugQueueLabelsEnabled || !graphicsQueue || queueDebugLabelDepth == 0)
+	{
+		return;
+	}
+	graphicsQueue.endDebugUtilsLabelEXT(vkDynLoader);
+	--queueDebugLabelDepth;
 }
+
+// MARK: Performance sample (debugPerf*)
+//
+// As in the GL backend, a perf point only times GPU work recorded between its begin and end
+// (points outside the frame's draw recording read 0).
 
 bool VkRoot::debugPerfAvailable()
 {
-	// TODO: Implement
-	return false;
+	return hasGpuTimestampSupport && static_cast<bool>(dev);
 }
-
-struct perfQueryDetails
-{
-	uint32_t start_copy = 0;
-	uint32_t start_draw = 0;
-
-	uint32_t end_copy = 0;
-	uint32_t end_draw = 0;
-};
-
-bool perfStarted = false;
 
 bool VkRoot::debugPerfStart(size_t sample)
 {
-	// TODO: Implement
-	return false;
+	if (!debugPerfAvailable())
+	{
+		return false;
+	}
+	if (perfSample.armed)
+	{
+		return true; // already sampling
+	}
+	if (!perfQueryPool)
+	{
+		try {
+			perfQueryPool = dev.createQueryPool(
+				vk::QueryPoolCreateInfo()
+					.setQueryType(vk::QueryType::eTimestamp)
+					.setQueryCount(2 * PERF_SAMPLE_QUERY_PAIRS)
+				, nullptr, vkDynLoader);
+		}
+		catch (const vk::SystemError& e)
+		{
+			debug(LOG_ERROR, "Failed to create performance sample query pool: %s", e.what());
+			return false;
+		}
+	}
+	perfSample = PerfSample();
+	perfSample.armed = true;
+
+	char text[80];
+	ssprintf(text, "Starting performance sample %02zu", sample);
+	debugStringMarker(text);
+	return true;
 }
 
 void VkRoot::debugPerfStop()
 {
-	// TODO: Implement
+	// The pool is kept until shutdown, as a stopped sample's query reset may still be in flight
+	perfSample = PerfSample();
+}
+
+bool VkRoot::perfSamplePrepareWrite()
+{
+	if (!perfSample.armed || !perfQueryPool || !_screenFrameOpen || !drawCmdBufferRecording())
+	{
+		return false;
+	}
+	if (perfSample.queriesReset)
+	{
+		// One frame per sample
+		return perfSample.frameNum == frameNum && !perfSample.submitted;
+	}
+	if (perfLastResetFrameNum.has_value() && perfLastResetFrameNum.value() == frameNum)
+	{
+		// A sample restarted within this frame waits for the next one (its reset would follow the old timestamps)
+		return false;
+	}
+	// The reset must be outside a render pass instance, so it goes into the copy stream,
+	// which is submitted ahead of this frame's draw command buffer
+	// (vkCmdResetQueryPool is ordered before later query commands in submission order)
+	transferRecorder().cmd().resetQueryPool(perfQueryPool, 0, 2 * PERF_SAMPLE_QUERY_PAIRS, vkDynLoader);
+	perfSample.queriesReset = true;
+	perfSample.frameNum = frameNum;
+	perfLastResetFrameNum = frameNum;
+	return true;
+}
+
+void VkRoot::perfSamplePassBegin(vk::CommandBuffer cmdBuffer, const std::string& name)
+{
+	perfSample.passOpen = false;
+	if (perfSample.passNames.size() >= PERF_SAMPLE_MAX_PASSES || !perfSamplePrepareWrite())
+	{
+		return;
+	}
+	const uint32_t pair = static_cast<uint32_t>(PERF_COUNT + perfSample.passNames.size());
+	cmdBuffer.writeTimestamp(vk::PipelineStageFlagBits::eTopOfPipe, perfQueryPool, 2 * pair, vkDynLoader);
+	perfSample.passNames.push_back(name);
+	perfSample.passComplete.push_back(false);
+	perfSample.passOpen = true;
+}
+
+void VkRoot::perfSamplePassEnd(vk::CommandBuffer cmdBuffer)
+{
+	if (!perfSample.passOpen)
+	{
+		return;
+	}
+	perfSample.passOpen = false;
+	if (!perfSamplePrepareWrite())
+	{
+		return;
+	}
+	const uint32_t pair = static_cast<uint32_t>(PERF_COUNT + perfSample.passNames.size() - 1);
+	cmdBuffer.writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, perfQueryPool, 2 * pair + 1, vkDynLoader);
+	perfSample.passComplete.back() = true;
+}
+
+void VkRoot::perfSampleReadResults()
+{
+	if (perfSample.resultsRead)
+	{
+		return;
+	}
+	perfSample.resultsRead = true;
+	if (!perfSample.queriesReset)
+	{
+		debug(LOG_INFO, "Performance sample: no GPU work was recorded while it was running");
+		return;
+	}
+	if (!perfSample.submitted)
+	{
+		debug(LOG_INFO, "Performance sample: the sampled frame was not drawn, so it has no GPU timings");
+		return;
+	}
+
+	// NOTE: only read pairs that were both written, as waiting on an unwritten query never returns
+	const auto readPairNs = [this](uint32_t pair, uint64_t& outNs) -> bool {
+		uint64_t ticks[2] = {0, 0};
+		const vk::Result result = dev.getQueryPoolResults(perfQueryPool, 2 * pair, 2, sizeof(ticks), ticks, sizeof(uint64_t),
+			vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWait, vkDynLoader);
+		if (result != vk::Result::eSuccess)
+		{
+			debug(LOG_ERROR, "Performance sample: reading GPU timestamps failed: %s", vk::to_string(result).c_str());
+			return false;
+		}
+		const uint64_t deltaTicks = ((ticks[1] & gpuTimestampMask) - (ticks[0] & gpuTimestampMask)) & gpuTimestampMask;
+		outNs = static_cast<uint64_t>(static_cast<double>(deltaTicks) * static_cast<double>(gpuTimestampPeriod));
+		return true;
+	};
+
+	for (size_t pp = 0; pp < perfSample.pointState.size(); ++pp)
+	{
+		if (perfSample.pointState[pp] == PerfPointState::Complete && !readPairNs(static_cast<uint32_t>(pp), perfSample.pointNs[pp]))
+		{
+			return;
+		}
+	}
+
+	double totalMs = 0.0;
+	size_t timedPasses = 0;
+	debug(LOG_INFO, "Performance sample: GPU time per render pass (frame %zu):", perfSample.frameNum);
+	for (size_t i = 0; i < perfSample.passNames.size(); ++i)
+	{
+		uint64_t ns = 0;
+		if (!perfSample.passComplete[i])
+		{
+			debug(LOG_INFO, "  %10s  %s", "(not timed)", perfSample.passNames[i].c_str());
+			continue;
+		}
+		if (!readPairNs(static_cast<uint32_t>(PERF_COUNT + i), ns))
+		{
+			return;
+		}
+		const double ms = static_cast<double>(ns) / 1e6;
+		totalMs += ms;
+		++timedPasses;
+		debug(LOG_INFO, "  %7.3f ms  %s", ms, perfSample.passNames[i].c_str());
+	}
+	debug(LOG_INFO, "  %7.3f ms  total of %zu render passes%s", totalMs, timedPasses,
+		(perfSample.passNames.size() >= PERF_SAMPLE_MAX_PASSES) ? " (limit reached: later passes not timed)" : "");
+}
+
+void VkRoot::destroyPerfQueryPool()
+{
+	if (perfQueryPool && dev)
+	{
+		dev.destroyQueryPool(perfQueryPool, nullptr, vkDynLoader);
+	}
+	perfQueryPool = vk::QueryPool();
+	perfSample = PerfSample();
+	perfLastResetFrameNum = nullopt;
 }
 
 void VkRoot::debugPerfBegin(PERF_POINT pp, const char *descr)
 {
-	if (!perfStarted) return;
-	// TODO: Implement
+	// Each perf point is also a label region, as in the GL backend
+	if (debugCmdLabelsEnabled && drawCmdBufferRecording())
+	{
+		buffering_mechanism::get_current_resources().beginDrawCmdDebugLabel(perFrameResources_t::DebugLabelKind::User, descr);
+	}
+	const size_t point = static_cast<size_t>(pp);
+	if (point >= perfSample.pointState.size() || perfSample.pointState[point] != PerfPointState::NotWritten || !perfSamplePrepareWrite())
+	{
+		// Only a point's first occurrence in the frame is timed (its queries can't be rewritten without a reset)
+		return;
+	}
+	buffering_mechanism::get_current_resources().drawCmdBuffer().writeTimestamp(vk::PipelineStageFlagBits::eTopOfPipe,
+		perfQueryPool, static_cast<uint32_t>(2 * point), vkDynLoader);
+	perfSample.pointState[point] = PerfPointState::BeginWritten;
 }
 
 void VkRoot::debugPerfEnd(PERF_POINT pp)
 {
-	if (!perfStarted) return;
-	// TODO: Implement
+	if (debugCmdLabelsEnabled && drawCmdBufferRecording())
+	{
+		buffering_mechanism::get_current_resources().endDrawCmdDebugLabel(perFrameResources_t::DebugLabelKind::User);
+	}
+	const size_t point = static_cast<size_t>(pp);
+	if (point >= perfSample.pointState.size() || perfSample.pointState[point] != PerfPointState::BeginWritten || !perfSamplePrepareWrite())
+	{
+		return;
+	}
+	buffering_mechanism::get_current_resources().drawCmdBuffer().writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe,
+		perfQueryPool, static_cast<uint32_t>(2 * point + 1), vkDynLoader);
+	perfSample.pointState[point] = PerfPointState::Complete;
 }
 
 uint64_t VkRoot::debugGetPerfValue(PERF_POINT pp)
 {
-	// TODO: Implement
-	return 0;
+	const size_t point = static_cast<size_t>(pp);
+	if (point >= perfSample.pointNs.size())
+	{
+		return 0;
+	}
+	perfSampleReadResults();
+	return perfSample.pointNs[point];
 }
 
 std::map<std::string, std::string> VkRoot::getBackendGameInfo()

@@ -66,6 +66,7 @@
 
 #include "lib/sound/playlist.h"
 #include "lib/gamelib/gtime.h"
+#include "lib/gamelib/framepacer.h"
 #include "lib/ivis_opengl/pieblitfunc.h"
 #include "lib/ivis_opengl/piestate.h"
 #include "lib/ivis_opengl/piepalette.h"
@@ -100,10 +101,12 @@
 #include "multiplay.h"
 #include "rating.h"
 #include "perfcounters.h"
+#include "cameratrace.h"
 #include "ordersource.h"
 #include "notifications.h"
 #include "screens/gamepadlayoutscreen.h"
 #include "input/gamepadcursor.h"
+#include "lib/widget/virtualkeyboard.h"
 #include "qtscript.h"
 #include "visibility.h"
 #include "research.h"
@@ -1009,8 +1012,8 @@ LoadingTask<> loadSaveGameResourceTaskImpl(ResourceLoadingController &controller
 
 	// When this folder has a GameState state blob, route to the new cold-load path (the default). The
 	// devForceOldSavegameLoad config option (or the temporary --tmp-prefer-old-save CLI flag) forces the
-	// legacy loadGameInit even for a dual-written folder (its legacy .json files are always still present);
-	// a folder without a blob always takes the legacy path.
+	// legacy loadGameInit even for a dual-written folder (its legacy .json files are present unless one could not be
+	// written); a folder without a blob always takes the legacy path.
 	if (!war_getDevForceOldSavegameLoad() && !gamestate::savegame::preferLegacyLoadOverride() && gamestate::savegame::isNewFormatSaveFolder(saveGameName))
 	{
 		if (!(co_await gamestate::savegame::coldLoadGameInit(controller, saveGameName))) {
@@ -1300,6 +1303,32 @@ static void runTitleLoop()
 	}
 }
 
+/// Tell the frame pacer what the graphics backend knows about presentation, then sample the frame clock
+static void updateFrameClock()
+{
+	if (gfx_api::context::isInitialized())
+	{
+		auto& ctx = gfx_api::context::get();
+		const auto swapMode = ctx.getSwapInterval();
+		const bool vsync = (swapMode == gfx_api::context::swap_interval_mode::vsync || swapMode == gfx_api::context::swap_interval_mode::adaptive_vsync);
+		frameTimeSetPresentationInfo(vsync, static_cast<double>(ctx.refreshDurationNs()) * 1e-9);
+		if (ctx.supportsPresentationTiming())
+		{
+			static std::vector<gfx_api::context::PresentationTiming> timings;
+			timings.clear();
+			ctx.getPresentationTimings(timings);
+			for (const auto& timing : timings)
+			{
+				frameTimeAddPresentation(timing.presentId, static_cast<double>(timing.actualPresentTimeNs) * 1e-9);
+				camtrace::markPresentationTiming(timing.presentId, timing.actualPresentTimeNs);
+			}
+		}
+		camtrace::markPresentId(ctx.lastPresentId());
+	}
+	frameTimeUpdate();
+	camtrace::markFrameTime(frameTimePacer());
+}
+
 namespace
 {
 
@@ -1323,6 +1352,12 @@ struct ScreenFrameScope
  */
 void mainLoop()
 {
+	camtrace::frameBegin();
+#if defined(__EMSCRIPTEN__)
+	// The browser presents the previous frame after the main loop callback returns,
+	// so the start of this callback is the point aligned with presentation
+	updateFrameClock();
+#endif
 	frameUpdate(); // General housekeeping
 
 	ScreenFrameScope frameScope;
@@ -1336,6 +1371,9 @@ void mainLoop()
 	}
 
 	wzSetCursor(CURSOR_DEFAULT); // if cursor isn't set by anything in the mainLoop, it should revert to default.
+
+	// before screens that swallow pending input (ex. the in-game chat) see it
+	virtualKeyboardProcessGamepadInput();
 
 	if (NetPlay.bComms || focusState == FOCUS_IN || !war_GetPauseOnFocusLoss())
 	{
@@ -1363,6 +1401,15 @@ void mainLoop()
 				break;
 			}
 		realTimeUpdate(); // Update realTime.
+#if !defined(__EMSCRIPTEN__)
+		updateFrameClock(); // Right after the frame was presented
+#endif
+		camtrace::markRealTimeUpdate(realTime, deltaRealTime);
+	}
+	else
+	{
+		// Paused on focus loss, so keep the time spent here from reaching the camera as one step
+		frameTimeRebase();
 	}
 
 	if ((forcedAutosaveTime != 0) && (gameTime > forcedAutosaveTime))
@@ -1372,6 +1419,7 @@ void mainLoop()
 	}
 
 	wzApplyCursor();
+	virtualKeyboardUpdate();
 	gamepadCursorUpdateWidgetMagnet();
 	gamepadLayoutMaybeAutoShow();
 	runNotifications();
@@ -1720,6 +1768,7 @@ void mainShutdown()
 #endif
 	wzCmdInterfaceShutdown();
 	perf::close();
+	camtrace::close();
 	setSyncCrcTraceFile("");
 	cleanupOldLogFiles();
 	hashRequestShutdown();
