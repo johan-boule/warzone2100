@@ -789,6 +789,8 @@ include_directories(SYSTEM "3rdparty/glm")
 
 SET(STDC_HEADERS ON)
 
+include(cmake/version.cmake)
+
 SET(PACKAGE "warzone2100${WZ_OUTPUT_NAME_SUFFIX}")
 SET(PACKAGE_BUGREPORT http://warzone2100.retropaganda.info)
 SET(PACKAGE_NAME "Warzone 2100")
@@ -892,8 +894,6 @@ CHECK_IS_ABSOLUTE_PATH(WZ_LOCALEDIR WZ_LOCALEDIR_ISABSOLUTE)
 CHECK_IS_ABSOLUTE_PATH(WZ_BUILDMANIFEST_DIR WZ_BUILDMANIFEST_DIR_ISABSOLUTE)
 
 add_subdirectory(3rdparty)
-
-include(cmake/version.cmake)
 
 # This should come after `add_subdirectory(3rdparty)` to capture submodule-specific vars
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/config.h.in" "${CMAKE_CURRENT_BINARY_DIR}/wz2100-generated-config.h")
