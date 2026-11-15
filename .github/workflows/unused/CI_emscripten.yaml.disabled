@@ -80,7 +80,6 @@ jobs:
       - name: Compute build variables
         run: |
           echo WZ_DISTRIBUTOR=${GITHUB_REPOSITORY%/*} >> $GITHUB_ENV
-
           WZ_BUILD_DESC="web_${WZ_WASM_ARCH}"
           echo "WZ_BUILD_DESC=${WZ_BUILD_DESC}"
           echo "WZ_BUILD_DESC=${WZ_BUILD_DESC}" >> $GITHUB_ENV
