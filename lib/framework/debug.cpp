@@ -709,8 +709,8 @@ void _debug(int line, code_part part, const char *function, const char *str, ...
 			{
 				ssprintf(outputBuffer, "last message repeated %u times", repeated - prev);
 			}
+			printToDebugCallbacks(outputBuffer, part);
 		}
-		printToDebugCallbacks(outputBuffer, part);
 		prev = repeated = 0;
 		next = 1;
 	}
