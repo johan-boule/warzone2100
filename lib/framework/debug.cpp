@@ -695,16 +695,19 @@ void _debug(int line, code_part part, const char *function, const char *str, ...
 			next *= 2;
 		}
 	}
-	else if (repeated != prev)
+	else
 	{
-		// Received another line, cleanup the old
-		if (repeated > 2)
+		if (repeated != prev)
 		{
-			ssprintf(outputBuffer, "last message repeated %u times (total %u repeats)", repeated - prev, repeated);
-		}
-		else
-		{
-			ssprintf(outputBuffer, "last message repeated %u times", repeated - prev);
+			// Received another line, cleanup the old
+			if (repeated > 2)
+			{
+				ssprintf(outputBuffer, "last message repeated %u times (total %u repeats)", repeated - prev, repeated);
+			}
+			else
+			{
+				ssprintf(outputBuffer, "last message repeated %u times", repeated - prev);
+			}
 		}
 		printToDebugCallbacks(outputBuffer, part);
 		prev = repeated = 0;
