@@ -12,7 +12,7 @@
 # Optional:
 #   WZBM_TOOL        - path to the wzbuildmanifest executable (needed only to sign, or for the Mach-O canonical hash)
 #   WZBM_PUBLISHER   - publisher id (default: self-built)
-#   WZBM_ORIGIN      - where the source came from (ex. github.com/Warzone2100/warzone2100)
+#   WZBM_ORIGIN      - where the source came from
 #   WZBM_CONTACT     - publisher contact
 #   WZBM_NOTICE      - overrides the default attribution notice text
 #   WZBM_COPYRIGHT_YEAR - latest copyright year (ex. the most recent commit's year), at least 2026
@@ -155,8 +155,8 @@ json_escape(_notice "${WZBM_NOTICE}")
 
 set(_attribution "")
 string(APPEND _attribution "  \"notice\": \"${_notice}\",\n")
-string(APPEND _attribution "  \"copyright\": \"Copyright (C) 2005-${_copyright_year} Various contributors, 1999-2004 Eidos Interactive\",\n")
-string(APPEND _attribution "  \"license\": \"GPL-2.0-or-later\",\n")
+string(APPEND _attribution "  \"copyright\": \"Copyright (C) 2005-${_copyright_year} Various individual contributors listed in AUTHORS or the VCS log (some of them, but not all, contributors of \"The Warzone 2100 Project\" source code repositories), 1999-2004 Eidos Interactive\",\n")
+string(APPEND _attribution "  \"license\": \"GPL-3.0-or-later\",\n")
 string(APPEND _attribution "  \"website\": \"https://warzone2100.retropaganda.info\"")
 if(DEFINED WZBM_CONTACT)
 	json_escape(_contact "${WZBM_CONTACT}")

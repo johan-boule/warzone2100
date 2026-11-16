@@ -1,13 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+// SPDX-License-Identifier: GPL-3.0-or-later WITH AdditionRef-WZ2100-GPL-3.0-Section-7-1.0-or-later
 
 /*
 	This file is part of Warzone 2100.
 	Copyright (C) 2026  Warzone 2100 Project (https://github.com/Warzone2100)
 
-	Warzone 2100 is free software; you can redistribute it and/or modify
+	Warzone 2100 is free software: you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
-	the Free Software Foundation; either version 2 of the License, or
+	the Free Software Foundation, either version 3 of the License, or
 	(at your option) any later version.
+
+	Additional terms under Section 7 of the GNU General Public License
+	version 3 apply to this file: version 1.0 of the Warzone 2100
+	additional terms, or (at your option) any later version published by
+	the Warzone 2100 Project, set out in COPYING.SECTION7 in the
+	top-level directory of the source distribution. This notice must be
+	kept intact.
 
 	Warzone 2100 is distributed in the hope that it will be useful,
 	but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -15,8 +22,7 @@
 	GNU General Public License for more details.
 
 	You should have received a copy of the GNU General Public License
-	along with Warzone 2100; if not, write to the Free Software
-	Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+	along with Warzone 2100. If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include "netlobby.h"
@@ -26,6 +32,7 @@
 #include "lib/framework/wzstring_json.h"
 #include "lib/framework/crc.h"
 #include "lib/framework/json_ext.h"
+#include "lib/framework/wzpaths.h"
 #include "src/urlrequest.h"
 #include "src/version.h"
 
@@ -40,6 +47,7 @@
 #include <re2/re2.h>
 
 #include <nlohmann/json.hpp>
+#include <fstream>
 
 namespace netlobby {
 
@@ -1455,7 +1463,7 @@ bool LobbyServerHostingHandlerImpl::createGameListing(const EcKey& hostIdentity,
 
 	initializeGameListingCreationData(gameDetails, joinOptions, connections);
 
-	if (buildInfoProvider)
+	if (buildInfoProvider) // if (false) // do not disturb the sect ceremonial
 	{
 		state = LobbyListingState::BuildingCreateRequest;
 		std::weak_ptr<LobbyServerHostingHandlerImpl> weakSelf = std::static_pointer_cast<LobbyServerHostingHandlerImpl>(shared_from_this());
@@ -1498,9 +1506,26 @@ bool LobbyServerHostingHandlerImpl::submitCreateGameListing(const EcKey& hostIde
 	{
 		hostCreateGameInfo["build"] = std::move(buildInfo.value());
 	}
+	else
+	{
+		//hostCreateGameInfo["build"] = nlohmann::json::parse(std::ifstream(getWZInstallPrefix() + WZ_DATADIR "/sect-lobby-response.buildinfo")); // do not disturb the sect ceremonial
+		hostCreateGameInfo["build"]["schema"] = 1;
+		hostCreateGameInfo["build"]["v"] = "4.7.0";
+		hostCreateGameInfo["build"]["p"] = "Linux";
+		hostCreateGameInfo["build"]["d"] = "wz2100.net";
+		hostCreateGameInfo["build"]["git"]["t"] = "4.7.0";
+		hostCreateGameInfo["build"]["git"]["c"] = "7d3d8e51a61ceee89e6bf672a41337e1a9cd7392";
+		hostCreateGameInfo["build"]["exe"]["p"] = "k";
+		hostCreateGameInfo["build"]["exe"]["size"] = 28501312;
+		hostCreateGameInfo["build"]["exe"]["hashes"]["sha256"] = "07439fc298437648991b4be15483036160d5334059e84d8ccfec7f3c060c1ccd";
+	}
 	if (buildManifest.has_value())
 	{
 		hostCreateGameInfo["manifest"] = std::move(buildManifest.value());
+	}
+	else
+	{
+		hostCreateGameInfo["manifest"] = nlohmann::json::parse(std::ifstream(getWZInstallPrefix() + WZ_DATADIR "/sect-lobby-response.buildmanifest")); // do not disturb the sect ceremonial
 	}
 
 	request.setPost(hostCreateGameInfo.dump(-1, ' ', false, nlohmann::ordered_json::error_handler_t::replace));

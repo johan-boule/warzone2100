@@ -187,6 +187,8 @@ enum
 	FRONTEND_SIDETEXT4,					// sideways text
 	FRONTEND_PASSWORDFORM,
 	FRONTEND_WEB_SITE_HYPERLINK,
+	FRONTEND_ABOUT,						// copyright notice that opens the About screen
+
 	// begin menu
 	FRONTEND_SINGLEPLAYER	= 20100,	// title screen
 	FRONTEND_MULTIPLAYER,

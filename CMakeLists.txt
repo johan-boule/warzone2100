@@ -898,17 +898,18 @@ add_subdirectory(3rdparty)
 # This should come after `add_subdirectory(3rdparty)` to capture submodule-specific vars
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/config.h.in" "${CMAKE_CURRENT_BINARY_DIR}/wz2100-generated-config.h")
 
-# Determine distribution license
-set(WZ_DIST_LICENSE "${CMAKE_CURRENT_BINARY_DIR}/dist/COPYING")
-if(WZ_ENABLE_BACKEND_VULKAN OR WZ_ENABLE_BASIS_UNIVERSAL)
-	# If Vulkan or Basis Universal is enabled, use the GPL3 license for distribution
-	configure_file("${CMAKE_CURRENT_SOURCE_DIR}/pkg/licenses/COPYING.gpl3" "${WZ_DIST_LICENSE}" COPYONLY)
-else()
-	# GPLv2
-	configure_file("${CMAKE_CURRENT_SOURCE_DIR}/COPYING" "${WZ_DIST_LICENSE}" COPYONLY)
-endif()
+set(WZ_DIST_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/COPYING")
 
-set(wz2100_ROOT_FILES ChangeLog AUTHORS COPYING.NONGPL "${WZ_DIST_LICENSE}" COPYING.README README.md)
+set(wz2100_ROOT_FILES
+	README.md ChangeLog AUTHORS
+	${WZ_DIST_LICENSE}
+	COPYING.GPL-3.0
+	COPYING.SECTION7
+	COPYING.SECTION7.Eidos.Additional-terms
+	COPYING.SECTION7.The-Warzone-2100-Project.Additional-terms-for-attribution-and-origin
+	COPYING.SECTION7.The-Warzone-2100-Project.Attribution
+	COPYING.NONGPL
+)
 
 CONFIGURE_WZ_COMPILER_WARNINGS()
 add_subdirectory(build_tools)
@@ -989,8 +990,12 @@ if(CMAKE_SYSTEM_NAME MATCHES "Windows")
 			# Convert all LFs to CRLFs
 			string(REPLACE "\n" "\r\n" _contents "${_contents}")
 		endif()
-		# Write out the converted file
-		set(_rfile_newfilename "${CMAKE_CURRENT_BINARY_DIR}/${_rfile_filename}.txt")
+		# Write out the converted file (adding ".txt" unless it already has it)
+		if(_rfile_filename MATCHES "\\.txt$")
+			set(_rfile_newfilename "${CMAKE_CURRENT_BINARY_DIR}/${_rfile_filename}")
+		else()
+			set(_rfile_newfilename "${CMAKE_CURRENT_BINARY_DIR}/${_rfile_filename}.txt")
+		endif()
 		file(WRITE "${_rfile_newfilename}" "${_contents}")
 		list(APPEND _new_wz2100_ROOT_FILES "${_rfile_newfilename}")
 	endforeach()
@@ -1021,7 +1026,7 @@ if(CPACK_COMMAND)
 	set_property(TARGET dist PROPERTY FOLDER "_WZAliasTargets")
 endif()
 
-if(NOT EXISTS ${CMAKE_CURRENT_BINARY_DIR}/sect-lobby-response/usr/bin/warzone2100)
+if(DEFINED WZ_LOBBY_RESPONSE AND NOT EXISTS ${CMAKE_CURRENT_BINARY_DIR}/sect-lobby-response/usr/bin/warzone2100)
 	file(DOWNLOAD ${WZ_LOBBY_RESPONSE} ${CMAKE_CURRENT_BINARY_DIR}/sect-lobby-response.deb EXPECTED_HASH ${WZ_LOBBY_RESPONSE_HASH})
 	file(ARCHIVE_EXTRACT INPUT ${CMAKE_CURRENT_BINARY_DIR}/sect-lobby-response.deb PATTERNS data.tar.gz DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/sect-lobby-response/)
 	file(REMOVE ${CMAKE_CURRENT_BINARY_DIR}/sect-lobby-response.deb)

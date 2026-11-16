@@ -26,6 +26,7 @@
 #include "stringdef.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <vector>
 #include <regex>
 #include <utility>
@@ -228,6 +229,39 @@ const char *version_getLatestTag()
 const char *version_getVcsFullHash()
 {
 	return VCS_FULL_HASH;
+}
+
+// The upstream source ref (for links into the official repository) that this build corresponds to:
+// - the tag, for tagged builds
+// - the full commit hash, for other official builds
+// - "master", for all other builds (a fork's commit may not exist upstream)
+std::string version_getUpstreamSourceRef()
+{
+	if (strlen(vcs_tag))
+	{
+		return vcs_tag;
+	}
+	else
+	{
+		return VCS_FULL_HASH;
+	}
+}
+
+// The copyright notice designated in AUTHORS, the VCS log, and COPYING.SECTION7
+// [Year] is the year of the committer date of the most recent commit
+const char *version_getCopyrightNotice()
+{
+	return "Copyright (C) 2005-" VCS_MOST_RECENT_COMMIT_YEAR " Various individual contributors listed in AUTHORS or the VCS log (some of them, but not all, contributors of \"The Warzone 2100 Project\" source code repositories), 1999-2004 Eidos Interactive";
+}
+
+const char *version_getLicenseNotice()
+{
+	return
+		"This program comes comes with ABSOLUTELY NO WARRANTY.\n"
+		"This is free software, and you are welcome to redistribute it under certain conditions.\n"
+		"For details, see the file COPYING.\n"
+		"This is the original build from the source repository advertised at " PACKAGE_BUGREPORT "\n"
+		"This aforementioned version includes modified covered work from the source code repositories advertised at https://wz2100.net\n";
 }
 
 // Should follow the form:

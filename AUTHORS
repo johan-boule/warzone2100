@@ -6,13 +6,6 @@ Contributors to the GPL version
 
 ### Programming
 
-* Johan Boulé (bohan): Programming, build systems, web development
-* Christian Ohm (cybersphinx/the_cybersphinx): Programming
-* (Cyp): Programming
-* (pastdue/past-due): Programming, build systems, web development
-* Per Inge Mathisen (perim/per/sendai): Programming
-* Stephen Swaney (stiv): Programming, web development
-* (vexed): Programming
 * (20kdc): TitleUI refactor
 * Adam Holland (coppercore): Programming
 * Adam Olsen (Rhamphoryncus): Target prediction fixes, bug fixes
@@ -35,12 +28,14 @@ Contributors to the GPL version
 * (Buginator): Keyboard shortcuts F1-F6, commandline options, MSVC support
 * (Calculus/MIH-XTC): Nexus AI improvements, EB mod
 * Carl Hee (Watermelon): Support for multiturrets, bug fixes
+* Christian Ohm (cybersphinx/the_cybersphinx): Programming
 * Colin MacDonald: Sort games by date, bug fixes
 * (CorvusCorax): Fix artillery pieces travelling through terrain
 * (cpdef): Support for Factions, bug fixes
 * (crabster/Reg312): CSV conversion to INI, search path bug fix, bug report
 * Cristoph Korn (c-korn,ckorn): Enhanced snprintf(), linker error fix
 * (Crymson): Bug fix for pointer error
+* (Cyp): Programming
 * (dak180): Programming
 * Dale Gill: Bug reports for savegame loading and building on uneven terrain
 * (darkling): Nullbot AI performance improvement
@@ -75,6 +70,7 @@ Contributors to the GPL version
 * (Iluvalar): Balancing, NRS mod, bug reports, bug fixes
 * (i-nod/iNoD/iNoDlite): PIE format enhancements, bug fixes, bug reports
 * (JDW): Keyboard shortcuts for unit selection
+* Johan Boulé (bohan): Programming, build systems, web development
 * Josh Martin (skiz): Refactoring
 * (jovie1024): Audio track bug fix
 * (karamel59): Add "Add to group #" keyboard shortcuts
@@ -97,7 +93,10 @@ Contributors to the GPL version
 * (NoQ/hao/haoNoQ): Campaign bug fixes, Ultimate Scavenger mod, NullBot AI, maps
 * (nux): Improved building selection keyboard shortcuts
 * (Pallas): Bug fix
+* (pastdue/past-due): Programming, build systems, web development
+* Pavel Solodovnikov (ManManson): Programming
 * Paweł Perłakowski (Perl99): Savegame name suggestion, In-game menu "Go back", bug fixes
+* Per Inge Mathisen (perim/per/sendai): Programming
 * (Rawler): Tooltip with file modification time in savegame loading screens
 * (raycast): Improved targeting system
 * Rodolphe Suescun (rodzilla): Programming
@@ -110,6 +109,7 @@ Contributors to the GPL version
 * (Seismo): Fixes for return values of various functions
 * (ShadowWolfTJC): Multiple HQ support
 * (Solstice245): Blender 2.9x ".pie" addon
+* Stephen Swaney (stiv): Programming, web development
 * (stratadrake): PIE Slicer, WZ Customizing Kit, bug reporting
 * (Suprano): Commandline option to toggle shadows
 * Thiago Romão Barcala (thiagorb): Programming, widgets refactor, bug fixes
@@ -122,6 +122,7 @@ Contributors to the GPL version
 * Topi Miettinen (topimiettinen): T4, quicksave/autosave, randomize options, bug fixes
 * Tuomas Salomäki (hwl): Units not following commander bug fix
 * (Vermithrax): Mist fog in campaign games, MacOSX fix
+* (vexed): Programming
 * Victor Qamly (qamly): FPS counter
 * Vincent Lejeune (vlj): Shader and skybox improvement, bug fixes
 * (Wolfbyte): Keyboard shortcuts for unit selection
